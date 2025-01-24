@@ -1,0 +1,15 @@
+[project]
+name = "lems-anechoic"
+version = "0.1.0"
+description = "LEMS anechoic chamber test scripts"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+ignore = [
+    "F541", # f-string without any placeholders
+]
