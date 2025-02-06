@@ -4,10 +4,12 @@ Code originally written by Jody Caudill.
 Unknown (as of January 2025) what the original purpose of this code was, or what precisely the dependencies are.
 """
 
+import datetime
 import pickle
 import winsound
 from pathlib import Path
-from typing import Iterable, NamedTuple
+from typing import NamedTuple
+from typing import Sequence
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -20,7 +22,11 @@ from msu_ssc import ssc_log
 SPEC_AN_GPIB_ADDRESS = "GPIB1::18::INSTR"
 TURN_TABLE_SERIAL_PORT = "COM7"
 TURN_TABLE_BAUD_RATE = 9600
-LOG_FOLDER = Path(__file__).parent / "./logs/"  # This will be a folder called `logs` in the same directory as this script
+AZIMUTH_MARGIN = 0.5
+ELEVATION_MARGIN = 0.5
+LOG_FOLDER = (
+    Path(__file__).parent / "./logs/"
+)  # This will be a folder called `logs` in the same directory as this script
 
 
 # Log to a file and also to the screen
@@ -42,7 +48,7 @@ class AzEl(NamedTuple):
 
 def get_turn_table_location() -> AzEl | None:
     """Get the current azimuth and elevation of the turn table.
-    
+
     This is a blocking operation."""
     ssc_log.debug("Getting turn table location")
     try:
@@ -65,8 +71,10 @@ def move_to(
     elevation: float,
     azimuth_margin: float = 0.5,
     elevation_margin: float = 0.5,
-):
-    """Move to some given location, with a margin of error for both azimuth and elevation."""
+) -> AzEl:
+    """Move to some given location, with a margin of error for both azimuth and elevation.
+
+    Return the actual azimuth and elevation that the turn table ended up at."""
     command = move_command(azimuth, elevation)
     turn_table.write(command)
 
@@ -76,16 +84,42 @@ def move_to(
         delta_el = abs(location.elevation - elevation)
         if delta_az < azimuth_margin and delta_el < elevation_margin:
             ssc_log.debug(f"Arrived at {location!r}")
-            break
+            return location
         else:
             ssc_log.debug(f"Still moving to {AzEl(azimuth, elevation)}; currently at {location!r}")
 
+
+collected_data = []
+
+
 def gather_data(
-    points: Iterable[AzEl],
+    points: Sequence[AzEl],
 ):
     """Move to each point in `points` and gather data."""
-    # TODO
-    pass
+    for index, commanded_point in enumerate(points):
+        actual_point = move_to(
+            azimuth=commanded_point.azimuth,
+            elevation=commanded_point.elevation,
+            azimuth_margin=AZIMUTH_MARGIN,
+            elevation_margin=ELEVATION_MARGIN,
+        )
+
+        # TODO: Need to find trace min/max frequencies so we can set the span
+        # I know this is in some of Christo's code
+
+        trace_data_raw: str = spectrum_analyzer.query("TRA?").split(",")
+        timestamp = datetime.datetime.now(tz=datetime.timezone.utc)
+        trace_data_values = [float(point) for point in trace_data_raw.split(",")]
+        ssc_log.debug(f"Collected data for {commanded_point}. Max value: {max(trace_data_values)}")
+        collected_data.append({
+            "commanded_azimuth": commanded_point.azimuth,
+            "commanded_elevation": commanded_point.elevation,
+            "actual_azimuth": actual_point.azimuth,
+            "actual_elevation": actual_point.elevation,
+            "timestamp": timestamp,
+            "trace_data": trace_data_values,
+        })
+
 
 def parse_az_el(data: bytes) -> AzEl:
     """Parse the azimuth and elevation from the given data.
