@@ -1,0 +1,12 @@
+{
+    "comment": "Modify the things in 'config' below to change the configuration. This file should be in the same directory as the controller script.",
+    "config": {
+        "SPEC_AN_GPIB_ADDRESS": "GPIB1::18::INSTR",
+        "TURN_TABLE_SERIAL_PORT": "COM7",
+        "TURN_TABLE_BAUD_RATE": 9600,
+        "AZIMUTH_MARGIN": 0.5,
+        "ELEVATION_MARGIN": 0.5,
+        "LOG_FOLDER_PATH_STR": "./logs",
+        "LOG_LEVEL": "DEBUG"
+    }
+}

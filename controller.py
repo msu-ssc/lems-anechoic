@@ -4,39 +4,57 @@ Code originally written by Jody Caudill.
 Unknown (as of January 2025) what the original purpose of this code was, or what precisely the dependencies are.
 """
 
+import dataclasses
 import datetime
-import pickle
-import winsound
+import json
+import sys
 from pathlib import Path
+from typing import Literal
 from typing import NamedTuple
 from typing import Sequence
 
-import matplotlib.pyplot as plt
-import numpy as np
 import pyvisa
 import serial
 from msu_ssc import ssc_log
 
+
 # CONFIGURATION
-# Change these constants to match your actual setup
-SPEC_AN_GPIB_ADDRESS = "GPIB1::18::INSTR"
-TURN_TABLE_SERIAL_PORT = "COM7"
-TURN_TABLE_BAUD_RATE = 9600
-AZIMUTH_MARGIN = 0.5
-ELEVATION_MARGIN = 0.5
-LOG_FOLDER = (
-    Path(__file__).parent / "./logs/"
-)  # This will be a folder called `logs` in the same directory as this script
+# Make changes in the `config.json` file, not here.
+@dataclasses.dataclass
+class AnechoicConfig:
+    """Container for script config."""
 
+    SPEC_AN_GPIB_ADDRESS: str
+    TURN_TABLE_SERIAL_PORT: str
+    TURN_TABLE_BAUD_RATE: int
+    AZIMUTH_MARGIN: float
+    ELEVATION_MARGIN: float
+    LOG_FOLDER_PATH_STR: str
+    LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
-# Log to a file and also to the screen
-ssc_log.init(
-    plain_text_file_path=LOG_FOLDER / ssc_log.utc_filename_timestamp(prefix="anechoic"),
-    level="DEBUG",
-)
-ssc_log.debug(f"{SPEC_AN_GPIB_ADDRESS=}")
-ssc_log.debug(f"{TURN_TABLE_SERIAL_PORT=}")
-ssc_log.debug(f"{TURN_TABLE_BAUD_RATE=}")
+    @property
+    def log_folder_path(self) -> Path:
+        return Path(self.LOG_FOLDER_PATH_STR).expanduser().resolve()
+
+    def to_json(self, path: Path) -> None:
+        """Save the config to a JSON file."""
+        comment = "Modify the things in 'config' to change the configuration. This file should be in the same directory as the controller script."
+        data = {
+            "comment": comment,
+            "config": dataclasses.asdict(self),
+        }
+        path.write_text(json.dumps(data, indent=4))
+
+    @classmethod
+    def from_json(cls, path: Path) -> "AnechoicConfig":
+        """Load a config from a JSON file."""
+        path = Path(path).expanduser().resolve()
+
+        # Log as a warning because we haven't initialized the logger yet, and it won't be visible if it's `info` or `debug`.
+        ssc_log.warning(f"Loading config from {path}")
+        json_dict = json.loads(path.read_text())
+        config_dict = json_dict["config"]
+        return AnechoicConfig(**config_dict)
 
 
 class AzEl(NamedTuple):
@@ -89,19 +107,18 @@ def move_to(
             ssc_log.debug(f"Still moving to {AzEl(azimuth, elevation)}; currently at {location!r}")
 
 
-collected_data = []
-
-
 def gather_data(
     points: Sequence[AzEl],
 ):
     """Move to each point in `points` and gather data."""
+    collected_data = []
+
     for index, commanded_point in enumerate(points):
         actual_point = move_to(
             azimuth=commanded_point.azimuth,
             elevation=commanded_point.elevation,
-            azimuth_margin=AZIMUTH_MARGIN,
-            elevation_margin=ELEVATION_MARGIN,
+            azimuth_margin=config.AZIMUTH_MARGIN,
+            elevation_margin=config.ELEVATION_MARGIN,
         )
 
         # TODO: Need to find trace min/max frequencies so we can set the span
@@ -138,97 +155,30 @@ def parse_az_el(data: bytes) -> AzEl:
     return AzEl(azimuth=values[1], elevation=values[0])
 
 
-resource_manager = pyvisa.ResourceManager()
+if __name__ == "__main__":
+    config = AnechoicConfig.from_json(Path("config.json"))
 
-spectrum_analyzer = resource_manager.open_resource(SPEC_AN_GPIB_ADDRESS)
+    # Log to a file and also to the screen
+    ssc_log.init(
+        plain_text_file_path=config.log_folder_path / ssc_log.utc_filename_timestamp(prefix="anechoic"),
+        level=config.LOG_LEVEL,
+    )
+    ssc_log.debug(f"Python info: {sys.executable=}")
+    ssc_log.debug(f"Python info: {sys.version=}")
+    ssc_log.debug(f"Python info: {sys.argv=}")
+    ssc_log.debug(f"Config info: {config.SPEC_AN_GPIB_ADDRESS=}")
+    ssc_log.debug(f"Config info: {config.TURN_TABLE_SERIAL_PORT=}")
+    ssc_log.debug(f"Config info: {config.TURN_TABLE_BAUD_RATE=}")
+    ssc_log.debug(f"Config info: {config.AZIMUTH_MARGIN=}")
+    ssc_log.debug(f"Config info: {config.ELEVATION_MARGIN=}")
+    ssc_log.debug(f"Config info: {config.LOG_FOLDER_PATH_STR=}")
+    ssc_log.debug(f"Config info: {config.LOG_LEVEL=}")
+    ssc_log.debug(f"Config info: {config.log_folder_path=}")
 
-turn_table = serial.Serial(TURN_TABLE_SERIAL_PORT, TURN_TABLE_BAUD_RATE)
-
-# # ORIGINAL CODE BELOW
-# exit()
-
-
-# values = [0, 0]
-
-# # def move_command(azimuth: float, elevation: float) -> bytes:
-# #     return f"CMD:MOV:{azimuth:.3f},{elevation:.3f};".encode()
-
-# # def move_to(
-# #     azimuth: float,
-# #     elevation: float,
-# #     azimuth_margin: float = 0.5,
-# #     elevation_margin: float = 0.5,
-# # ):
-# #     command = move_command(azimuth, elevation)
-# #     turn_table.write(command)
-# #     while True:
-# #         pass
-
-# print("Initialized")
-# print("Moving to initial point")
-# # for i in range(100):
-# while values[1] > -177.5:
-#     try:
-#         a = turn_table.read(1000)
-#         b = str(a, "ascii")
-#         point1 = b.index("El:")
-#         point2 = b.index("\r", point1)
-#         parts = [i.strip() for i in b[point1:point2].split(",")]
-#         values = [float(i.split(" ")[1]) for i in parts]
-#         print(values)
-#         # print(values)
-#     except ValueError:
-#         continue
-# print("Setup Ready")
-# turn_table.write(b"CMD:MOV:180.000,0.000;")
-
-# az = []
-# val = []
-# print("Collecting Data")
-# while values[1] < 179.5:
-#     try:
-#         a = turn_table.read(1000)
-#         b = str(a, "ascii")
-#         point1 = b.index("El:")
-#         point2 = b.index("\r", point1)
-#         parts = [i.strip() for i in b[point1:point2].split(",")]
-#         values = [float(i.split(" ")[1]) for i in parts]
-
-#         traceDataRaw = spectrum_analyzer.query("TRA?").split(",")
-#         maxVal = max([float(i) for i in traceDataRaw])
-#         val.append(maxVal)
-#         az.append(values[1])
-#         print("Gathered Data Point")
-#         print(values)
-#     except ValueError:
-#         continue
-#     except KeyboardInterrupt:
-#         break
-# print("Data Collected")
-# az = np.array(az)
-# az = np.deg2rad(az)
-# val = np.array(val)
-# print(az)
-# print(val)
-
-# data = {"az": az, "mag": val}
-# with open("ANT1_Rolled-8.16625_360_90Pol.pkl", "wb") as outFile:
-#     pickle.dump(data, outFile)
-
-
-# print("Output File Created")
-# print("Plotting")
-# fig, ax = plt.subplots(subplot_kw={"projection": "polar"})
-# ax.plot(az, val)
-# # ax.set_rmax(2)
-# # ax.set_rticks([0.5, 1, 1.5, 2])  # Less radial ticks
-# ax.set_rlabel_position(-22.5)  # Move radial labels away from plotted line
-# ax.grid(True)
-
-# ax.set_title("AUT Pattern", va="bottom")
-# winsound.Beep(2500, 250)
-# plt.show()
-# print("Complete")
-
-
-# # for i in range()
+    try:
+        resource_manager = pyvisa.ResourceManager()
+        spectrum_analyzer = resource_manager.open_resource(config.SPEC_AN_GPIB_ADDRESS)
+        turn_table = serial.Serial(config.TURN_TABLE_SERIAL_PORT, config.TURN_TABLE_BAUD_RATE)
+    except Exception as exc:
+        ssc_log.critical(f"Exception: {exc=}", exc_info=exc)
+        sys.exit(1)
