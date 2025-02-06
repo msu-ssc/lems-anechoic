@@ -72,7 +72,7 @@ def move_to(
     azimuth_margin: float = 0.5,
     elevation_margin: float = 0.5,
 ) -> AzEl:
-    """Move to some given location, with a margin of error for both azimuth and elevation.
+    """Move to some given location, with a margin of error for both azimuth and elevation in degrees.
 
     Return the actual azimuth and elevation that the turn table ended up at."""
     command = move_command(azimuth, elevation)
@@ -111,14 +111,16 @@ def gather_data(
         timestamp = datetime.datetime.now(tz=datetime.timezone.utc)
         trace_data_values = [float(point) for point in trace_data_raw.split(",")]
         ssc_log.debug(f"Collected data for {commanded_point}. Max value: {max(trace_data_values)}")
-        collected_data.append({
-            "commanded_azimuth": commanded_point.azimuth,
-            "commanded_elevation": commanded_point.elevation,
-            "actual_azimuth": actual_point.azimuth,
-            "actual_elevation": actual_point.elevation,
-            "timestamp": timestamp,
-            "trace_data": trace_data_values,
-        })
+        collected_data.append(
+            {
+                "commanded_azimuth": commanded_point.azimuth,
+                "commanded_elevation": commanded_point.elevation,
+                "actual_azimuth": actual_point.azimuth,
+                "actual_elevation": actual_point.elevation,
+                "timestamp": timestamp,
+                "trace_data": trace_data_values,
+            }
+        )
 
 
 def parse_az_el(data: bytes) -> AzEl:
