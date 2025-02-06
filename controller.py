@@ -12,21 +12,35 @@ import pickle
 import pyvisa
 import winsound
 
-test = pyvisa.ResourceManager()
+resource_manager = pyvisa.ResourceManager()
 
-specAn = test.open_resource("GPIB1::18::INSTR")
+spectrum_analyzer = resource_manager.open_resource("GPIB1::18::INSTR")
 
-controlBox = serial.Serial("COM7", 9600)
+turn_table = serial.Serial("COM7", 9600)
 
-controlBox.write(b"CMD:MOV:-178.000,0.000;")
+turn_table.write(b"CMD:MOV:-178.000,0.000;")
 values = [0, 0]
+
+def move_command(azimuth: float, elevation: float) -> bytes:
+    return f"CMD:MOV:{azimuth:.3f},{elevation:.3f};".encode()
+
+def move_to(
+    azimuth: float,
+    elevation: float,
+    azimuth_margin: float = 0.5,
+    elevation_margin: float = 0.5,
+):
+    command = move_command(azimuth, elevation)
+    turn_table.write(command)
+    while True:
+        pass
 
 print("Initialized")
 print("Moving to initial point")
 # for i in range(100):
 while values[1] > -177.5:
     try:
-        a = controlBox.read(1000)
+        a = turn_table.read(1000)
         b = str(a, "ascii")
         point1 = b.index("El:")
         point2 = b.index("\r", point1)
@@ -37,21 +51,21 @@ while values[1] > -177.5:
     except ValueError:
         continue
 print("Setup Ready")
-controlBox.write(b"CMD:MOV:180.000,0.000;")
+turn_table.write(b"CMD:MOV:180.000,0.000;")
 
 az = []
 val = []
 print("Collecting Data")
 while values[1] < 179.5:
     try:
-        a = controlBox.read(1000)
+        a = turn_table.read(1000)
         b = str(a, "ascii")
         point1 = b.index("El:")
         point2 = b.index("\r", point1)
         parts = [i.strip() for i in b[point1:point2].split(",")]
         values = [float(i.split(" ")[1]) for i in parts]
 
-        traceDataRaw = specAn.query("TRA?").split(",")
+        traceDataRaw = spectrum_analyzer.query("TRA?").split(",")
         maxVal = max([float(i) for i in traceDataRaw])
         val.append(maxVal)
         az.append(values[1])
