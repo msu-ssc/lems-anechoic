@@ -4,7 +4,13 @@ version = "0.1.0"
 description = "LEMS anechoic chamber test scripts"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = [
+    "matplotlib>=3.10.0",
+    "msu-ssc[logging,pretty]",
+    "numpy>=2.2.2",
+    "pyserial>=3.5",
+    "pyvisa>=1.14.1",
+]
 
 [tool.ruff]
 line-length = 120
@@ -13,3 +19,14 @@ line-length = 120
 ignore = [
     "F541", # f-string without any placeholders
 ]
+extend-select = [
+    "I001",
+]
+
+[tool.ruff.lint.isort]
+force-single-line = true
+known-first-party = ["lems_a3", "moc_tools"]
+
+
+[tool.uv.sources]
+msu-ssc = { git = "https://github.com/msu-ssc/msu-ssc" }
