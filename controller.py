@@ -17,6 +17,9 @@ import pyvisa
 import serial
 from msu_ssc import ssc_log
 
+spectrum_analyzer: pyvisa.resources.messagebased.MessageBasedResource | None = None
+turn_table: serial.Serial | None = None
+
 
 # CONFIGURATION
 # Make changes in the `config.json` file, not here.
@@ -64,7 +67,9 @@ class AzEl(NamedTuple):
     elevation: float
 
 
-def get_turn_table_location() -> AzEl | None:
+def get_turn_table_location(
+    turn_table: serial.Serial = turn_table,
+) -> AzEl | None:
     """Get the current azimuth and elevation of the turn table.
 
     This is a blocking operation."""
@@ -89,6 +94,7 @@ def move_to(
     elevation: float,
     azimuth_margin: float = 0.5,
     elevation_margin: float = 0.5,
+    turn_table: serial.Serial = turn_table,
 ) -> AzEl:
     """Move to some given location, with a margin of error for both azimuth and elevation in degrees.
 
@@ -109,6 +115,8 @@ def move_to(
 
 def gather_data(
     points: Sequence[AzEl],
+    turn_table: serial.Serial = turn_table,
+    spectrum_analyzer: pyvisa.resources.messagebased.MessageBasedResource = spectrum_analyzer,
 ):
     """Move to each point in `points` and gather data."""
     collected_data = []
@@ -119,6 +127,7 @@ def gather_data(
             elevation=commanded_point.elevation,
             azimuth_margin=config.AZIMUTH_MARGIN,
             elevation_margin=config.ELEVATION_MARGIN,
+            turn_table=turn_table,
         )
 
         # TODO: Need to find trace min/max frequencies so we can set the span
