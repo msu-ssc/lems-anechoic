@@ -33,11 +33,16 @@ class AnechoicConfig:
     AZIMUTH_MARGIN: float
     ELEVATION_MARGIN: float
     LOG_FOLDER_PATH_STR: str
+    DATA_FOLDER_PATH_STR: str
     LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
     @property
     def log_folder_path(self) -> Path:
         return Path(self.LOG_FOLDER_PATH_STR).expanduser().resolve()
+
+    @property
+    def data_folder_path(self) -> Path:
+        return Path(self.DATA_FOLDER_PATH_STR).expanduser().resolve()
 
     def to_json(self, path: Path) -> None:
         """Save the config to a JSON file."""
@@ -49,15 +54,18 @@ class AnechoicConfig:
         path.write_text(json.dumps(data, indent=4))
 
     @classmethod
-    def from_json(cls, path: Path) -> "AnechoicConfig":
+    def from_json(cls, path: Path = Path("./config.json")) -> "AnechoicConfig":
         """Load a config from a JSON file."""
         path = Path(path).expanduser().resolve()
 
-        # Log as a warning because we haven't initialized the logger yet, and it won't be visible if it's `info` or `debug`.
+        # Log as a warning because we likely haven't initialized the logger yet, and it won't be visible if it's `info` or `debug`.
         ssc_log.warning(f"Loading config from {path}")
         json_dict = json.loads(path.read_text())
         config_dict = json_dict["config"]
         return AnechoicConfig(**config_dict)
+
+    def asdict(self) -> dict[str, str | int | float]:
+        return dataclasses.asdict(self)
 
 
 class AzEl(NamedTuple):
