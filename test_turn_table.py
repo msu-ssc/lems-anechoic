@@ -82,7 +82,7 @@ if __name__ == "__main__":
     except serial.SerialException as exc:
         ssc_log.error(f"Failed to open serial port. {exc}", exc_info=exc)
         ssc_log.critical(f"Fatal error, program will terminate immediately.")
-        # sys.exit(1)
+        sys.exit(1)
 
     ssc_log.info(f"{turn_table=} {type(turn_table)=}")
 
