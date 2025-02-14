@@ -11,7 +11,11 @@
             "program": "${file}",
             "console": "integratedTerminal",
             // "console": "internalConsole",
-            "logToFile": true
+            "logToFile": true,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            }
+
         }
     ]
 }
