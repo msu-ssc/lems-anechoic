@@ -16,10 +16,10 @@ if TYPE_CHECKING:
     import logging
 
 
-__all__ = ["SpecAnHP8563E"]
+__all__ = ["SpectrumAnalyzerHP8563E"]
 
 
-class SpecAnHP8563E:
+class SpectrumAnalyzerHP8563E:
     """Class for interacting with a Hewlett Packard 8563E Spectrum Analyzer via GPIB.
 
     This class only implements a few commands. There are many more available. Detailed information for this model is
@@ -70,6 +70,23 @@ class SpecAnHP8563E:
         # self.logger.debug(f"{command=} written to {self.gpib_address=} with {response=}")
         return response
 
+    @classmethod
+    def find(cls) -> "SpectrumAnalyzerHP8563E | None":
+        """Find the spectrum analyzer."""
+        resource_manager = pyvisa.ResourceManager()
+        resources = resource_manager.list_resources()
+        for resource in resources:
+            try:
+                resource: pyvisa.resources.MessageBasedResource = resource_manager.open_resource(resource)
+                response = resource.query("CF?")
+            except Exception as exc:
+                continue
+            if response:
+                return SpectrumAnalyzerHP8563E(
+                    gpib_address=resource.resource_name,
+                )
+        return None
+
     def set_center_frequency(self, frequency: float):
         """Set the center frequency of the spectrum analyzer in Hertz."""
         self.logger.debug(f"Setting center frequency of {self.gpib_address=} to {frequency=}")
@@ -115,7 +132,7 @@ class SpecAnHP8563E:
         """Get the trace from the spectrum analyzer."""
         self.logger.debug(f"Getting trace {trace} from {self.gpib_address=}")
         response = self.query(f"TR{trace}?")
-        return np.array(float(x) for x in response.split(","))
+        return np.array([float(x) for x in response.split(",")])
 
     def get_trace_frequencies_and_amplitudes(self, trace: Literal["A", "B"] = "A") -> tuple[np.ndarray[np.float64], np.ndarray[np.float64]]:
         """Get the frequencies and amplitudes of the trace from the spectrum analyzer.
@@ -206,12 +223,13 @@ if __name__ == "__main__":
     spec_an_logger = ssc_log.logger.getChild("spec_an")
     spec_an_logger.info(f"Starting {__file__}")
 
-    # Create the spectrum analyzer object
-    with SpecAnHP8563E(
-        gpib_address="GPIB0::18::INSTR",
-        logger=spec_an_logger,
-        # open_immediately=False,
-    ) as spectrum_analyzer:
+    if True:
+        spectrum_analyzer = SpectrumAnalyzerHP8563E.find()
+
+    # with SpectrumAnalyzerHP8563E(
+    #     gpib_address="GPIB0::18::INSTR",
+    #     logger=spec_an_logger,
+    # ) as spectrum_analyzer:
         # spectrum_analyzer.open()
 
         print(spectrum_analyzer.query("CF?"))
