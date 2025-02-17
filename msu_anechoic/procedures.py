@@ -1,6 +1,6 @@
 from msu_anechoic import spec_an
-from msu_anechoic import turntable
-from msu_anechoic.turntable import AzEl
+from msu_anechoic import turn_table
+from msu_anechoic.turn_table import AzEl
 
 
 class Peaking:
@@ -13,7 +13,7 @@ class Peaking:
         minimum_el: float,
         maximum_el: float,
         spectrum_analyzer: spec_an.SpectrumAnalyzerHP8563E,
-        turn_table: turntable.TurnTable,
+        turn_table: turn_table.TurnTable,
     ):
         self.minimum_az = minimum_az
         self.maximum_az = maximum_az
@@ -53,7 +53,7 @@ class Peaking:
                     best_az = current_az
                     best_el = current_el
 
-        turntable.move_to(AzEl(azimuth=best_az, elevation=best_el))
+        turn_table.move_to(AzEl(azimuth=best_az, elevation=best_el))
         return best_signal
         pass
         

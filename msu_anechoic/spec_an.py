@@ -33,7 +33,7 @@ class GpibDevice:
         logger: logging.Logger | None = None,
         log_query_messages: bool = False,
     ):
-        self.logger = logger or msu_anechoic._create_null_logger()
+        self.logger = logger or msu_anechoic.create_null_logger()
         self.gpib_address = gpib_address
         self.resource_manager = resource_manager or pyvisa.ResourceManager()
         self.log_every_message = log_query_messages
