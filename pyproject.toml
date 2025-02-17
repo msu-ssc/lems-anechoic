@@ -12,6 +12,11 @@ dependencies = [
     "pyvisa>=1.14.1",
 ]
 
+[project.optional-dependencies]
+mayo = [
+    "scipy>=1.15.2",
+]
+
 [tool.ruff]
 line-length = 120
 

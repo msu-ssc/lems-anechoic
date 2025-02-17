@@ -268,6 +268,11 @@ class SpectrumAnalyzerHP8563E(GpibDevice):
         center_frequency = self.get_center_frequency()
         self.set_marker_frequency(center_frequency)
         return self.get_marker_amplitude()
+    
+    def get_highest_amplitude(self) -> float:
+        """Get the highest amplitude from the trace."""
+        self.logger.debug(f"Getting highest amplitude from {self.gpib_address!r}")
+        return max(self.get_trace())
 
 
 if __name__ == "__main__":
