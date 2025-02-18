@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from typing import Callable
 from typing import Literal
 
 import numpy as np
 import scipy.interpolate
 
 from msu_anechoic import AzEl
+from msu_anechoic import spec_an
+from msu_anechoic import turn_table
 
 
 def generate_grid(
@@ -93,7 +96,20 @@ def generate_grid(
     return return_value
 
 
-def user_guided_box_scan() -> AzEl:
+def user_guided_box_scan(
+    *,
+    spec_an: spec_an.SpectrumAnalyzerHP8563E,
+    turn_table: turn_table.TurnTable,
+    azimuth_min: float,
+    azimuth_max: float,
+    elevation_min: float,
+    elevation_max: float,
+    azimuth_step_count: int = 5,
+    elevation_step_count: int = 5,
+    function_to_maximize: Callable[
+        [spec_an.SpectrumAnalyzerHP8563E], float
+    ] = spec_an.SpectrumAnalyzerHP8563E.get_center_frequency_amplitude,
+) -> AzEl:
     """Perform a user-guided box scan."""
 
     # Prompt the user for the azimuth and elevation ranges
@@ -106,12 +122,16 @@ def user_guided_box_scan() -> AzEl:
     azimuth_step_count = int(input("Enter the number of azimuth steps (i.e., number of grid columns): "))
     elevation_step_count = int(input("Enter the number of elevation steps (i.e., number of grid rows): "))
 
-    # Prompt user for current location, if known
-    if input("Do you know the current location of the turntable? (y/n): ").lower() == "y":
-        azimuth = float(input("Enter the current azimuth: "))
-        elevation = float(input("Enter the current elevation: "))
-        starting_point = AzEl(azimuth=azimuth, elevation=elevation)
-    else:
+    # # Prompt user for current location, if known
+    # if input("Do you know the current location of the turntable? (y/n): ").lower() == "y":
+    #     azimuth = float(input("Enter the current azimuth: "))
+    #     elevation = float(input("Enter the current elevation: "))
+    #     starting_point = AzEl(azimuth=azimuth, elevation=elevation)
+    # else:
+    #     starting_point = None
+    try:
+        starting_point = turn_table.get_location()
+    except Exception:
         starting_point = None
 
     grid = generate_grid(
@@ -124,7 +144,54 @@ def user_guided_box_scan() -> AzEl:
         starting_point=starting_point,
     )
 
-    print(f"Doing grid search on {len(grid)} points")
+    print(f"Doing grid search on {len(grid)} points. Measuring with method {function_to_maximize.__name__}")
+
+    # Perform the box scan
+    data: dict[AzEl, float] = {}
+    for point in grid:
+        turn_table.move_to(azimuth=point.azimuth, elevation=point.elevation)
+        amplitude = function_to_maximize(spec_an)
+        data[point] = amplitude
+
+    # Plot the data
+    xs = [point.azimuth for point in grid]
+    ys = [point.elevation for point in grid]
+
+    xi = np.linspace(min(xs), max(xs), 100)
+    yi = np.linspace(min(ys), max(ys), 100)
+    X, Y = np.meshgrid(xi, yi)
+    Z = scipy.interpolate.griddata((xs, ys), list(data.values()), (X, Y), method="nearest")
+
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots(layout="constrained")
+    ax.plot(xs, ys, "o", color="black")
+    for index in range(len(grid)):
+        ax.text(xs[index], ys[index], f"{list(data.values())[index]:.2f}")
+
+    c = ax.pcolormesh(X, Y, Z, cmap="coolwarm")
+    fig.colorbar(c, label="Signal Strength", ax=ax)
+
+    ax.set_xlabel("Azimuth")
+    ax.set_ylabel("Elevation")
+    ax.set_xlim(azimuth_min - 0.5, azimuth_max + 0.5)
+    ax.set_ylim(elevation_min - 0.5, elevation_max + 0.5)
+
+    # Find the point with the strongest signal
+    strongest_signal_index = np.argmax(list(data.values()))
+    strongest_signal_point = grid[strongest_signal_index]
+    strongest_signal = list(data.values())[strongest_signal_index]
+
+    ax.set_title(
+        f"Box scan (azimuth: [{azimuth_min:.2f}, {azimuth_max:.2f}], elevation: [{elevation_min:.2f}, {elevation_max:.2f}])"
+        + f"\nStrongest observed signal ({strongest_signal:.2f}) at {strongest_signal_point}"
+    )
+
+    print(f"Strongest observed signal ({strongest_signal:.2f}) at {strongest_signal_point}")
+    print(f"Displaying graph of {len(grid)} points. Close the graph to continue. Close the graph to continue.")
+    plt.show()
+
+    return strongest_signal_point
 
 
 # def box_scan(
@@ -179,8 +246,8 @@ if __name__ == "__main__":
         azimuth_max=azimuth_max,
         elevation_min=elevation_min,
         elevation_max=elevation_max,
-        azimuth_step_count=15,
-        elevation_step_count=5,
+        azimuth_step_count=50,
+        elevation_step_count=50,
         starting_point=turn_table_starting_point,
     )
     from rich.pretty import pprint
