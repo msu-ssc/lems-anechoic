@@ -6,7 +6,7 @@ Unknown (as of January 2025) what the original purpose of this code was, or what
 
 import serial
 
-a = serial.Serial("COM7", 9600, timeout=0.01)
+a = serial.Serial("COM5", 9600, timeout=0.01)
 while True:
     try:
         query = bytes(input("> "), "ascii")
