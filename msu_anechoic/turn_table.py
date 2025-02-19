@@ -19,6 +19,10 @@ __all__ = [
     "TurnTable",
 ]
 
+# Pos= El: -30.01 , Az: 236.67
+# Pos= El: -30.01 , Az: 236.67
+# Pos= El: -30.01 , Az: 236.67
+# Pos= El: -30.01 , Az: 236.67
 
 def _parse_az_el(data: bytes) -> AzEl:
     """Parse the azimuth and elevation from the given data.

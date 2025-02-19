@@ -74,6 +74,13 @@ class AzEl(NamedTuple):
     azimuth: float
     elevation: float
 
+def set_turn_table_location(azimuth: float, elevation: float, turn_table: serial.Serial) -> None:
+    """Set the turn table to the given azimuth and elevation."""
+    command = set_command(azimuth, elevation)
+    ssc_log.debug(f"About to write command {command!r} to turn table")
+    turn_table.write(command)
+    ssc_log.debug(f"Wrote command {command!r} to turn table")
+
 
 def get_turn_table_location(
     turn_table: serial.Serial = turn_table,
@@ -95,6 +102,8 @@ def get_turn_table_location(
 def move_command(azimuth: float, elevation: float) -> bytes:
     return f"CMD:MOV:{azimuth:.3f},{elevation:.3f};".encode(encoding="ascii")
 
+def set_command(azimuth: float, elevation: float) -> bytes:
+    return f"CMD:SET:{azimuth:.3f},{elevation:.3f};".encode(encoding="ascii")
 
 def move_to(
     *,

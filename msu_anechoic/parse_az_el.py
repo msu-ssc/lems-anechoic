@@ -2,35 +2,60 @@ import re
 
 from msu_anechoic import AzEl
 
-regex = re.compile(r"Pos\s*=\s*El:\s*(?P<elevation>[-\d\.]+)\s*,\s*Az:\s*(?P<azimuth>[-\d\.]+)")
+azimuth_elevation_regex = re.compile(r"Pos\s*=\s*El:\s*(?P<elevation>[-\d\.]+)\s*,\s*Az:\s*(?P<azimuth>[-\d\.]+)")
+"""Should match a string like `"Pos= El: -0.03 , Az: -0.03\\r\\n"`"""
 
-def parse_az_el(az_el_bytes: bytes) -> AzEl | None:
-    """Parse azimuth and elevation from a byte string."""
-    try:
-        az_el_str = az_el_bytes.decode(encoding="ascii")
-    except UnicodeDecodeError:
-        return None
-    # match = re.match(r"POS:([0-9.]+),([0-9.]+);", az_el_str)
-    matches = [match for match in regex.finditer(az_el_str) if match]
-    if not matches:
-        return None
+def parse_az_el(data: bytes) -> AzEl | None:
+    """Parse azimuth and elevation from a byte string.
     
-    last_match = matches[-1]
-    groupdict = last_match.groupdict()
-    az_str = groupdict["azimuth"]   
-    el_str = groupdict["elevation"]
-    # az_str, el_str = match.groups()
-    return AzEl(azimuth=float(az_str), elevation=float(el_str))
+    Will return the most recent data in the byte string. Assumes that the data is in the format
+    `b'Pos= El: -0.03 , Az: -0.03\\r\\n'`, although the regex is permissive about whitespace and
+    number formatting.
+    """
+
+    # Split data into individual lines so that a corrupt line
+    # doesn't cause the whole parse to fail.
+    lines = data.split(b"\n")
+
+    # Iterate over lines in reverse order so that we get the most recent data.
+    for line in lines[ : : -1]:
+        # Convert as ASCII. This will fail if RS-232 data was corrupted.
+        try:
+            string = line.decode(encoding="ascii")
+        except UnicodeDecodeError:
+            continue
+        
+        # Try to match the regex. If it doesn't match, continue.
+        # Every line should match, unless it is corrupted or truncated.
+        match = azimuth_elevation_regex.search(string)
+        if not match:
+            continue
+
+        # At this point, we have a match. Parse it
+        groupdict = match.groupdict()
+        azimuth_string = groupdict["azimuth"]
+        elevation_string = groupdict["elevation"]
+
+        # There are things that match the regex that are not valid floats, like "123.456" or 98-76".
+        # So put them in a try/except.
+        try:
+            rv = AzEl(azimuth=float(azimuth_string), elevation=float(elevation_string))
+            return rv
+        except ValueError:
+            continue
+
+    # If we get here, we didn't find any valid data.
+    return None
 
 
 if __name__ == "__main__":
     from textwrap import dedent
     text = """
-    Pos= El: -0.01 , Az: -0.01
-    Pos= El: -0.02 , Az: -0.02
-    Pos= El: -0.03 , Az: -0.03
-    Pos= El: -0.04 , Az: -0.04
-    Pos= El: -0.05 , Az: -0.05
+    Pos= El: -0.01 , Az: -0.01\r
+    Pos= El: -0.02 , Az: -0.02\r
+    Pos= El: -0.03 , Az: -0.03\r
+    Pos= El: -0.04 , Az: -0.04\r
+    Pos= El: -0.05 , Az: -0.05\r
     Pos= El: -0.06 , A
     """
 
@@ -39,8 +64,14 @@ if __name__ == "__main__":
     bytes_ = dedent(text).encode(encoding="ascii")
     print(bytes_)
 
+    for index, line in enumerate(bytes_.split(b"\n")):
+        print(index, line)
+
+    # exit()
+
     print(parse_az_el(bytes_))  # Should print AzEl(azimuth=-0.05, elevation=-0.06)
 
+    exit()
     COMPORT = "COM5"
 
     import serial
@@ -74,4 +105,4 @@ if __name__ == "__main__":
             print(f"Failed to read data: {exc}")
             continue
 
-        print(parse_az_el(serial_port.read(1000)))
+        # print(parse_az_el(serial_port.read(1000)))
