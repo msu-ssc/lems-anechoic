@@ -1,14 +1,14 @@
 # SLEW SPEED:
-Took 145.17200000000594 seconds to move to 90 degrees azimuth in 2 degree increments
+Took 39.34399999999732 seconds to move to 90 degrees azimuth in 90 degree increments
 Took 21.218999999997322 seconds to move to 20 degrees DOWN elevation in 20 degree increments
 Took 22.327999999994063 seconds to move to 20 degrees UP elevation in 20 degree increments
 
 # COARSE SPEED:
-Took 39.34399999999732 seconds to move to 90 degrees azimuth in 90 degree increments
-Took 52.187000000005355 seconds to move 20 degrees UP elevation in 2 degree increments
-Took 52.125             seconds to move  20 degrees DOWN elevation in 2 degree increments
+Took 145.17200000000594 seconds to move to 90 degrees azimuth in 2 degree increments (3.22 sec/step)
+Took 52.187000000005355 seconds to move 20 degrees UP elevation in 2 degree increments (5.22 sec/step)
+Took 52.125             seconds to move 20 degrees DOWN elevation in 2 degree increments (5.21 sec/step)
 
 # FINE SPEED
-Took 192.38999999999942 seconds to move 20 degrees RIGHT in 0.25 degree increments
-Took 122.2960000000021 seconds to move 10 degrees UP in 0.25 degree increments
-Took 111.63999999999942 seconds to move 10 degrees DOWN in 0.25 degree increments
+Took 192.38999999999942 seconds to move 20 degrees RIGHT in 0.25 degree increments (2.40 sec/step)
+Took 122.2960000000021  seconds to move 10 degrees UP in 0.25 degree increments (3.05 sec/step)
+Took 111.63999999999942 seconds to move 10 degrees DOWN in 0.25 degree increments (2.791 sec/step)
