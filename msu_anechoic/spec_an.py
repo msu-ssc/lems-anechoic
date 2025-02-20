@@ -274,6 +274,16 @@ class SpectrumAnalyzerHP8563E(GpibDevice):
         self.logger.debug(f"Getting highest amplitude from {self.gpib_address!r}")
         return max(self.get_trace())
 
+    def get_highest_amplitude_2(self) -> tuple[float, float]:   
+        """Get the highest amplitude from the trace."""
+        self.logger.debug(f"Getting highest amplitude from {self.gpib_address!r}")
+
+        # Marker to highest freq
+        self.write("MKPK")
+        marker_frequency = self.get_marker_frequency()
+        marker_amplitude = self.get_marker_amplitude()
+        self.logger.debug(f"Marker at {marker_frequency=} with {marker_amplitude=}")
+        return marker_frequency, marker_amplitude
 
 if __name__ == "__main__":
     import datetime
@@ -283,10 +293,11 @@ if __name__ == "__main__":
     # Configure logging first of all
     now = datetime.datetime.now(tz=datetime.timezone.utc)
     ssc_log.init(
-        plain_text_level="DEBUG",
-        plain_text_file_path=f"logs/{ssc_log.utc_filename_timestamp(timestamp=now, prefix='spec_an', extension='.log')}",
-        jsonl_level="DEBUG",
-        jsonl_file_path=f"logs/{ssc_log.utc_filename_timestamp(timestamp=now, prefix='spec_an', extension='.jsonl')}",
+        level="INFO",
+        # plain_text_level="INFO",
+        # plain_text_file_path=f"logs/{ssc_log.utc_filename_timestamp(timestamp=now, prefix='spec_an', extension='.log')}",
+        # jsonl_level="DEBUG",
+        # jsonl_file_path=f"logs/{ssc_log.utc_filename_timestamp(timestamp=now, prefix='spec_an', extension='.jsonl')}",
     )
     spec_an_logger = ssc_log.logger.getChild("spec_an")
     spec_an_logger.info(f"Starting {__file__}")
@@ -352,10 +363,21 @@ if __name__ == "__main__":
 
         print(f"{spectrum_analyzer.query('AUNITS?')}")
 
-        import matplotlib.pyplot as plt
+        import time
 
-        fig, ax = plt.subplots()
-        ax.plot(xs, ys)
-        ax.set_xlabel("Frequency (Hz)")
-        ax.set_ylabel("Amplitude (dBm)")
-        plt.show()
+        for _ in range(10):
+            start_time = time.monotonic()
+
+            # cf = spectrum_analyzer.get_center_frequency()
+            cf_power = spectrum_analyzer.get_center_frequency_amplitude()
+            max_power_freq, max_power_amp = spectrum_analyzer.get_highest_amplitude_2()
+            stop_time = time.monotonic()
+            print(f"Time to get data: {stop_time - start_time:.2f}s [{max_power_freq=}, {max_power_amp=}]")
+
+        # import matplotlib.pyplot as plt
+
+        # fig, ax = plt.subplots()
+        # ax.plot(xs, ys)
+        # ax.set_xlabel("Frequency (Hz)")
+        # ax.set_ylabel("Amplitude (dBm)")
+        # plt.show()

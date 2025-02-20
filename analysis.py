@@ -61,8 +61,9 @@ az_b = 3
 # line_ys = az_m * line_xs + az_b
 # ax.plot(line_xs, line_ys, label=f"Azimuth Fit (y={az_m:.2f}x+{az_b:.2f})", linestyle="--")
 ax.legend()
-ax.set_ylim(bottom=0)
-ax.set_xlim(left=0)
+# ax.set_ylim(bottom=0, top=10)
+# ax.set_xlim(left=0 ,right=5)
+ax.set_title("Actial time to move turntable")
 
 # ax.set_xticks(list(np.arange(0, 2.51, .25)) + list(np.arange(0, 10, 1)) + list(np.arange(10,30.1,5)))
 

@@ -310,6 +310,51 @@ class Turntable:
             time.sleep(delay)
 
         return current_position
+    
+    def interactively_center(self) -> None:
+        """Manually center the turntable interactively.
+        
+        This will clobber the turntable's current understanding of its position,
+        and thus it is intended to be the very first thing done when powering the
+        table on."""
+        while True:
+            time.sleep(0.1)
+            position = self.get_position()
+            if not position:
+                continue
+            print(f"Current position: {position}")
+            user_input = input("Enter azimuth and elevation deltas, separated by a comma, or DONE to finish: ").strip()
+            if user_input.lower() == "done":
+                print(f"Done. Setting current position to (0, 0)")
+                self.send_set_command(azimuth=0.0, elevation=0.0)
+                print(f"Successfully completed interactive centering.")
+                break
+            try:
+                azimuth_delta, elevation_delta = user_input.split(",")
+                azimuth_delta = float(azimuth_delta)
+                elevation_delta = float(elevation_delta)
+            except Exception:
+                print("Invalid input. Try again.")
+                continue
+            
+            az_direction = "CLOCKWISE" if azimuth_delta >= 0 else "COUNTERCLOCKWISE"
+            el_direction = "UP" if elevation_delta >= 0 else "DOWN"
+            
+            user_input = input(f"About to move {az_direction} {abs(azimuth_delta)} degrees and {el_direction} {abs(elevation_delta)} degrees.\nContinue [y/n]?")
+            if user_input.lower() != "y":
+                print("User did not confirm.")
+                continue
+
+            print(f"Setting position to (0, 0)")
+            self.send_set_command(azimuth=0.0, elevation=0.0)
+
+            print(f"Moving to azimuth={azimuth_delta=}, elevation={elevation_delta=}")
+            self.move_to(azimuth=azimuth_delta, elevation=elevation_delta)
+
+
+
+            
+
 
     def send_emergency_move_command(
         self,

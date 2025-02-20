@@ -253,8 +253,8 @@ if __name__ == "__main__":
         azimuth_max=20,
         elevation_min=-20,
         elevation_max=20,
-        azimuth_step_count=41,
-        elevation_step_count=41,
+        azimuth_step_size=.25,
+        elevation_step_size=.25,
         start_corner="UL",
         # initial_position=AzEl(0, 0),
         # direction="VERTICAL",
@@ -265,8 +265,8 @@ if __name__ == "__main__":
         azimuth_max=180,
         elevation_min=-20,
         elevation_max=20,
-        azimuth_step_count=361,
-        elevation_step_count=21,
+        azimuth_step_size=1,
+        elevation_step_size=2,
         start_corner="UL",
         # initial_position=AzEl(0, 0),
         # direction="VERTICAL",
@@ -286,8 +286,8 @@ if __name__ == "__main__":
         direction="HORIZONTAL",
     )
     grid = fine_grid
-    grid = coarse_grid
-    grid=small_grid
+    # grid = coarse_grid
+    # grid=small_grid
     print(grid.azimuth_values)
     print(grid.elevation_values)
     print(grid.points)
@@ -295,7 +295,7 @@ if __name__ == "__main__":
 
     import matplotlib.pyplot as plt
     fig, ax= plt.subplots()
-    grid.plot(ax)
+    # grid.plot(ax)
     print(f"{grid.height()=}")
     print(f"{grid.width()=}")
     print(f"{grid.elevation_step_size()=}")
@@ -311,7 +311,9 @@ if __name__ == "__main__":
     print(f"{grid.total_grid_time() / 3600 = }")
     print(f"{len(grid.cuts())=}")
     print(f"{len(grid.cuts()[0])=}")
-
+    cut_time = grid.total_grid_time() / len(grid.cuts())
+    print(f"{cut_time=}")
+    exit()
     point_index = 0
     for cut_index, cut in enumerate(grid.cuts()):
         for within_cut_index, point in enumerate(cut):

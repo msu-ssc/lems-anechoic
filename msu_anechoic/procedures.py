@@ -246,8 +246,8 @@ if __name__ == "__main__":
         azimuth_max=azimuth_max,
         elevation_min=elevation_min,
         elevation_max=elevation_max,
-        azimuth_step_count=50,
-        elevation_step_count=50,
+        azimuth_step_count=7,
+        elevation_step_count=3,
         starting_point=turn_table_starting_point,
     )
     from rich.pretty import pprint
