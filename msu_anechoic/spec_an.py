@@ -154,14 +154,18 @@ class SpectrumAnalyzerHP8563E(GpibDevice):
         """
         resource_manager = resource_manager or pyvisa.ResourceManager()
         resources = resource_manager.list_resources()
-        for resource in resources:
+        for resource_name in resources:
             if logger:
-                logger.debug(f"Checking {resource=}")
+                logger.debug(f"Checking {resource_name=}")
+            
+            if "GPIB" not in resource_name:
+                logger.debug(f"Skipping {resource_name=}, because it is not a GPIB device.")
+                continue
             try:
-                resource: pyvisa.resources.MessageBasedResource = resource_manager.open_resource(resource)
+                resource: pyvisa.resources.MessageBasedResource = resource_manager.open_resource(resource_name)
 
                 # NOTE: 8563E doesn't respond to "*IDN?", so we have to use something else.
-                # Of the GPIB devices at MSC Space Science Center, this is the only one that responds to "CF?".
+                # Of the GPIB devices at MSU Space Science Center, this is the only one that responds to "CF?".
                 response = resource.query("CF?")
             except Exception as exc:
                 if logger:
@@ -293,7 +297,7 @@ if __name__ == "__main__":
     # Configure logging first of all
     now = datetime.datetime.now(tz=datetime.timezone.utc)
     ssc_log.init(
-        level="INFO",
+        level="DEBUG",
         # plain_text_level="INFO",
         # plain_text_file_path=f"logs/{ssc_log.utc_filename_timestamp(timestamp=now, prefix='spec_an', extension='.log')}",
         # jsonl_level="DEBUG",
@@ -323,10 +327,15 @@ if __name__ == "__main__":
 
         print(spectrum_analyzer.get_center_frequency())
         print(spectrum_analyzer.get_span())
-
-        spectrum_analyzer.set_center_frequency(287_000_000)
-        spectrum_analyzer.set_span(100_000_000)
-
+        import time
+        for _ in range(10):
+            start = time.monotonic()
+            spectrum_analyzer.set_center_frequency(287_000_000)
+            spectrum_analyzer.set_span(100_000_000)
+            stop = time.monotonic()
+            print(f"Time to set center frequency and span: {stop - start:.2f}s")
+            
+        # exit()
         print(spectrum_analyzer.get_center_frequency())
         print(spectrum_analyzer.get_span())
 
@@ -369,10 +378,13 @@ if __name__ == "__main__":
             start_time = time.monotonic()
 
             # cf = spectrum_analyzer.get_center_frequency()
-            cf_power = spectrum_analyzer.get_center_frequency_amplitude()
+            # cf_power = spectrum_analyzer.get_center_frequency_amplitude()
+
+            spectrum_analyzer.set_marker_frequency(300_000_000)
+            # marker_power = spectrum_analyzer.get_marker_amplitude()
             max_power_freq, max_power_amp = spectrum_analyzer.get_highest_amplitude_2()
             stop_time = time.monotonic()
-            print(f"Time to get data: {stop_time - start_time:.2f}s [{max_power_freq=}, {max_power_amp=}]")
+            print(f"Time to get data: {stop_time - start_time:.2f}s {max_power_freq=} {max_power_amp=}")
 
         # import matplotlib.pyplot as plt
 
