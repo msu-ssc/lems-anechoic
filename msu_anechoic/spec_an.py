@@ -306,6 +306,11 @@ if __name__ == "__main__":
     spec_an_logger = ssc_log.logger.getChild("spec_an")
     spec_an_logger.info(f"Starting {__file__}")
 
+    rm = pyvisa.ResourceManager()
+    print(f"{rm=}")
+    resources = rm.list_resources()
+    print(f"{resources=}")
+
     with SpectrumAnalyzerHP8563E.find(
         logger=spec_an_logger,
     ) as spectrum_analyzer:

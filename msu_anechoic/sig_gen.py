@@ -1,12 +1,27 @@
 import contextlib
+import enum
 from typing import TYPE_CHECKING
+from typing import Literal
+
 import pyvisa
+
 from msu_anechoic.spec_an import GpibDevice
 
 if TYPE_CHECKING:
     import logging
 
+
+
 class SigGenHP8672A(GpibDevice):
+    """Hewlett-Packard 8672A signal generator.
+
+    See document `HP 8672A Synthesized Signal Generator Operating and Service Manual` section 3 for more information.
+
+    As of February 2025, it is available at [https://www.keysight.com/us/en/assets/9018-05865/user-manuals/9018-05865.pdf?success=true](https://www.keysight.com/us/en/assets/9018-05865/user-manuals/9018-05865.pdf?success=true)
+
+    A copy is in the `./docs/` folder
+    """
+
     @classmethod
     def find(
         cls,
@@ -21,7 +36,7 @@ class SigGenHP8672A(GpibDevice):
         for resource_name in resources:
             if logger:
                 logger.debug(f"Checking {resource_name=}")
-            
+
             if "GPIB" not in resource_name:
                 logger.debug(f"Skipping {resource_name=}, because it is not a GPIB device.")
                 continue
@@ -49,6 +64,38 @@ class SigGenHP8672A(GpibDevice):
         # nullcontext is a context manager that does nothing. It evaluates to `None` in an `as` clause.
         return contextlib.nullcontext()
 
+    @classmethod
+    def create_command(
+        cls,
+        *,
+        frequency: float | None = None,
+        fm: Literal[
+            "30 kHz",
+            "100 kHz",
+            "300 kHz",
+            "1 MHz",
+            "3 MHz",
+            "10 MHz",
+        ]
+        | None = None,
+        alc: Literal[
+            "RF OFF",
+            "INT NORMAL",
+            "INT, +10 RANGE",
+            "XTAL, NORMAL",
+            "XTAL, +10 RANGE",
+            "MTR, NORMAL",
+            "MTR, +10 RANGE",
+        ]
+        | None = None,
+        output_level_range: Literal[
+            0,
+            -10,
+            
+        ]
+    ) -> str:
+        pass
+
 
 if __name__ == "__main__":
     rm = pyvisa.ResourceManager()
@@ -64,7 +111,7 @@ if __name__ == "__main__":
         open_immediately=True,
         log_query_messages=True,
     )
-    
+
     print(f"{sig_gen=!r}")
     print(f"{sig_gen=!s}")
 
