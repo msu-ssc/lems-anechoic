@@ -1,15 +1,13 @@
 import contextlib
-import enum
 from typing import TYPE_CHECKING
-from typing import Literal
 
 import pyvisa
 
+from msu_anechoic import sig_gen_enums
 from msu_anechoic.spec_an import GpibDevice
 
 if TYPE_CHECKING:
     import logging
-
 
 
 class SigGenHP8672A(GpibDevice):
@@ -69,53 +67,101 @@ class SigGenHP8672A(GpibDevice):
         cls,
         *,
         frequency: float | None = None,
-        fm: Literal[
-            "30 kHz",
-            "100 kHz",
-            "300 kHz",
-            "1 MHz",
-            "3 MHz",
-            "10 MHz",
-        ]
-        | None = None,
-        alc: Literal[
-            "RF OFF",
-            "INT NORMAL",
-            "INT, +10 RANGE",
-            "XTAL, NORMAL",
-            "XTAL, +10 RANGE",
-            "MTR, NORMAL",
-            "MTR, +10 RANGE",
-        ]
-        | None = None,
-        output_level_range: Literal[
-            0,
-            -10,
-            
-        ]
+        fm: sig_gen_enums.FM | None = None,
+        alc: sig_gen_enums.ALC | None = None,
+        am: sig_gen_enums.AM | None = None,
+        output_level_range: sig_gen_enums.OutputLevelRange | None = None,
+        output_level_vernier: sig_gen_enums.OutputLevelVernier | None = None,
     ) -> str:
+        command = ""
+
+        if frequency is not None:
+            program_code = sig_gen_enums.ProgramCode.from_frequency(frequency)
+
+            # Frequency needs to be an integer of precisely 8 digits,
+            # left-aligned and zero padded (if necessary) on the right, like the mantissa
+            # of scientific notation (but without the decimal point).
+            #
+            # So 12345.6 becomes "12345600" and 123.456789123456 becomes "12345678"
+            frequency_int = int(frequency)
+            frequency_str = f"{frequency_int:08d}"[:8]
+
+            # Format is PROGRAM_CODE + FREQUENCY (left-aligned+ "Z0"
+            command += f"{program_code.value}{frequency_str}Z0"
+
+        if fm is not None:
+            command += "N" + fm.value
+
+        if alc is not None:
+            command += "O" + alc.value
+
+        if output_level_range is not None:
+            command += "K" + output_level_range.value
+
+        if output_level_vernier is not None:
+            command += "L" + output_level_vernier.value
+
+        if am is not None:
+            command += "M" + am.value
+
+        return command
         pass
 
 
 if __name__ == "__main__":
-    rm = pyvisa.ResourceManager()
-    resource_names = rm.list_resources()
-    for resource_name in resource_names:
-        if resource_name.startswith("GPIB"):
-            break
+    from msu_ssc import ssc_log
+
+    ssc_log.init(level="DEBUG")
+
+    logger = ssc_log.logger.getChild("sig_gen")
+
+    command = SigGenHP8672A.create_command(
+        frequency=8_450_000_000,
+        fm=sig_gen_enums.FM.OFF,
+        alc=sig_gen_enums.ALC.INT_NORMAL,
+        am=sig_gen_enums.AM.OFF,
+        output_level_range=sig_gen_enums.OutputLevelRange.NEGATIVE_30_DBM,
+        output_level_vernier=sig_gen_enums.OutputLevelVernier.PLUS_THREE_DB,
+    )
+    print(f"{command=}")
+    # exit()
+
+    # rm = pyvisa.ResourceManager()
+    # resource_names = rm.list_resources()
+    # for resource_name in resource_names:
+    #     if resource_name.startswith("GPIB"):
+    #         break
+
+    resource_name = "GPIB0::MAYO_FILL_THIS_IN::INSTR"
 
     print(f"Opening {resource_name=}")
-    sig_gen = SigGenHP8672A(
-        resource_manager=rm,
+    with SigGenHP8672A(
+        # resource_manager=rm,
         gpib_address=resource_name,
         open_immediately=True,
         log_query_messages=True,
-    )
+        logger=logger,
+    ) as sig_gen:
+        print(f"{sig_gen=!r}")
+        print(f"{sig_gen=!s}")
 
-    print(f"{sig_gen=!r}")
-    print(f"{sig_gen=!s}")
+        logger.info(f"Attempting to read one byte")
+        data = sig_gen.resource.read_raw(1)
+        logger.info(f"Read one byte: {data=}")
 
-    query = "P084500000Z0K3L0M0N6O1"
-    print(f"Querying {query=}")
-    response = sig_gen.query("P084500000Z0K3L0M0N6O1")
-    print(f"{response=}")
+        # command = "P084500000Z0K3L0M0N6O1"
+        command = sig_gen.create_command(
+            frequency=8_450_000_000,
+        )
+        logger.info(f"Writing {command=}")
+        sig_gen.resource.write(command)
+
+        logger.info(f"Reading response")
+        data = sig_gen.resource.read_raw(1)
+        logger.info(f"Read one byte: {data=}")
+
+        # sig_gen.resource.read_raw
+        # print(f"{sig_gen.read}")
+        # print(f"Querying {command=}")
+        # response = sig_gen.query("P084500000Z0K3L0M0N6O1")
+        # print(f"{response=}")

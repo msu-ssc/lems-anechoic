@@ -1,7 +1,7 @@
 import enum
 
 
-class Frequency(enum.Enum):
+class ProgramCode(enum.Enum):
     TEN_GHZ = "P"
     ONE_GHZ = "Q"
     ONE_HUNDRED_MHZ = "R"
@@ -11,6 +11,26 @@ class Frequency(enum.Enum):
     TEN_KHZ = "V"
     ONE_KHZ = "W"
     EXECUTE = "Z"
+
+    @classmethod
+    def from_frequency(cls, frequency: float) -> "ProgramCode":
+        if frequency >= 10e9:
+            return cls.TEN_GHZ
+        if frequency >= 1e9:
+            return cls.ONE_GHZ
+        if frequency >= 100e6:
+            return cls.ONE_HUNDRED_MHZ
+        if frequency >= 10e6:
+            return cls.TEN_MHZ
+        if frequency >= 1e6:
+            return cls.ONE_MHZ
+        if frequency >= 100e3:
+            return cls.ONE_HUNDRED_KHZ
+        if frequency >= 10e3:
+            return cls.TEN_KHZ
+        if frequency >= 1e3:
+            return cls.ONE_KHZ
+        raise ValueError(f"Frequency {frequency} is too low for a ProgramCode")
 
 
 class FM(enum.Enum):
