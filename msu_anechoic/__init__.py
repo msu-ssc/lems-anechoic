@@ -495,3 +495,116 @@ if __name__ == "__main__":
         ax.set_xticks(np.arange(-90, 91, 15))
         ax.set_yticks(np.arange(-90, 91, 15))
     plt.show()
+
+
+    points: list[AzElTurntable] = []
+    for tt_azimuth in range(-180, 181, 10):
+        for tt_elevation in range(-90, 45, 5):
+            tt_point = AzElTurntable(azimuth=tt_azimuth, elevation=tt_elevation)
+            points.append(tt_point)
+    spherical_points = [point.to_spherical for point in points]
+
+    points: list[AzElSpherical] = []
+    for real_azimuth in range(-180, 181, 15):
+        for real_elevation in range(-90, 90, 5):
+            real_point = AzElSpherical(azimuth=real_azimuth, elevation=real_elevation)
+            points.append(real_point)
+    
+    spherical_points = points[:]
+    # spherical_points = [point.to_spherical for point in points]
+
+
+    fig = plt.figure()
+    ax: plt.Axes = fig.add_subplot(111, projection='3d')
+    print(type(ax))
+
+    # Plot the spherical points
+    xs, ys, zs = [], [], []
+    for point in spherical_points:
+        x, y, z = point.to_cartesian(radius=1)
+        xs.append(x)
+        ys.append(y)
+        zs.append(z)
+    
+        tt_coord = point.to_turntable
+        if tt_coord.elevation >= 45:
+            color = 'red'
+            # ax.scatter(x, y, z, color=color, marker='o')
+        else:
+            color = 'blue'
+        
+    # sc = ax.scatter(xs, ys, zs, c=zs, cmap='coolwarm', marker='o')
+    # # Add color bar
+    # cbar = plt.colorbar(sc, ax=ax, shrink=0.5, aspect=5)
+    # cbar.set_label('Z value')
+    # sc.set_cmap('coolwarm')
+    # Set labels
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_zlabel('Z')
+
+    # Set aspect ratio
+    ax.set_box_aspect([1, 1, 1])
+
+    # Create a mesh grid for the sphere
+    u = np.linspace(0, 2 * np.pi, 30)
+    v = np.linspace(0, np.pi, 30)
+    r = 0.98
+    x_sphere = r * np.outer(np.cos(u), np.sin(v))
+    y_sphere = r * np.outer(np.sin(u), np.sin(v))
+    z_sphere = r * np.outer(np.ones(np.size(u)), np.cos(v))
+
+    # Plot the sphere
+    ax.plot_surface(x_sphere, y_sphere, z_sphere, color="gray", alpha=0.2)
+
+    # Create an arrow from the origin to the point (2, 0, 0)
+    ax.quiver(0, 0, 0, 1.5, 0, 0, color='red', arrow_length_ratio=0.1)
+
+    # Add text at the tip of the arrow
+    ax.text(1.5, 0, 0, "horizontal", color='red')
+
+    # Create an arrow tilted up 3 degrees from horizontal
+    tilt_angle_deg = 3
+    tilt_angle_rad = np.radians(tilt_angle_deg)
+
+    # Calculate the components of the arrow
+    arrow_length = 1.5
+    x_tilted = arrow_length * np.cos(tilt_angle_rad)
+    z_tilted = arrow_length * np.sin(tilt_angle_rad)
+
+    # Create the tilted arrow
+    ax.quiver(0, 0, 0, x_tilted, 0, z_tilted, color='green', arrow_length_ratio=0.1)
+
+    # Add text at the tip of the tilted arrow
+    ax.text(x_tilted, 0, z_tilted, f"source", color='green')
+
+    # Add black circles along the xy plane
+    theta = np.linspace(0, 2 * np.pi, 100)
+    r = 1
+    x_circle = r * np.cos(theta)
+    y_circle = r * np.sin(theta)
+    z_circle = np.zeros_like(theta)
+    ax.plot(x_circle, y_circle, z_circle, color='black', linestyle='-', linewidth=0.5)
+
+    # Add black circles along the yz plane
+    y_circle = r * np.cos(theta)
+    z_circle = r * np.sin(theta)
+    x_circle = np.zeros_like(theta)
+    ax.plot(x_circle, y_circle, z_circle, color='red', linestyle='-', linewidth=1.5)
+
+    # Add black circles along the xz plane
+    x_circle = r * np.cos(theta)
+    z_circle = r * np.sin(theta)
+    y_circle = np.zeros_like(theta)
+    ax.plot(x_circle, y_circle, z_circle, color='black', linestyle='-', linewidth=0.5)
+
+    # Add red circle through the points (1, 0, 1) and (0, 1, 0), centered at the origin
+    theta = np.linspace(0, 2 * np.pi, 100)
+    r = 1  # radius for the circle passing through (1, 0, 1) and (0, 1, 0)
+    x_circle = r * np.cos(theta) * 1/np.sqrt(2)
+    y_circle = r * np.sin(theta)
+    z_circle = r * np.cos(theta) * 1/np.sqrt(2)
+    ax.plot(x_circle, y_circle, z_circle, color='red', linestyle='-', linewidth=1.5)
+    
+
+    plt.show()
