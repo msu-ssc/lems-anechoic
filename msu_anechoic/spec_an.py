@@ -279,7 +279,9 @@ class SpectrumAnalyzerHP8563E(GpibDevice):
         return max(self.get_trace())
 
     def get_highest_amplitude_2(self) -> tuple[float, float]:   
-        """Get the highest amplitude from the trace."""
+        """Get the highest amplitude from the trace.
+        
+        Return value is `(frerquency, amplitude)`."""
         self.logger.debug(f"Getting highest amplitude from {self.gpib_address!r}")
 
         # Marker to highest freq
@@ -313,83 +315,86 @@ if __name__ == "__main__":
         if not spectrum_analyzer:
             spec_an_logger.error("No spectrum analyzer found.")
             sys.exit(1)
+
+        spectrum_analyzer.set_center_frequency(8_450_000_000)
+        spectrum_analyzer.set_span(1_000_000)
         # with SpectrumAnalyzerHP8563E(
         #     gpib_address="GPIB0::18::INSTR",
         #     logger=spec_an_logger,
         # ) as spectrum_analyzer:
         # spectrum_analyzer.open()
 
-        print(spectrum_analyzer.query("CF?"))
-        print(spectrum_analyzer.write("CF 287000000"))
-        print(spectrum_analyzer.query("CF?"))
+        # print(spectrum_analyzer.query("CF?"))
+        # print(spectrum_analyzer.write("CF 287000000"))
+        # print(spectrum_analyzer.query("CF?"))
 
-        print(f"{spectrum_analyzer.resource.query_delay=}")
+        # print(f"{spectrum_analyzer.resource.query_delay=}")
 
-        print(spectrum_analyzer.get_center_frequency())
-        print(spectrum_analyzer.get_span())
-        import time
-        for _ in range(10):
-            start = time.monotonic()
-            spectrum_analyzer.set_center_frequency(287_000_000)
-            spectrum_analyzer.set_span(100_000_000)
-            stop = time.monotonic()
-            print(f"Time to set center frequency and span: {stop - start:.2f}s")
+        # print(spectrum_analyzer.get_center_frequency())
+        # print(spectrum_analyzer.get_span())
+        # import time
+        # for _ in range(10):
+        #     start = time.monotonic()
+        #     spectrum_analyzer.set_center_frequency(287_000_000)
+        #     spectrum_analyzer.set_span(100_000_000)
+        #     stop = time.monotonic()
+        #     print(f"Time to set center frequency and span: {stop - start:.2f}s")
             
-        # exit()
-        print(spectrum_analyzer.get_center_frequency())
-        print(spectrum_analyzer.get_span())
+        # # exit()
+        # print(spectrum_analyzer.get_center_frequency())
+        # print(spectrum_analyzer.get_span())
 
-        print(spectrum_analyzer.query("FA?"))
-        print(spectrum_analyzer.query("FB?"))
+        # print(spectrum_analyzer.query("FA?"))
+        # print(spectrum_analyzer.query("FB?"))
 
-        spectrum_analyzer.set_lower_frequency(287_000_000)
-        spectrum_analyzer.set_upper_frequency(487_000_000)
-        print(spectrum_analyzer.get_lower_frequency())
-        print(spectrum_analyzer.get_upper_frequency())
-        print(spectrum_analyzer.get_span())
-        print(spectrum_analyzer.get_center_frequency())
+        # spectrum_analyzer.set_lower_frequency(287_000_000)
+        # spectrum_analyzer.set_upper_frequency(487_000_000)
+        # print(spectrum_analyzer.get_lower_frequency())
+        # print(spectrum_analyzer.get_upper_frequency())
+        # print(spectrum_analyzer.get_span())
+        # print(spectrum_analyzer.get_center_frequency())
 
-        # print(spectrum_analyzer.get_trace("A"))
+        # # print(spectrum_analyzer.get_trace("A"))
 
-        # trace = spectrum_analyzer.get_trace("A")
-        # numbers = [float(x) for x in trace.split(",")]
-        # print(numbers)
-        # print(len(numbers))
+        # # trace = spectrum_analyzer.get_trace("A")
+        # # numbers = [float(x) for x in trace.split(",")]
+        # # print(numbers)
+        # # print(len(numbers))
 
-        print("MARKER:", spectrum_analyzer.get_marker_frequency())
-        # spectrum_analyzer.set_center_frequency(300_000_000)
-        print("MARKER:", spectrum_analyzer.get_marker_frequency())
-        spectrum_analyzer.write("CF 300000000")
-        spectrum_analyzer.write("MKF 400000000")
-        spectrum_analyzer.write("MKCF")
-        print("MARKER:", spectrum_analyzer.get_marker_frequency())
-        print("CENTER:", spectrum_analyzer.get_center_frequency())
+        # print("MARKER:", spectrum_analyzer.get_marker_frequency())
+        # # spectrum_analyzer.set_center_frequency(300_000_000)
+        # print("MARKER:", spectrum_analyzer.get_marker_frequency())
+        # spectrum_analyzer.write("CF 300000000")
+        # spectrum_analyzer.write("MKF 400000000")
+        # spectrum_analyzer.write("MKCF")
+        # print("MARKER:", spectrum_analyzer.get_marker_frequency())
+        # print("CENTER:", spectrum_analyzer.get_center_frequency())
 
-        print("MARKER AMPLITUDE:", spectrum_analyzer.get_marker_amplitude())
-        print("CENTER AMPLITUDE:", spectrum_analyzer.get_center_frequency_amplitude())
+        # print("MARKER AMPLITUDE:", spectrum_analyzer.get_marker_amplitude())
+        # print("CENTER AMPLITUDE:", spectrum_analyzer.get_center_frequency_amplitude())
 
-        xs, ys = spectrum_analyzer.get_trace_frequencies_and_amplitudes("A")
+        # xs, ys = spectrum_analyzer.get_trace_frequencies_and_amplitudes("A")
 
-        print(f"{spectrum_analyzer.query('AUNITS?')}")
+        # print(f"{spectrum_analyzer.query('AUNITS?')}")
 
-        import time
+        # import time
 
-        for _ in range(10):
-            start_time = time.monotonic()
+        # for _ in range(10):
+        #     start_time = time.monotonic()
 
-            # cf = spectrum_analyzer.get_center_frequency()
-            # cf_power = spectrum_analyzer.get_center_frequency_amplitude()
+        #     # cf = spectrum_analyzer.get_center_frequency()
+        #     # cf_power = spectrum_analyzer.get_center_frequency_amplitude()
 
-            spectrum_analyzer.set_marker_frequency(300_000_000)
-            # marker_power = spectrum_analyzer.get_marker_amplitude()
-            max_power_freq, max_power_amp = spectrum_analyzer.get_highest_amplitude_2()
-            stop_time = time.monotonic()
-            print(f"Time to get data: {stop_time - start_time:.2f}s {max_power_freq=} {max_power_amp=}")
+        #     spectrum_analyzer.set_marker_frequency(300_000_000)
+        #     # marker_power = spectrum_analyzer.get_marker_amplitude()
+        #     max_power_freq, max_power_amp = spectrum_analyzer.get_highest_amplitude_2()
+        #     stop_time = time.monotonic()
+        #     print(f"Time to get data: {stop_time - start_time:.2f}s {max_power_freq=} {max_power_amp=}")
 
-        # import matplotlib.pyplot as plt
+        # # import matplotlib.pyplot as plt
 
-        # fig, ax = plt.subplots()
-        # ax.plot(xs, ys)
-        # ax.set_xlabel("Frequency (Hz)")
-        # ax.set_ylabel("Amplitude (dBm)")
-        # plt.show()
+        # # fig, ax = plt.subplots()
+        # # ax.plot(xs, ys)
+        # # ax.set_xlabel("Frequency (Hz)")
+        # # ax.set_ylabel("Amplitude (dBm)")
+        # # plt.show()

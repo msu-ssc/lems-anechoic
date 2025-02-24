@@ -99,7 +99,7 @@ def generate_grid(
 def user_guided_box_scan(
     *,
     spec_an: spec_an.SpectrumAnalyzerHP8563E,
-    turn_table: turn_table.TurnTable,
+    turn_table: turn_table.Turntable,
     azimuth_min: float,
     azimuth_max: float,
     elevation_min: float,
@@ -130,7 +130,7 @@ def user_guided_box_scan(
     # else:
     #     starting_point = None
     try:
-        starting_point = turn_table.get_location()
+        starting_point = turn_table.get_position()
     except Exception:
         starting_point = None
 
@@ -197,7 +197,7 @@ def user_guided_box_scan(
 # def box_scan(
 #     *,
 #     spec_an: spec_an.SpectrumAnalyzerHP8563E,
-#     turn_table: turn_table.TurnTable,
+#     turn_table: turn_table.TurnTable,v
 #     azimuth_min: float,
 #     azimuth_max: float,
 #     elevation_min: float,
@@ -232,6 +232,43 @@ def user_guided_box_scan(
 
 
 if __name__ == "__main__":
+    from msu_ssc import ssc_log
+    ssc_log.init(level="DEBUG")
+    logger = ssc_log.logger.getChild("procedures")
+
+    tt = turn_table.Turntable(
+        port="COM5",
+        logger=logger,
+    )
+    with spec_an.SpectrumAnalyzerHP8563E.find(
+        logger=logger
+    ) as spectrum_analyzer:
+        print(spectrum_analyzer)
+        print(tt)
+
+        
+
+        print(f"{tt=}")
+        print(f"{spectrum_analyzer=}")
+        spectrum_analyzer.set_center_frequency(8_450_000_453)
+        spectrum_analyzer.set_span(1_000)
+        print(f"{spectrum_analyzer.get_center_frequency_amplitude()=}")
+        print(f"{spectrum_analyzer.get_center_frequency()=}")
+        print(f"{spectrum_analyzer.get_span()=}")
+        # exit()
+        tt.interactively_center()
+        user_guided_box_scan(
+            spec_an=spectrum_analyzer,
+            turn_table=tt,
+            azimuth_max=10,
+            azimuth_min=-10,
+            elevation_max=10,
+            elevation_min=-10,
+            azimuth_step_count=5,
+            elevation_step_count=3,
+            function_to_maximize=spec_an.SpectrumAnalyzerHP8563E.get_highest_amplitude,
+        )
+    exit()
     import random
 
     rand = random.Random(40351)

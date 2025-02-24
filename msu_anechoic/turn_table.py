@@ -377,119 +377,126 @@ if __name__ == "__main__":
 
     ssc_log.init(level="INFO")
     logger = ssc_log.logger.getChild("turntable")
-    try:
-        tt = Turntable(port="COM5", logger=logger, timeout=1.0)
 
-        while True:
-            position = tt.get_position()
-            print(
-                f"{position=} {tt.time_since_last_communication()=} {tt.most_recent_communication_time=} {tt.has_been_set=}"
-            )
-            time.sleep(0.1)
+    tt = Turntable(
+        port="COM5",
+        logger=logger,
+        timeout=1.0,
+    )
+    tt.interactively_center()
+    # try:
+    #     tt = Turntable(port="COM5", logger=logger, timeout=1.0)
 
-            if position:
-                break
-            # tt.move_to(azimuth=170.0, elevation=-30.0)
+    #     while True:
+    #         position = tt.get_position()
+    #         print(
+    #             f"{position=} {tt.time_since_last_communication()=} {tt.most_recent_communication_time=} {tt.has_been_set=}"
+    #         )
+    #         time.sleep(0.1)
 
-            # tt.move_to(azimuth=236, elevation=0.0)
+    #         if position:
+    #             break
+    #         # tt.move_to(azimuth=170.0, elevation=-30.0)
 
-        response = tt.send_set_command(
-            azimuth=0.0,
-            elevation=0.0,
-        )
-        print(f"{response=}")
+    #         # tt.move_to(azimuth=236, elevation=0.0)
 
-        # response = tt.move_to(azimuth=15.0, elevation=0.0)
-        # response = tt.move_to(azimuth=0.0, elevation=0.0)
-        # while True:
-        #     position = tt.get_position()
-        #     print(
-        #         f"{position=} {tt.time_since_last_communication()=} {tt.most_recent_communication_time=} {tt.has_been_set=}"
-        #     )
-        #     time.sleep(0.1)
+    #     response = tt.send_set_command(
+    #         azimuth=0.0,
+    #         elevation=0.0,
+    #     )
+    #     print(f"{response=}")
 
-        for distance in [
-            # 0.25,
-            # 0.50,
-            # 0.75,
-            # 1.00,
-            # 1.25,
-            # 1.50,
-            # 1.75,
-            # 2.00,
-            # 2.25,
-            # 2.50,
-            # 3.00,
-            # 4.00,
-            # 5.00,
-            # 6.00,
-            # 7.00,
-            # 8.00,
-            # 9.00,
-            # 10.00,
-            15.00,
-            20.00,
-            25.00,
-            30.00,
-        ]:
-            tt.move_to(azimuth=0.0, elevation=0.0)
-            start = time.monotonic()
-            tt.move_to(azimuth=distance, elevation=0.0)
-            stop = time.monotonic()
-            with open("turntable_move_times.txt", "a") as f:
-                f.write(f"+AZIMUTH,{distance}, {stop - start}\n")
+    #     # response = tt.move_to(azimuth=15.0, elevation=0.0)
+    #     # response = tt.move_to(azimuth=0.0, elevation=0.0)
+    #     # while True:
+    #     #     position = tt.get_position()
+    #     #     print(
+    #     #         f"{position=} {tt.time_since_last_communication()=} {tt.most_recent_communication_time=} {tt.has_been_set=}"
+    #     #     )
+    #     #     time.sleep(0.1)
+
+    #     for distance in [
+    #         # 0.25,
+    #         # 0.50,
+    #         # 0.75,
+    #         # 1.00,
+    #         # 1.25,
+    #         # 1.50,
+    #         # 1.75,
+    #         # 2.00,
+    #         # 2.25,
+    #         # 2.50,
+    #         # 3.00,
+    #         # 4.00,
+    #         # 5.00,
+    #         # 6.00,
+    #         # 7.00,
+    #         # 8.00,
+    #         # 9.00,
+    #         # 10.00,
+    #         15.00,
+    #         20.00,
+    #         25.00,
+    #         30.00,
+    #     ]:
+    #         tt.move_to(azimuth=0.0, elevation=0.0)
+    #         start = time.monotonic()
+    #         tt.move_to(azimuth=distance, elevation=0.0)
+    #         stop = time.monotonic()
+    #         with open("turntable_move_times.txt", "a") as f:
+    #             f.write(f"+AZIMUTH,{distance}, {stop - start}\n")
             
-            tt.move_to(azimuth=0.0, elevation=0.0)
-            start = time.monotonic()
-            tt.move_to(azimuth=-distance, elevation=0.0)
-            stop = time.monotonic()
-            with open("turntable_move_times.txt", "a") as f:
-                f.write(f"-AZIMUTH,{distance}, {stop - start}\n")
+    #         tt.move_to(azimuth=0.0, elevation=0.0)
+    #         start = time.monotonic()
+    #         tt.move_to(azimuth=-distance, elevation=0.0)
+    #         stop = time.monotonic()
+    #         with open("turntable_move_times.txt", "a") as f:
+    #             f.write(f"-AZIMUTH,{distance}, {stop - start}\n")
 
-            tt.move_to(azimuth=0.0, elevation=0.0)
-            start = time.monotonic()
-            tt.move_to(azimuth=0.0, elevation=distance)
-            stop = time.monotonic()
-            with open("turntable_move_times.txt", "a") as f:
-                f.write(f"+ELEVATION,{distance}, {stop - start}\n")
+    #         tt.move_to(azimuth=0.0, elevation=0.0)
+    #         start = time.monotonic()
+    #         tt.move_to(azimuth=0.0, elevation=distance)
+    #         stop = time.monotonic()
+    #         with open("turntable_move_times.txt", "a") as f:
+    #             f.write(f"+ELEVATION,{distance}, {stop - start}\n")
             
-            tt.move_to(azimuth=0.0, elevation=0.0)
-            start = time.monotonic()
-            tt.move_to(azimuth=0.0, elevation=-distance)
-            stop = time.monotonic()
-            with open("turntable_move_times.txt", "a") as f:
-                f.write(f"-ELEVATION,{distance}, {stop - start}\n")
+    #         tt.move_to(azimuth=0.0, elevation=0.0)
+    #         start = time.monotonic()
+    #         tt.move_to(azimuth=0.0, elevation=-distance)
+    #         stop = time.monotonic()
+    #         with open("turntable_move_times.txt", "a") as f:
+    #             f.write(f"-ELEVATION,{distance}, {stop - start}\n")
 
-            tt.move_to(azimuth=0.0, elevation=0.0)
-            start = time.monotonic()
-            tt.move_to(azimuth=distance, elevation=distance)
-            stop = time.monotonic()
-            with open("turntable_move_times.txt", "a") as f:
-                f.write(f"+BOTH,{distance}, {stop - start}\n")
+    #         tt.move_to(azimuth=0.0, elevation=0.0)
+    #         start = time.monotonic()
+    #         tt.move_to(azimuth=distance, elevation=distance)
+    #         stop = time.monotonic()
+    #         with open("turntable_move_times.txt", "a") as f:
+    #             f.write(f"+BOTH,{distance}, {stop - start}\n")
 
-            tt.move_to(azimuth=0.0, elevation=0.0)
-            start = time.monotonic()
-            tt.move_to(azimuth=-distance, elevation=-distance)
-            stop = time.monotonic()
-            with open("turntable_move_times.txt", "a") as f:
-                f.write(f"-BOTH,{distance}, {stop - start}\n")
+    #         tt.move_to(azimuth=0.0, elevation=0.0)
+    #         start = time.monotonic()
+    #         tt.move_to(azimuth=-distance, elevation=-distance)
+    #         stop = time.monotonic()
+    #         with open("turntable_move_times.txt", "a") as f:
+    #             f.write(f"-BOTH,{distance}, {stop - start}\n")
 
 
-        # start = time.monotonic()
-        # for azimuth in np.arange(0.25, 20.25, 0.25):
-        #     tt.move_to(azimuth=azimuth, elevation=0.0)
-        # stop = time.monotonic()
-        # print(f"Took {stop - start} seconds to move 20 degrees RIGHT in 0.25 degree increments")
+    #     # start = time.monotonic()
+    #     # for azimuth in np.arange(0.25, 20.25, 0.25):
+    #     #     tt.move_to(azimuth=azimuth, elevation=0.0)
+    #     # stop = time.monotonic()
+    #     # print(f"Took {stop - start} seconds to move 20 degrees RIGHT in 0.25 degree increments")
 
-        # # 1/0  # Force an exception to test emergency move command.
+    #     # # 1/0  # Force an exception to test emergency move command.
 
-        # start = time.monotonic()
-        # tt.move_to(azimuth=0.0, elevation=0.0)
-        # stop = time.monotonic()
-        # print(f"Took {stop - start} seconds to move 10 degrees DOWN at slew speeds")
-    except (KeyboardInterrupt, Exception):
-        pass
-    finally:
-        # logger.error(f"Exception: {exc}", exc_info=exc)
-        logger.error("Moving to emergency position")
-        tt.send_emergency_move_command(azimuth=0.0, elevation=0.0)
+    #     # start = time.monotonic()
+    #     # tt.move_to(azimuth=0.0, elevation=0.0)
+    #     # stop = time.monotonic()
+    #     # print(f"Took {stop - start} seconds to move 10 degrees DOWN at slew speeds")
+    # except (KeyboardInterrupt, Exception):
+    #     pass
+    # finally:
+    #     # logger.error(f"Exception: {exc}", exc_info=exc)
+    #     logger.error("Moving to emergency position")
+    #     tt.send_emergency_move_command(azimuth=0.0, elevation=0.0)
