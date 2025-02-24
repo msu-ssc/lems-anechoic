@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import NamedTuple
 
-from matplotlib import pyplot as plt
 import numpy as np
+from matplotlib import pyplot as plt
 
 
 class AzEl(NamedTuple):
@@ -36,21 +36,17 @@ class AzEl(NamedTuple):
         """Convert the azimuth and elevation to Cartesian coordinates on a spher with the given radius."""
         # DO NOT IMPLEMENT HERE!
         raise NotImplementedError("Subclasses must implement this method.")
+    
+    def to_turntable(self) -> "AzElTurntable":
+        """Convert the current azimuth and elevation to turn-table coordinates."""
+        # DO NOT IMPLEMENT HERE!
+        raise NotImplementedError("Subclasses must implement this method.")
+    
+    def to_spherical(self) -> "AzElSpherical":
+        """Convert the current azimuth and elevation to spherical coordinates."""
+        # DO NOT IMPLEMENT HERE!
+        raise NotImplementedError("Subclasses must implement this method.")
 
-    def as_turntable(self) -> "AzElTurntable":
-        """Cast the current azimuth and elevation to turn-table coordinates.
-
-        NOTE: This is not a conversion, it is a cast!"""
-        return AzElTurntable(azimuth=self.azimuth, elevation=self.elevation)
-
-    def as_spherical(self) -> "AzElSpherical":
-        """Cast the current azimuth and elevation to spherical coordinates.
-
-        NOTE: This is not a conversion, it is a cast!"""
-        return AzElSpherical(azimuth=self.azimuth, elevation=self.elevation)
-
-
-import math
 
 
 def turntable_to_traditional(*, turn_elevation_deg: float, turn_azimuth_deg: float) -> tuple[float, float]:
@@ -66,8 +62,8 @@ def turntable_to_traditional(*, turn_elevation_deg: float, turn_azimuth_deg: flo
       traditional azimuth (angle in the horizontal plane) and elevation (angle above horizontal).
     """
     # Convert degrees to radians
-    turn_elevation_rad = math.radians(turn_elevation_deg)
-    turn_azimuth_rad = math.radians(turn_azimuth_deg)
+    turn_elevation_rad = np.radians(turn_elevation_deg)
+    turn_azimuth_rad = np.radians(turn_azimuth_deg)
 
     # After the elevation rotation (about y by -E) and then azimuth rotation (about z by A),
     # the pointer vector becomes:
@@ -76,17 +72,17 @@ def turntable_to_traditional(*, turn_elevation_deg: float, turn_azimuth_deg: flo
     #
     # where R_z(A)*[1, 0, 0] = [cos(A), sin(A), 0] and
     # R_y(-E) rotates this vector to:
-    x = math.cos(turn_elevation_rad) * math.cos(turn_azimuth_rad)
-    y = math.sin(turn_azimuth_rad)
-    z = math.sin(turn_elevation_rad) * math.cos(turn_azimuth_rad)
+    x = np.cos(turn_elevation_rad) * np.cos(turn_azimuth_rad)
+    y = np.sin(turn_azimuth_rad)
+    z = np.sin(turn_elevation_rad) * np.cos(turn_azimuth_rad)
 
     # Compute traditional spherical angles:
-    trad_azimuth_rad = math.atan2(y, x)  # azimuth: angle in x-y plane
-    trad_elevation_rad = math.asin(z)  # elevation: arcsin(z) since |v| = 1
+    trad_azimuth_rad = np.atan2(y, x)  # azimuth: angle in x-y plane
+    trad_elevation_rad = np.asin(z)  # elevation: arcsin(z) since |v| = 1
 
     # Convert results back to degrees
-    trad_azimuth_deg = math.degrees(trad_azimuth_rad)
-    trad_elevation_deg = math.degrees(trad_elevation_rad)
+    trad_azimuth_deg = np.degrees(trad_azimuth_rad)
+    trad_elevation_deg = np.degrees(trad_elevation_rad)
 
     return trad_azimuth_deg, trad_elevation_deg
 
@@ -109,7 +105,6 @@ class AzElTurntable(AzEl):
     the turn-table moves in elevation FIRST, then azimuth moves around a plane within a plane that is
     inclined at the elevation angle."""
 
-    @property
     def to_spherical(self) -> "AzElSpherical":
         """Convert this turn-table coordinate to a "normal" spherical coordinate."""
         az, el = turntable_to_traditional(turn_elevation_deg=self.elevation, turn_azimuth_deg=self.azimuth)
@@ -117,23 +112,26 @@ class AzElTurntable(AzEl):
 
     def to_cartesian(self, radius: float = 1) -> tuple[float, float, float]:
         return self.to_spherical.to_cartesian(radius=radius)
-
+    
+    def to_turntable(self) -> "AzElTurntable":
+        return self
+    
 
 class AzElSpherical(AzEl):
     """Azimuth and elevation in "normal" spherical coordinates."""
 
     def to_cartesian(self, radius: float = 1) -> tuple[float, float, float]:
-        x = radius * math.cos(self.azimuth_radians) * math.cos(self.elevation_radians)
-        y = radius * math.sin(self.azimuth_radians) * math.cos(self.elevation_radians)
-        z = radius * math.sin(self.elevation_radians)
+        x = radius * np.cos(self.azimuth_radians) * np.cos(self.elevation_radians)
+        y = radius * np.sin(self.azimuth_radians) * np.cos(self.elevation_radians)
+        z = radius * np.sin(self.elevation_radians)
         return x, y, z
 
-    @property
     def to_turntable(self) -> "AzElTurntable":
-        """Convert this spherical coordinate to a turn-table coordinate."""
-
         az, el = traditional_to_turntable_numpy(trad_azimuth_deg=self.azimuth, trad_elevation_deg=self.elevation)
         return AzElTurntable(azimuth=az, elevation=el)
+    
+    def to_spherical(self) -> "AzElSpherical":
+        return self
 
 
 def create_null_logger() -> "logging.Logger":  # type: ignore # noqa: F821
@@ -143,9 +141,6 @@ def create_null_logger() -> "logging.Logger":  # type: ignore # noqa: F821
     logger = logging.getLogger("null")
     logger.addHandler(logging.NullHandler())
     return logger
-
-
-import numpy as np
 
 
 def turntable_to_traditional_numpy(turn_elevation_deg: float, turn_azimuth_deg: float) -> tuple[float, float]:
@@ -293,9 +288,6 @@ print(f"Traditional Elevation: {trad_elev:.2f}°")
 # plt.show()
 
 
-import numpy as np
-
-
 def traditional_to_turntable_numpy(trad_azimuth_deg: float, trad_elevation_deg: float) -> tuple[float, float]:
     """
     Convert traditional spherical coordinates (azimuth and elevation) to turntable coordinates.
@@ -357,7 +349,7 @@ if __name__ == "__main__":
 if __name__ == "__main__":
     # Turntable angles (example): Elevation 30° then Azimuth 40°
     az_size = 85
-    az_step = (az_size * 2)/50
+    az_step = (az_size * 2) / 50
     az_step = 5
     azimuths = list(np.arange(-az_size, az_size + az_step, az_step))
     # azimuths = list(np.linspace(-60, 60, 20))
@@ -383,10 +375,10 @@ if __name__ == "__main__":
         this_row_azimuths = azimuths if elevation_index % 2 == 0 else reversed(azimuths)
         for azimuth in this_row_azimuths:
             turntable = AzElTurntable(azimuth, elevation)
-            spherical = turntable.to_spherical
+            spherical = turntable.to_spherical()
 
             spherical = AzElSpherical(azimuth, elevation)
-            turntable = spherical.to_turntable
+            turntable = spherical.to_turntable()
             # turntable = spherical.as_turntable()
             spherical_points.append(spherical)
             turntable_points.append(turntable)
@@ -466,26 +458,29 @@ if __name__ == "__main__":
         label="End",
         markersize=2.5 * plt.rcParams["lines.markersize"],
     )
-    
+
     spherical_total_distance = 0
-    for point1, point2 in zip(spherical_points[1 : ], spherical_points[ : -1]):
+    for point1, point2 in zip(spherical_points[1:], spherical_points[:-1]):
         az_dist = abs(point1.azimuth - point2.azimuth)
         el_dist = abs(point1.elevation - point2.elevation)
         dist = max(az_dist, el_dist)
         spherical_total_distance += dist
     # ax_real.set_title("Spherical Coordinates")
-    ax_real.set_title(f"Spherical Coordinates (N={len(spherical_xs):,})\nAzimuth range: [{min(spherical_xs):.2f}, {max(spherical_xs):.2f}]\nElevation range: [{min(spherical_ys):.2f}, {max(spherical_ys):.2f}]\n(total distance: {spherical_total_distance:.2f} deg)\n")
+    ax_real.set_title(
+        f"Spherical Coordinates (N={len(spherical_xs):,})\nAzimuth range: [{min(spherical_xs):.2f}, {max(spherical_xs):.2f}]\nElevation range: [{min(spherical_ys):.2f}, {max(spherical_ys):.2f}]\n(total distance: {spherical_total_distance:.2f} deg)\n"
+    )
 
     turntable_total_distance = 0
-    for point1, point2 in zip(turntable_points[1 : ], turntable_points[ : -1]):
+    for point1, point2 in zip(turntable_points[1:], turntable_points[:-1]):
         az_dist = abs(point1.azimuth - point2.azimuth)
         el_dist = abs(point1.elevation - point2.elevation)
         dist = max(az_dist, el_dist)
         turntable_total_distance += dist
 
     increase_percentage = (turntable_total_distance - spherical_total_distance) / spherical_total_distance
-    ax_turn.set_title(f"Turn-table Coordinates (N={len(turntable_xs):,})\nAzimuth range: [{min(spherical_xs):.2f}, {max(spherical_xs):.2f}]\nElevation range: [{min(spherical_ys):.2f}, {max(spherical_ys):.2f}]\n(total distance: {turntable_total_distance:.2f} deg)\n{increase_percentage:.2%} increase")
-
+    ax_turn.set_title(
+        f"Turn-table Coordinates (N={len(turntable_xs):,})\nAzimuth range: [{min(spherical_xs):.2f}, {max(spherical_xs):.2f}]\nElevation range: [{min(spherical_ys):.2f}, {max(spherical_ys):.2f}]\n(total distance: {turntable_total_distance:.2f} deg)\n{increase_percentage:.2%} increase"
+    )
 
     for ax in [ax_real, ax_turn]:
         ax.set_xlim(-90, 90)
@@ -495,7 +490,6 @@ if __name__ == "__main__":
         ax.set_xticks(np.arange(-90, 91, 15))
         ax.set_yticks(np.arange(-90, 91, 15))
     plt.show()
-
 
     points: list[AzElTurntable] = []
     for tt_azimuth in range(-180, 181, 10):
@@ -509,13 +503,12 @@ if __name__ == "__main__":
         for real_elevation in range(-90, 90, 5):
             real_point = AzElSpherical(azimuth=real_azimuth, elevation=real_elevation)
             points.append(real_point)
-    
+
     spherical_points = points[:]
     # spherical_points = [point.to_spherical for point in points]
 
-
     fig = plt.figure()
-    ax: plt.Axes = fig.add_subplot(111, projection='3d')
+    ax: plt.Axes = fig.add_subplot(111, projection="3d")
     print(type(ax))
 
     # Plot the spherical points
@@ -525,23 +518,23 @@ if __name__ == "__main__":
         xs.append(x)
         ys.append(y)
         zs.append(z)
-    
-        tt_coord = point.to_turntable
+
+        tt_coord = point.to_turntable()
         if tt_coord.elevation >= 45:
-            color = 'red'
+            color = "red"
             # ax.scatter(x, y, z, color=color, marker='o')
         else:
-            color = 'blue'
-        
+            color = "blue"
+
     # sc = ax.scatter(xs, ys, zs, c=zs, cmap='coolwarm', marker='o')
     # # Add color bar
     # cbar = plt.colorbar(sc, ax=ax, shrink=0.5, aspect=5)
     # cbar.set_label('Z value')
     # sc.set_cmap('coolwarm')
     # Set labels
-    ax.set_xlabel('X')
-    ax.set_ylabel('Y')
-    ax.set_zlabel('Z')
+    ax.set_xlabel("X")
+    ax.set_ylabel("Y")
+    ax.set_zlabel("Z")
 
     # Set aspect ratio
     ax.set_box_aspect([1, 1, 1])
@@ -558,10 +551,10 @@ if __name__ == "__main__":
     ax.plot_surface(x_sphere, y_sphere, z_sphere, color="gray", alpha=0.2)
 
     # Create an arrow from the origin to the point (2, 0, 0)
-    ax.quiver(0, 0, 0, 1.5, 0, 0, color='red', arrow_length_ratio=0.1)
+    ax.quiver(0, 0, 0, 1.5, 0, 0, color="red", arrow_length_ratio=0.1)
 
     # Add text at the tip of the arrow
-    ax.text(1.5, 0, 0, "horizontal", color='red')
+    ax.text(1.5, 0, 0, "horizontal", color="red")
 
     # Create an arrow tilted up 3 degrees from horizontal
     tilt_angle_deg = 3
@@ -573,10 +566,10 @@ if __name__ == "__main__":
     z_tilted = arrow_length * np.sin(tilt_angle_rad)
 
     # Create the tilted arrow
-    ax.quiver(0, 0, 0, x_tilted, 0, z_tilted, color='green', arrow_length_ratio=0.1)
+    ax.quiver(0, 0, 0, x_tilted, 0, z_tilted, color="green", arrow_length_ratio=0.1)
 
     # Add text at the tip of the tilted arrow
-    ax.text(x_tilted, 0, z_tilted, f"source", color='green')
+    ax.text(x_tilted, 0, z_tilted, f"source", color="green")
 
     # Add black circles along the xy plane
     theta = np.linspace(0, 2 * np.pi, 100)
@@ -584,27 +577,26 @@ if __name__ == "__main__":
     x_circle = r * np.cos(theta)
     y_circle = r * np.sin(theta)
     z_circle = np.zeros_like(theta)
-    ax.plot(x_circle, y_circle, z_circle, color='black', linestyle='-', linewidth=0.5)
+    ax.plot(x_circle, y_circle, z_circle, color="black", linestyle="-", linewidth=0.5)
 
     # Add black circles along the yz plane
     y_circle = r * np.cos(theta)
     z_circle = r * np.sin(theta)
     x_circle = np.zeros_like(theta)
-    ax.plot(x_circle, y_circle, z_circle, color='red', linestyle='-', linewidth=1.5)
+    ax.plot(x_circle, y_circle, z_circle, color="red", linestyle="-", linewidth=1.5)
 
     # Add black circles along the xz plane
     x_circle = r * np.cos(theta)
     z_circle = r * np.sin(theta)
     y_circle = np.zeros_like(theta)
-    ax.plot(x_circle, y_circle, z_circle, color='black', linestyle='-', linewidth=0.5)
+    ax.plot(x_circle, y_circle, z_circle, color="black", linestyle="-", linewidth=0.5)
 
     # Add red circle through the points (1, 0, 1) and (0, 1, 0), centered at the origin
     theta = np.linspace(0, 2 * np.pi, 100)
     r = 1  # radius for the circle passing through (1, 0, 1) and (0, 1, 0)
-    x_circle = r * np.cos(theta) * 1/np.sqrt(2)
+    x_circle = r * np.cos(theta) * 1 / np.sqrt(2)
     y_circle = r * np.sin(theta)
-    z_circle = r * np.cos(theta) * 1/np.sqrt(2)
-    ax.plot(x_circle, y_circle, z_circle, color='red', linestyle='-', linewidth=1.5)
-    
+    z_circle = r * np.cos(theta) * 1 / np.sqrt(2)
+    ax.plot(x_circle, y_circle, z_circle, color="red", linestyle="-", linewidth=1.5)
 
     plt.show()
