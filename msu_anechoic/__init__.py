@@ -1,6 +1,6 @@
-from msu_anechoic.azel import AzEl
-from msu_anechoic.azel import AzElSpherical
-from msu_anechoic.azel import AzElTurntable
+from msu_anechoic.util.azel import AzEl
+from msu_anechoic.util.azel import AzElSpherical
+from msu_anechoic.util.azel import AzElTurntable
 
 
 def create_null_logger() -> "logging.Logger":  # type: ignore # noqa: F821

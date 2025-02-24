@@ -1,3 +1,8 @@
+"""
+Classes to represent Azimuth and Elevation coordinates in both traditional spherical coordinates
+and turn-table coordinates.
+"""
+
 from __future__ import annotations
 
 from typing import NamedTuple
@@ -7,7 +12,10 @@ from matplotlib import pyplot as plt
 
 
 class AzEl(NamedTuple):
-    """Azimuth and elevation in degrees."""
+    """Azimuth and elevation in degrees.
+
+    This is a base class and should generally not be used directly. Use child classes
+    `AzElSpherical` and `AzElTurntable` instead."""
 
     azimuth: float
     elevation: float
@@ -48,7 +56,11 @@ class AzEl(NamedTuple):
         raise NotImplementedError("Subclasses must implement this method.")
 
 
-def turntable_to_traditional(*, turn_elevation_deg: float, turn_azimuth_deg: float) -> tuple[float, float]:
+def _turntable_to_traditional(
+    *,
+    turn_elevation_deg: float,
+    turn_azimuth_deg: float,
+) -> tuple[float, float]:
     """
     Convert turntable angles to traditional spherical coordinates.
 
@@ -86,15 +98,7 @@ def turntable_to_traditional(*, turn_elevation_deg: float, turn_azimuth_deg: flo
     return trad_azimuth_deg, trad_elevation_deg
 
 
-# Example usage:
-if __name__ == "__main__":
-    # Turntable angles (example): Elevation 30° then Azimuth 40°
-    tt_elev = 90.0  # turntable elevation in degrees
-    tt_azim = -90.0  # turntable azimuth in degrees
 
-    trad_azim, trad_elev = turntable_to_traditional(turn_elevation_deg=tt_elev, turn_azimuth_deg=tt_azim)
-    print("Traditional azimuth: {:.2f}°".format(trad_azim))
-    print("Traditional elevation: {:.2f}°".format(trad_elev))
 
 
 class AzElTurntable(AzEl):
@@ -106,7 +110,7 @@ class AzElTurntable(AzEl):
 
     def to_spherical(self) -> "AzElSpherical":
         """Convert this turn-table coordinate to a "normal" spherical coordinate."""
-        az, el = turntable_to_traditional(turn_elevation_deg=self.elevation, turn_azimuth_deg=self.azimuth)
+        az, el = _turntable_to_traditional(turn_elevation_deg=self.elevation, turn_azimuth_deg=self.azimuth)
         return AzElSpherical(azimuth=az, elevation=el)
 
     def to_cartesian(self, radius: float = 1) -> tuple[float, float, float]:
@@ -178,10 +182,8 @@ def turntable_to_traditional_numpy(turn_elevation_deg: float, turn_azimuth_deg: 
     return trad_azimuth_deg, trad_elevation_deg
 
 
-# Example usage
-trad_azim, trad_elev = turntable_to_traditional_numpy(30, 40)
-print(f"Traditional Azimuth: {trad_azim:.2f}°")
-print(f"Traditional Elevation: {trad_elev:.2f}°")
+
+
 
 
 # import matplotlib.pyplot as plt
@@ -328,6 +330,19 @@ def traditional_to_turntable_numpy(trad_azimuth_deg: float, trad_elevation_deg: 
 
 # Example usage:
 if __name__ == "__main__":
+    # Turntable angles (example): Elevation 30° then Azimuth 40°
+    tt_elev = 90.0  # turntable elevation in degrees
+    tt_azim = -90.0  # turntable azimuth in degrees
+
+    trad_azim, trad_elev = _turntable_to_traditional(turn_elevation_deg=tt_elev, turn_azimuth_deg=tt_azim)
+    print("Traditional azimuth: {:.2f}°".format(trad_azim))
+    print("Traditional elevation: {:.2f}°".format(trad_elev))
+    # Example usage
+    trad_azim, trad_elev = turntable_to_traditional_numpy(30, 40)
+    print(f"Traditional Azimuth: {trad_azim:.2f}°")
+    print(f"Traditional Elevation: {trad_elev:.2f}°")
+
+# Example usage:
     # Traditional spherical coordinates (example values):
     trad_az = 45.0  # Traditional azimuth in degrees
     trad_el = 30.0  # Traditional elevation in degrees
@@ -336,7 +351,6 @@ if __name__ == "__main__":
     print(f"Turntable Elevation: {tt_elev:.2f}°")
     print(f"Turntable Azimuth: {tt_azim:.2f}°")
 
-if __name__ == "__main__":
     # Turntable angles (example): Elevation 30° then Azimuth 40°
     az_size = 85
     az_step = (az_size * 2) / 50
