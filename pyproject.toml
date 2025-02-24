@@ -34,6 +34,11 @@ extend-select = [
 force-single-line = true
 known-first-party = ["lems_a3", "moc_tools"]
 
+[tool.uv]
+dev-dependencies = [
+    "pytest>=8.3.4",
+]
+
 
 [tool.uv.sources]
 msu-ssc = { git = "https://github.com/msu-ssc/msu-ssc" }
