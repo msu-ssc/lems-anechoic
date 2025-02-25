@@ -9,6 +9,7 @@ dependencies = [
     "msu-ssc[logging,pretty]",
     "numpy>=2.2.2",
     "pandas>=2.2.3",
+    "pydantic>=2.10.6",
     "pyserial>=3.5",
     "pyvisa>=1.14.1",
     "scipy>=1.15.2",
