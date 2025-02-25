@@ -2,6 +2,7 @@
 
 logs/
 data/
+experiments/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
