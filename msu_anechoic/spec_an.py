@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+from pathlib import Path
 import sys
 from typing import TYPE_CHECKING
 from typing import Literal
@@ -278,8 +279,10 @@ class SpectrumAnalyzerHP8563E(GpibDevice):
         self.logger.debug(f"Getting highest amplitude from {self.gpib_address!r}")
         return max(self.get_trace())
 
-    def get_highest_amplitude_2(self) -> tuple[float, float]:   
-        """Get the highest amplitude from the trace."""
+    def get_peak_frequency_and_amplitude(self) -> tuple[float, float]:
+        """Do a peak search and get the peak frequency and amplitude.
+        
+        Returns `(frequency, amplitude)`."""
         self.logger.debug(f"Getting highest amplitude from {self.gpib_address!r}")
 
         # Marker to highest freq
@@ -288,6 +291,63 @@ class SpectrumAnalyzerHP8563E(GpibDevice):
         marker_amplitude = self.get_marker_amplitude()
         self.logger.debug(f"Marker at {marker_frequency=} with {marker_amplitude=}")
         return marker_frequency, marker_amplitude
+
+    def scan_continuously(
+        self,
+        *,
+        scan_cf_amplitude: bool = True,
+        scan_peak: bool = True,
+        csv_file_path: str | Path,
+        delay_between_observations: float = 0.05
+    ) -> None:
+        """Scan continuously for different things.
+        
+        This method should be a valid target for a `threading.Thread` or `multiprocessing.Process`."""
+        import csv
+        import time
+
+        csv_file_path = Path(csv_file_path).expanduser().resolve()
+        self.logger.info(f"Starting continuous scan on {self.gpib_address!r}. Saving to {csv_file_path} {scan_cf_amplitude=} {scan_peak=}")
+
+        csv_file_path.parent.mkdir(parents=True, exist_ok=True)
+        filenames = []
+        if scan_cf_amplitude:
+            filenames.extend(["center_frequency_amplitude", "center_frequency_amplitude_timestamp_before", "center_frequency_amplitude_timestamp_after"])
+        if scan_peak:
+            filenames.extend(["peak_frequency", "peak_amplitude", "peak_timestamp_before", "peak_timestamp_after"])
+
+        with open(csv_file_path, "w", newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=filenames, dialect="unix")
+            writer.writeheader()
+
+        while True:
+            if scan_cf_amplitude:
+                center_frequency_amplitude_timestamp_before = datetime.datetime.now(tz=datetime.timezone.utc)
+                center_frequency_amplitude = self.get_center_frequency_amplitude()
+                center_frequency_amplitude_timestamp_after = datetime.datetime.now(tz=datetime.timezone.utc)
+                self.logger.debug(f"Center frequency amplitude: {center_frequency_amplitude=}")
+            if scan_peak:
+                peak_timestamp_before = datetime.datetime.now(tz=datetime.timezone.utc)
+                peak_frequency, peak_amplitude = self.get_peak_frequency_and_amplitude()
+                peak_timestamp_after = datetime.datetime.now(tz=datetime.timezone.utc)
+                self.logger.debug(f"Highest amplitude: {peak_amplitude} at {peak_frequency} Hz")
+
+                with open(csv_file_path, "a", newline='') as f:
+                    writer = csv.DictWriter(f, fieldnames=filenames, dialect="unix")
+                    row = {}
+                    if scan_cf_amplitude:
+                        row["center_frequency_amplitude"] = center_frequency_amplitude
+                        row["center_frequency_amplitude_timestamp_before"] = center_frequency_amplitude_timestamp_before.isoformat(timespec="microseconds")
+                        row["center_frequency_amplitude_timestamp_after"] = center_frequency_amplitude_timestamp_after.isoformat(timespec="microseconds")
+                    if scan_peak:
+                        row["peak_frequency"] = peak_frequency
+                        row["peak_amplitude"] = peak_amplitude
+                        row["peak_timestamp_before"] = peak_timestamp_before.isoformat(timespec="microseconds")
+                        row["peak_timestamp_after"] = peak_timestamp_after.isoformat(timespec="microseconds")
+                    writer.writerow(row)
+
+            time.sleep(delay_between_observations)
+
 
 if __name__ == "__main__":
     import datetime
@@ -382,9 +442,30 @@ if __name__ == "__main__":
 
             spectrum_analyzer.set_marker_frequency(300_000_000)
             # marker_power = spectrum_analyzer.get_marker_amplitude()
-            max_power_freq, max_power_amp = spectrum_analyzer.get_highest_amplitude_2()
+            max_power_freq, max_power_amp = spectrum_analyzer.get_peak_frequency_and_amplitude()
             stop_time = time.monotonic()
             print(f"Time to get data: {stop_time - start_time:.2f}s {max_power_freq=} {max_power_amp=}")
+
+
+        import threading
+        
+        thread = threading.Thread(
+            target=spectrum_analyzer.scan_continuously,
+            daemon=True,
+            kwargs={
+                "scan_cf_amplitude": True,
+                "scan_peak": True,
+                "csv_file_path": "./test.csv",
+                "delay_between_observations": 0.1,
+            },
+        )
+
+        print("Starting thread")
+        thread.start()
+        print("Thread started")
+        time.sleep(20)
+        print("Stopping thread")
+        thread.join()
 
         # import matplotlib.pyplot as plt
 
