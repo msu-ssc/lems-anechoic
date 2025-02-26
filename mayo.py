@@ -19,13 +19,19 @@ if os.path.exists(jsonl_file_path):
 
 ssc_log.init(level="DEBUG", plain_text_file_path="mayo.log", jsonl_file_path="mayo.jsonl")
 
+spec_an_logger = ssc_log.logger.getChild("spec_an")
+spec_an_logger.setLevel("INFO")
+turn_table_logger = ssc_log.logger.getChild("turn_table")
+turn_table_logger.setLevel("DEBUG")
+
 INITIAL_CENTER_FREQUENCY = 8_450_000_000
+
 
 
 # CREATE SPEC AN OBJECT
 spec_an = SpectrumAnalyzerHP8563E.find(
     log_query_messages=False,
-    logger=ssc_log.logger.getChild("spec_an"),
+    logger=spec_an_logger,
 )
 if not spec_an:
     raise ValueError("No Spectrum Analyzer found.")
@@ -67,7 +73,7 @@ thread.start()
 turn_table = Turntable(
     port="COM5",
     timeout=5,
-    logger=ssc_log.logger.getChild("turn_table"),
+    logger=turn_table_logger,
     csv_file_path="turntable.csv",
 )
 
@@ -77,10 +83,16 @@ turn_table.send_set_command(azimuth=0, elevation=0)
 # MOVE TURNTABLE
 try:
     time.sleep(5)
-    turn_table.move_to(azimuth=0, elevation=-70)
+    turn_table.move_to(azimuth=0, elevation=-80)
     # time.sleep(5)
-    turn_table.move_to(azimuth=0, elevation=40)
+    # turn_table.move_to(azimuth=0, elevation=-31.0)
+    time.sleep(5)
+    # turn_table.move_to(azimuth=0, elevation=-30.0)
     # time.sleep(5)
+    # turn_table.move_to(azimuth=0, elevation=-29.0)
+    # time.sleep(5)
+    turn_table.move_to(azimuth=0, elevation=20)
+    time.sleep(5)
     turn_table.move_to(azimuth=0, elevation=0)
 
 finally:
