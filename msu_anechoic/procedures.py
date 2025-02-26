@@ -232,84 +232,88 @@ def user_guided_box_scan(
 
 
 if __name__ == "__main__":
-    import random
+    from msu_ssc import ssc_log
+    ssc_log.init(level="DEBUG", jsonl_file_path="./mayo.log")
+    tt = turn_table.Turntable(port="COM5", timeout=5, logger=ssc_log.logger)
+    tt.interactively_center()
+    # import random
 
-    rand = random.Random(40351)
+    # rand = random.Random(40351)
 
-    turn_table_starting_point = AzEl(azimuth=-1.5, elevation=-3.5)
-    azimuth_min = -5
-    azimuth_max = 5
-    elevation_min = -2
-    elevation_max = 2
-    grid = generate_grid(
-        azimuth_min=azimuth_min,
-        azimuth_max=azimuth_max,
-        elevation_min=elevation_min,
-        elevation_max=elevation_max,
-        azimuth_step_count=7,
-        elevation_step_count=3,
-        starting_point=turn_table_starting_point,
-    )
-    from rich.pretty import pprint
+    # turn_table_starting_point = AzEl(azimuth=-1.5, elevation=-3.5)
+    # azimuth_min = -5
+    # azimuth_max = 5
+    # elevation_min = -2
+    # elevation_max = 2
+    # grid = generate_grid(
+    #     azimuth_min=azimuth_min,
+    #     azimuth_max=azimuth_max,
+    #     elevation_min=elevation_min,
+    #     elevation_max=elevation_max,
+    #     azimuth_step_count=7,
+    #     elevation_step_count=3,
+    #     starting_point=turn_table_starting_point,
+    # )
+    # from rich.pretty import pprint
 
-    pprint(grid)
+    # pprint(grid)
 
-    strongest_signal_point = AzEl(azimuth=0.2, elevation=0.7)
-    powers = []
-    for point in grid:
-        # Signal strengh is 30 minus (Euclidean distance to the strongest signal point)
-        # NOTE: THIS IS NOT REALISITC!! BUT IT'S EASY TO IMPLEMENT IN CODE
-        max_signal = 30
-        distance_to_best = np.sqrt(
-            (point.azimuth - strongest_signal_point.azimuth) ** 2
-            + (point.elevation - strongest_signal_point.elevation) ** 2
-        )
-        signal = max_signal - distance_to_best
+    # strongest_signal_point = AzEl(azimuth=0.2, elevation=0.7)
+    # powers = []
+    # for point in grid:
+    #     # Signal strengh is 30 minus (Euclidean distance to the strongest signal point)
+    #     # NOTE: THIS IS NOT REALISITC!! BUT IT'S EASY TO IMPLEMENT IN CODE
+    #     max_signal = 30
+    #     distance_to_best = np.sqrt(
+    #         (point.azimuth - strongest_signal_point.azimuth) ** 2
+    #         + (point.elevation - strongest_signal_point.elevation) ** 2
+    #     )
+    #     signal = max_signal - distance_to_best
 
-        # Add noise
-        signal += rand.gauss(0, 0.1)
+    #     # Add noise
+    #     signal += rand.gauss(0, 0.1)
 
-        powers.append(signal)
+    #     powers.append(signal)
 
-    xs = [point.azimuth for point in grid]
-    ys = [point.elevation for point in grid]
+    # xs = [point.azimuth for point in grid]
+    # ys = [point.elevation for point in grid]
 
-    xi = np.linspace(min(xs), max(xs), 100)
-    yi = np.linspace(min(ys), max(ys), 100)
-    X, Y = np.meshgrid(xi, yi)
-    Z = scipy.interpolate.griddata((xs, ys), powers, (X, Y), method="nearest")
+    # xi = np.linspace(min(xs), max(xs), 100)
+    # yi = np.linspace(min(ys), max(ys), 100)
+    # X, Y = np.meshgrid(xi, yi)
+    # Z = scipy.interpolate.griddata((xs, ys), powers, (X, Y), method="nearest")
 
-    import matplotlib.pyplot as plt
+    # import matplotlib.pyplot as plt
 
-    fig, ax = plt.subplots(layout="constrained")
-    ax.plot(xs, ys, "o", color="black")
-    for index in range(len(grid)):
-        ax.text(xs[index], ys[index], f"{powers[index]:.2f}")
-    # if turn_table_starting_point:
-    #     ax.plot(turn_table_starting_point.azimuth, turn_table_starting_point.elevation, "X", color="red", markersize=10)
+    # fig, ax = plt.subplots(layout="constrained")
+    # ax.plot(xs, ys, "o", color="black")
+    # for index in range(len(grid)):
+    #     ax.text(xs[index], ys[index], f"{powers[index]:.2f}")
+    # # if turn_table_starting_point:
+    # #     ax.plot(turn_table_starting_point.azimuth, turn_table_starting_point.elevation, "X", color="red", markersize=10)
 
-    c = ax.pcolormesh(X, Y, Z, cmap="coolwarm")
-    # c = ax.tricontourf(xs, ys, powers, cmap="coolwarm", levels=100)
-    # fig.colorbar(c, label="Signal Strength", ax=ax)
+    # c = ax.pcolormesh(X, Y, Z, cmap="coolwarm")
+    # # c = ax.tricontourf(xs, ys, powers, cmap="coolwarm", levels=100)
+    # # fig.colorbar(c, label="Signal Strength", ax=ax)
 
-    ax.set_xlabel("Azimuth")
-    ax.set_ylabel("Elevation")
-    ax.set_xlim(azimuth_min - 0.5, azimuth_max + 0.5)
-    ax.set_ylim(elevation_min - 0.5, elevation_max + 0.5)
-    # ax.pcolormesh(xs, ys, zs, cmap="viridis")
+    # ax.set_xlabel("Azimuth")
+    # ax.set_ylabel("Elevation")
+    # ax.set_xlim(azimuth_min - 0.5, azimuth_max + 0.5)
+    # ax.set_ylim(elevation_min - 0.5, elevation_max + 0.5)
+    # # ax.pcolormesh(xs, ys, zs, cmap="viridis")
 
-    # Find the point with the strongest signal
-    strongest_signal_index = np.argmax(powers)
-    strongest_signal_point = grid[strongest_signal_index]
-    strongest_signal = powers[strongest_signal_index]
+    # # Find the point with the strongest signal
+    # strongest_signal_index = np.argmax(powers)
+    # strongest_signal_point = grid[strongest_signal_index]
+    # strongest_signal = powers[strongest_signal_index]
 
-    ax.set_title(
-        f"Box scan (azimuth: [{azimuth_min:.2f}, {azimuth_max:.2f}], elevation: [{elevation_min:.2f}, {elevation_max:.2f}])"
-        + f"\nStrongest observed signal ({strongest_signal:.2f}) at {strongest_signal_point}"
-    )
-    ax.axhline(strongest_signal_point.elevation, color="white", linestyle="--")
-    ax.axvline(strongest_signal_point.azimuth, color="white", linestyle="--")
-    ax.plot(strongest_signal_point.azimuth, strongest_signal_point.elevation, "o", color="white", markersize=10)
-
+    # ax.set_title(
+    #     f"Box scan (azimuth: [{azimuth_min:.2f}, {azimuth_max:.2f}], elevation: [{elevation_min:.2f}, {elevation_max:.2f}])"
+    #     + f"\nStrongest observed signal ({strongest_signal:.2f}) at {strongest_signal_point}"
+    # )
+    # ax.axhline(strongest_signal_point.elevation, color="white", linestyle="--")
+    # ax.axvline(strongest_signal_point.azimuth, color="white", linestyle="--")
     # ax.plot(strongest_signal_point.azimuth, strongest_signal_point.elevation, "o", color="white", markersize=10)
-    plt.show()
+
+    # # ax.plot(strongest_signal_point.azimuth, strongest_signal_point.elevation, "o", color="white", markersize=10)
+    # plt.show()

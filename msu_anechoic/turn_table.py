@@ -1,9 +1,12 @@
+import datetime
+from pathlib import Path
 import re
 import time
 from typing import TYPE_CHECKING
 
 import numpy as np
 import serial
+import csv
 
 from msu_anechoic import AzEl
 from msu_anechoic import create_null_logger
@@ -20,6 +23,7 @@ class Turntable:
     AZIMUTH_BOUNDS = (-175, 175)
     ELEVATION_BOUNDS = (-85, 45)
     DEAD_TIME = 10.0
+    csv_field_names = ["timestamp", "azimuth", "elevation"]
 
     def __init__(
         self,
@@ -28,6 +32,7 @@ class Turntable:
         baudrate: int = 9600,
         timeout: float | None = None,
         logger: "logging.Logger | None" = None,
+        csv_file_path: str | Path | None = None,
     ):
         self.port = port
         self.baudrate = baudrate
@@ -38,6 +43,16 @@ class Turntable:
             baudrate=self.baudrate,
             timeout=self.timeout,
         )
+        
+        self.csv_file_path = csv_file_path
+        if self.csv_file_path:
+            self.csv_file_path = Path(self.csv_file_path).expanduser().resolve()
+            self.csv_file_path.parent.mkdir(parents=True, exist_ok=True)
+
+            with self.csv_file_path.open(mode='w', newline='') as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames=self.csv_field_names, dialect="unix")
+                writer.writeheader()
+
         self.most_recent_communication_time = float("-inf")
         """The most recent time that we successfully communicated with the turntable, as `time.monotonic()`."""
 
@@ -160,6 +175,15 @@ class Turntable:
         #     f"Successfully communicated with turntable; updating time. Was {self.most_recent_communication_time}"
         # )
         self.most_recent_communication_time = time.monotonic()
+
+        if self.csv_file_path:
+            with self.csv_file_path.open(mode='a', newline='') as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames=self.csv_field_names, dialect="unix")
+                writer.writerow({
+                    "timestamp": datetime.datetime.now(tz=datetime.timezone.utc),
+                    "azimuth": parsed_data.azimuth,
+                    "elevation": parsed_data.elevation,
+                })
         # self.logger.debug(f"Updated time to {self.most_recent_communication_time}")
 
         return parsed_data
