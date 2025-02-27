@@ -43,13 +43,13 @@ source .venv\bin\activate
 
 import csv
 import datetime
-import time
+
+import numpy as np
 
 # `msu_ssc` is a package of generic Python utilities. It's on GitHub.
 from msu_ssc import ssc_log
 
 # `msu_anechoic` is the stuff in this repository, in the `msu_anechoic` folder.
-from msu_anechoic.procedures import user_guided_box_scan
 from msu_anechoic.spec_an import SpectrumAnalyzerHP8563E
 from msu_anechoic.turn_table import Turntable
 
@@ -85,6 +85,7 @@ LAB_DATA_FIELDS = [
     "center_amplitude",
     "peak_frequency",
     "peak_amplitude",
+    "cut_id"
 ]
 
 # Connect to the spectrum analyzer
@@ -135,7 +136,7 @@ try:
     # Center the turntable using the spectrum analyzer
     # NOTE: For the lab, we'll skip this because it's slow and doesn't yet work well.
     # For the AUT, the center is very close to the actual center, so this is fine.
-    # 
+    #
     # center_location = user_guided_box_scan(
     #     turntable=turntable,
     #     spectrum_analyzer=spectrum_analyzer,
@@ -159,14 +160,19 @@ try:
         writer.writeheader()
 
     # Iterate over all the points you care about
-    elevation = 0
-    for azimuth in range(-90, 90, 15):
+    points: list[tuple[float, float, str]] = []
+    for azimuth in np.linspace(-120, 120, 30):
+        points.append((azimuth, 0, "azimuth-cut"))
+    for elevation in np.linspace(-29, 29, 30):
+        points.append((0, elevation, "elevation-cut"))
+    for (azimuth, elevation, cut_id) in points:
         # Move the turntable to the correct point
         turntable.move_to(azimuth=azimuth, elevation=elevation)
 
         # Make a Python dictionary to store the data for this point
         data = {}
         data["timestamp_utc"] = datetime.datetime.now(datetime.timezone.utc)
+        data["cut_id"] = cut_id
 
         # Get the actual position of the turntable, which should
         # be within 0.1 degrees of the commanded position
@@ -187,6 +193,7 @@ try:
         # Write this data as a line in the csv
         with open(LAB_DATA_PATH, "a", newline="") as file:
             writer = csv.DictWriter(file, fieldnames=LAB_DATA_FIELDS, dialect="unix")
+            writer.writerow(data)
 
     ##########################################
     #                                        #

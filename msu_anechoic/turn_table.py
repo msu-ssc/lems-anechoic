@@ -21,7 +21,8 @@ azimuth_elevation_regex = re.compile(r"Pos\s*=\s*El:\s*(?P<elevation>[-\d\.]+)\s
 
 class Turntable:
     AZIMUTH_BOUNDS = (-175, 175)
-    ELEVATION_BOUNDS = (-85, 45)
+    # ELEVATION_BOUNDS = (-85, 45)
+    ELEVATION_BOUNDS = (-29.5, 29.5)
     DEAD_TIME = 10.0
     csv_field_names = ["timestamp", "azimuth", "elevation"]
 
