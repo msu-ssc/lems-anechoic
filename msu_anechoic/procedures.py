@@ -99,13 +99,13 @@ def generate_grid(
 def user_guided_box_scan(
     *,
     spec_an: spec_an.SpectrumAnalyzerHP8563E,
-    turn_table: turn_table.TurnTable,
-    azimuth_min: float,
-    azimuth_max: float,
-    elevation_min: float,
-    elevation_max: float,
-    azimuth_step_count: int = 5,
-    elevation_step_count: int = 5,
+    turn_table: turn_table.Turntable,
+    # azimuth_min: float,
+    # azimuth_max: float,
+    # elevation_min: float,
+    # elevation_max: float,
+    # azimuth_step_count: int = 3,
+    # elevation_step_count: int = 3,
     function_to_maximize: Callable[
         [spec_an.SpectrumAnalyzerHP8563E], float
     ] = spec_an.SpectrumAnalyzerHP8563E.get_center_frequency_amplitude,
@@ -130,7 +130,7 @@ def user_guided_box_scan(
     # else:
     #     starting_point = None
     try:
-        starting_point = turn_table.get_location()
+        starting_point = turn_table.get_position()
     except Exception:
         starting_point = None
 

@@ -5,7 +5,7 @@ import datetime
 import os
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Sequence
 from typing import Literal
 
 import numpy as np
@@ -187,6 +187,24 @@ class SpectrumAnalyzerHP8563E(GpibDevice):
         # nullcontext is a context manager that does nothing. It evaluates to `None` in an `as` clause.
         return contextlib.nullcontext()
 
+    def move_center_to_peak(self, center_frequency: float, spans: Sequence[float], delay: float=3.0,) -> float:
+        """Center this spectrum analyzer on a frequency and scan for the peak amplitude, recursively narrowing the span.
+        
+        `delay` is the time to wait between each command, in seconds.
+
+        All frequencies are in Hertz.
+        
+        Return value is the final center frequency, in Hertz."""
+        self.logger.debug(f"Centering to peak on {center_frequency=} with {spans=}")
+        time.sleep(delay)
+        self.set_center_frequency(center_frequency)
+        for span in spans:
+            time.sleep(delay)
+            self.set_span(span)
+            time.sleep(delay)
+            center_frequency = self.set_marker_to_highest_amplitude()
+        return center_frequency
+
     def set_center_frequency(self, frequency: float):
         """Set the center frequency of the spectrum analyzer in Hertz."""
         self.logger.debug(f"Setting center frequency of {self.gpib_address!r} to {frequency=}")
@@ -280,14 +298,19 @@ class SpectrumAnalyzerHP8563E(GpibDevice):
         self.logger.debug(f"Getting highest amplitude from {self.gpib_address!r}")
         return max(self.get_trace())
 
+    def set_marker_to_highest_amplitude(self) -> None:
+        """Set the marker to the highest amplitude.
+        
+        This is "Peak Search" on the front panel."""
+        self.logger.debug(f"Setting marker to highest amplitude from {self.gpib_address!r}")
+        self.write("MKPK")
+
     def get_peak_frequency_and_amplitude(self) -> tuple[float, float]:
         """Do a peak search and get the peak frequency and amplitude.
         
         Returns `(frequency, amplitude)`."""
         self.logger.debug(f"Getting highest amplitude from {self.gpib_address!r}")
-
-        # Marker to highest freq
-        self.write("MKPK")
+        self.set_marker_to_highest_amplitude()
         marker_frequency = self.get_marker_frequency()
         marker_amplitude = self.get_marker_amplitude()
         self.logger.debug(f"Marker at {marker_frequency=} with {marker_amplitude=}")

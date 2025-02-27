@@ -378,7 +378,21 @@ class Turntable:
 
 
             
-
+    def send_emergency_stop_command(
+        self,
+        *,
+        repeat: int = 5,
+        delay: float = 0.2,
+    ):
+        """Send an emergency stop command to the turntable. Repeat the given number of times with the given delay.
+        
+        Default is to repeat 5 times with a 0.2 second delay between each command."""
+        command = b"p"
+        self.logger.warning(f"Sending emergency stop command to turntable: {command!r}")
+        for _ in range(repeat):
+            self._serial.write(command)
+            time.sleep(delay)
+        self.logger.warning(f"Sent emergency stop command to turntable: {command!r}")
 
     def send_emergency_move_command(
         self,
