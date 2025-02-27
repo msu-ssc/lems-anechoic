@@ -4,9 +4,11 @@ import contextlib
 import datetime
 import os
 import sys
+import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Sequence
+from typing import TYPE_CHECKING
 from typing import Literal
+from typing import Sequence
 
 import numpy as np
 import pyvisa
@@ -159,7 +161,7 @@ class SpectrumAnalyzerHP8563E(GpibDevice):
         for resource_name in resources:
             if logger:
                 logger.debug(f"Checking {resource_name=}")
-            
+
             if "GPIB" not in resource_name:
                 logger.debug(f"Skipping {resource_name=}, because it is not a GPIB device.")
                 continue
@@ -187,13 +189,18 @@ class SpectrumAnalyzerHP8563E(GpibDevice):
         # nullcontext is a context manager that does nothing. It evaluates to `None` in an `as` clause.
         return contextlib.nullcontext()
 
-    def move_center_to_peak(self, center_frequency: float, spans: Sequence[float], delay: float=3.0,) -> float:
+    def move_center_to_peak(
+        self,
+        center_frequency: float,
+        spans: Sequence[float],
+        delay: float = 3.0,
+    ) -> float:
         """Center this spectrum analyzer on a frequency and scan for the peak amplitude, recursively narrowing the span.
-        
+
         `delay` is the time to wait between each command, in seconds.
 
         All frequencies are in Hertz.
-        
+
         Return value is the final center frequency, in Hertz."""
         self.logger.debug(f"Centering to peak on {center_frequency=} with {spans=}")
         time.sleep(delay)
@@ -202,7 +209,10 @@ class SpectrumAnalyzerHP8563E(GpibDevice):
             time.sleep(delay)
             self.set_span(span)
             time.sleep(delay)
-            center_frequency = self.set_marker_to_highest_amplitude()
+            self.set_marker_to_highest_amplitude()
+            center_frequency = self.get_marker_frequency()
+            self.set_center_frequency(center_frequency)
+        self.set_marker_frequency(center_frequency)
         return center_frequency
 
     def set_center_frequency(self, frequency: float):
@@ -218,7 +228,7 @@ class SpectrumAnalyzerHP8563E(GpibDevice):
 
     def set_span(self, span: float):
         """Set the span of the spectrum analyzer in Hertz."""
-        self.logger.debug(f"Setting span of {self.gpib_address!r} to {span=}")
+        self.logger.debug(f"Setting span of {self.gpib_address!r} to {span=:_}")
         self.write(f"SP {span}")
 
     def get_span(self) -> float:
@@ -292,7 +302,7 @@ class SpectrumAnalyzerHP8563E(GpibDevice):
         center_frequency = self.get_center_frequency()
         self.set_marker_frequency(center_frequency)
         return self.get_marker_amplitude()
-    
+
     def get_highest_amplitude(self) -> float:
         """Get the highest amplitude from the trace."""
         self.logger.debug(f"Getting highest amplitude from {self.gpib_address!r}")
@@ -300,14 +310,14 @@ class SpectrumAnalyzerHP8563E(GpibDevice):
 
     def set_marker_to_highest_amplitude(self) -> None:
         """Set the marker to the highest amplitude.
-        
+
         This is "Peak Search" on the front panel."""
         self.logger.debug(f"Setting marker to highest amplitude from {self.gpib_address!r}")
         self.write("MKPK")
 
     def get_peak_frequency_and_amplitude(self) -> tuple[float, float]:
         """Do a peak search and get the peak frequency and amplitude.
-        
+
         Returns `(frequency, amplitude)`."""
         self.logger.debug(f"Getting highest amplitude from {self.gpib_address!r}")
         self.set_marker_to_highest_amplitude()
@@ -316,31 +326,49 @@ class SpectrumAnalyzerHP8563E(GpibDevice):
         self.logger.debug(f"Marker at {marker_frequency=} with {marker_amplitude=}")
         return marker_frequency, marker_amplitude
 
+    def get_reference_level(self) -> float:
+        """Get the reference level of the spectrum analyzer."""
+        self.logger.debug(f"Getting reference level from {self.gpib_address!r}")
+        return float(self.query("RL?"))
+    
+    def set_reference_level(self, level: float) -> None:
+        """Set the reference level of the spectrum analyzer."""
+        self.logger.debug(f"Setting reference level of {self.gpib_address!r} to {level=}")
+        self.write(f"RL {level:0.2f}")
+
     def scan_continuously(
         self,
         *,
         scan_cf_amplitude: bool = True,
         scan_peak: bool = True,
         csv_file_path: str | Path,
-        delay_between_observations: float = 0.05
+        delay_between_observations: float = 0.05,
     ) -> None:
         """Scan continuously for different things.
-        
+
         This method should be a valid target for a `threading.Thread` or `multiprocessing.Process`."""
         import csv
         import time
 
         csv_file_path = Path(csv_file_path).expanduser().resolve()
-        self.logger.info(f"Starting continuous scan on {self.gpib_address!r}. Saving to {csv_file_path} {scan_cf_amplitude=} {scan_peak=}")
+        self.logger.info(
+            f"Starting continuous scan on {self.gpib_address!r}. Saving to {csv_file_path} {scan_cf_amplitude=} {scan_peak=}"
+        )
 
         csv_file_path.parent.mkdir(parents=True, exist_ok=True)
         filenames = []
         if scan_cf_amplitude:
-            filenames.extend(["center_frequency_amplitude", "center_frequency_amplitude_timestamp_before", "center_frequency_amplitude_timestamp_after"])
+            filenames.extend(
+                [
+                    "center_frequency_amplitude",
+                    "center_frequency_amplitude_timestamp_before",
+                    "center_frequency_amplitude_timestamp_after",
+                ]
+            )
         if scan_peak:
             filenames.extend(["peak_frequency", "peak_amplitude", "peak_timestamp_before", "peak_timestamp_after"])
 
-        with open(csv_file_path, "w", newline='') as f:
+        with open(csv_file_path, "w", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=filenames, dialect="unix")
             writer.writeheader()
 
@@ -356,13 +384,17 @@ class SpectrumAnalyzerHP8563E(GpibDevice):
                 peak_timestamp_after = datetime.datetime.now(tz=datetime.timezone.utc)
                 # self.logger.debug(f"Highest amplitude: {peak_amplitude} at {peak_frequency} Hz")
 
-                with open(csv_file_path, "a", newline='') as f:
+                with open(csv_file_path, "a", newline="") as f:
                     writer = csv.DictWriter(f, fieldnames=filenames, dialect="unix")
                     row = {}
                     if scan_cf_amplitude:
                         row["center_frequency_amplitude"] = center_frequency_amplitude
-                        row["center_frequency_amplitude_timestamp_before"] = center_frequency_amplitude_timestamp_before.isoformat(timespec="microseconds")
-                        row["center_frequency_amplitude_timestamp_after"] = center_frequency_amplitude_timestamp_after.isoformat(timespec="microseconds")
+                        row["center_frequency_amplitude_timestamp_before"] = (
+                            center_frequency_amplitude_timestamp_before.isoformat(timespec="microseconds")
+                        )
+                        row["center_frequency_amplitude_timestamp_after"] = (
+                            center_frequency_amplitude_timestamp_after.isoformat(timespec="microseconds")
+                        )
                     if scan_peak:
                         row["peak_frequency"] = peak_frequency
                         row["peak_amplitude"] = peak_amplitude
@@ -395,125 +427,130 @@ if __name__ == "__main__":
         if not spectrum_analyzer:
             spec_an_logger.error("No spectrum analyzer found.")
             sys.exit(1)
-        # # with SpectrumAnalyzerHP8563E(
-        # #     gpib_address="GPIB0::18::INSTR",
-        # #     logger=spec_an_logger,
-        # # ) as spectrum_analyzer:
-        # # spectrum_analyzer.open()
 
-        # print(spectrum_analyzer.query("CF?"))
-        # print(spectrum_analyzer.write("CF 287000000"))
-        # print(spectrum_analyzer.query("CF?"))
+        print(f"{spectrum_analyzer.get_reference_level()=}")
+        print(f"{spectrum_analyzer.set_reference_level(-30)=}")
+        print(f"{spectrum_analyzer.get_reference_level()=}")
+        # # # with SpectrumAnalyzerHP8563E(
+        # # #     gpib_address="GPIB0::18::INSTR",
+        # # #     logger=spec_an_logger,
+        # # # ) as spectrum_analyzer:
+        # # # spectrum_analyzer.open()
 
-        # print(f"{spectrum_analyzer.resource.query_delay=}")
+        # # print(spectrum_analyzer.query("CF?"))
+        # # print(spectrum_analyzer.write("CF 287000000"))
+        # # print(spectrum_analyzer.query("CF?"))
 
-        # print(spectrum_analyzer.get_center_frequency())
-        # print(spectrum_analyzer.get_span())
+        # # print(f"{spectrum_analyzer.resource.query_delay=}")
+
+        # # print(spectrum_analyzer.get_center_frequency())
+        # # print(spectrum_analyzer.get_span())
+        # # import time
+        # # for _ in range(10):
+        # #     start = time.monotonic()
+        # #     spectrum_analyzer.set_center_frequency(287_000_000)
+        # #     spectrum_analyzer.set_span(100_000_000)
+        # #     stop = time.monotonic()
+        # #     print(f"Time to set center frequency and span: {stop - start:.2f}s")
+
+        # # # exit()
+        # # print(spectrum_analyzer.get_center_frequency())
+        # # print(spectrum_analyzer.get_span())
+
+        # # print(spectrum_analyzer.query("FA?"))
+        # # print(spectrum_analyzer.query("FB?"))
+
+        # # spectrum_analyzer.set_lower_frequency(287_000_000)
+        # # spectrum_analyzer.set_upper_frequency(487_000_000)
+        # # print(spectrum_analyzer.get_lower_frequency())
+        # # print(spectrum_analyzer.get_upper_frequency())
+        # # print(spectrum_analyzer.get_span())
+        # # print(spectrum_analyzer.get_center_frequency())
+
+        # # # print(spectrum_analyzer.get_trace("A"))
+
+        # # # trace = spectrum_analyzer.get_trace("A")
+        # # # numbers = [float(x) for x in trace.split(",")]
+        # # # print(numbers)
+        # # # print(len(numbers))
+
+        # # print("MARKER:", spectrum_analyzer.get_marker_frequency())
+        # # # spectrum_analyzer.set_center_frequency(300_000_000)
+        # # print("MARKER:", spectrum_analyzer.get_marker_frequency())
+        # # spectrum_analyzer.write("CF 300000000")
+        # # spectrum_analyzer.write("MKF 400000000")
+        # # spectrum_analyzer.write("MKCF")
+        # # print("MARKER:", spectrum_analyzer.get_marker_frequency())
+        # # print("CENTER:", spectrum_analyzer.get_center_frequency())
+
+        # # print("MARKER AMPLITUDE:", spectrum_analyzer.get_marker_amplitude())
+        # # print("CENTER AMPLITUDE:", spectrum_analyzer.get_center_frequency_amplitude())
+
+        # # xs, ys = spectrum_analyzer.get_trace_frequencies_and_amplitudes("A")
+
+        # # print(f"{spectrum_analyzer.query('AUNITS?')}")
+
+        # # import time
+
+        # # for _ in range(10):
+        # #     start_time = time.monotonic()
+
+        # #     # cf = spectrum_analyzer.get_center_frequency()
+        # #     # cf_power = spectrum_analyzer.get_center_frequency_amplitude()
+
+        # #     spectrum_analyzer.set_marker_frequency(300_000_000)
+        # #     # marker_power = spectrum_analyzer.get_marker_amplitude()
+        # #     max_power_freq, max_power_amp = spectrum_analyzer.get_peak_frequency_and_amplitude()
+        # #     stop_time = time.monotonic()
+        # #     print(f"Time to get data: {stop_time - start_time:.2f}s {max_power_freq=} {max_power_amp=}")
+
+        # import threading
+
+        # spectrum_analyzer.set_center_frequency(8_450_000_000)
+        # spectrum_analyzer.set_span(2_000)
+
         # import time
-        # for _ in range(10):
-        #     start = time.monotonic()
-        #     spectrum_analyzer.set_center_frequency(287_000_000)
-        #     spectrum_analyzer.set_span(100_000_000)
-        #     stop = time.monotonic()
-        #     print(f"Time to set center frequency and span: {stop - start:.2f}s")
-            
-        # # exit()
-        # print(spectrum_analyzer.get_center_frequency())
-        # print(spectrum_analyzer.get_span())
 
-        # print(spectrum_analyzer.query("FA?"))
-        # print(spectrum_analyzer.query("FB?"))
+        # time.sleep(5)
 
-        # spectrum_analyzer.set_lower_frequency(287_000_000)
-        # spectrum_analyzer.set_upper_frequency(487_000_000)
-        # print(spectrum_analyzer.get_lower_frequency())
-        # print(spectrum_analyzer.get_upper_frequency())
-        # print(spectrum_analyzer.get_span())
-        # print(spectrum_analyzer.get_center_frequency())
+        # peak_freq, peak_amp = spectrum_analyzer.get_peak_frequency_and_amplitude()
+        # spectrum_analyzer.set_center_frequency(peak_freq)
 
-        # # print(spectrum_analyzer.get_trace("A"))
+        # time.sleep(5)
 
-        # # trace = spectrum_analyzer.get_trace("A")
-        # # numbers = [float(x) for x in trace.split(",")]
-        # # print(numbers)
-        # # print(len(numbers))
+        # from msu_anechoic.turn_table import Turntable
 
-        # print("MARKER:", spectrum_analyzer.get_marker_frequency())
-        # # spectrum_analyzer.set_center_frequency(300_000_000)
-        # print("MARKER:", spectrum_analyzer.get_marker_frequency())
-        # spectrum_analyzer.write("CF 300000000")
-        # spectrum_analyzer.write("MKF 400000000")
-        # spectrum_analyzer.write("MKCF")
-        # print("MARKER:", spectrum_analyzer.get_marker_frequency())
-        # print("CENTER:", spectrum_analyzer.get_center_frequency())
+        # tt = Turntable(
+        #     port="COM5",
+        #     timeout=1,
+        #     logger=spec_an_logger,
+        # )
+        # tt.send_set_command(azimuth=0, elevation=0)
+        # # tt.move_to(azimuth=-5, elevation=0)
 
-        # print("MARKER AMPLITUDE:", spectrum_analyzer.get_marker_amplitude())
-        # print("CENTER AMPLITUDE:", spectrum_analyzer.get_center_frequency_amplitude())
+        # thread = threading.Thread(
+        #     target=spectrum_analyzer.scan_continuously,
+        #     daemon=True,
+        #     kwargs={
+        #         "scan_cf_amplitude": True,
+        #         "scan_peak": True,
+        #         "csv_file_path": "./test.csv",
+        #         "delay_between_observations": 0.0,
+        #     },
+        # )
 
-        # xs, ys = spectrum_analyzer.get_trace_frequencies_and_amplitudes("A")
-
-        # print(f"{spectrum_analyzer.query('AUNITS?')}")
-
+        # print("Starting thread")
+        # thread.start()
+        # print("Thread started")
         # import time
 
-        # for _ in range(10):
-        #     start_time = time.monotonic()
-
-        #     # cf = spectrum_analyzer.get_center_frequency()
-        #     # cf_power = spectrum_analyzer.get_center_frequency_amplitude()
-
-        #     spectrum_analyzer.set_marker_frequency(300_000_000)
-        #     # marker_power = spectrum_analyzer.get_marker_amplitude()
-        #     max_power_freq, max_power_amp = spectrum_analyzer.get_peak_frequency_and_amplitude()
-        #     stop_time = time.monotonic()
-        #     print(f"Time to get data: {stop_time - start_time:.2f}s {max_power_freq=} {max_power_amp=}")
-
-
-        import threading
-        
-        spectrum_analyzer.set_center_frequency(8_450_000_000)
-        spectrum_analyzer.set_span(2_000)
-
-        import time
-        time.sleep(5)
-
-        peak_freq, peak_amp = spectrum_analyzer.get_peak_frequency_and_amplitude()
-        spectrum_analyzer.set_center_frequency(peak_freq)
-
-        time.sleep(5)
-
-        from msu_anechoic.turn_table import Turntable
-
-        tt= Turntable(
-            port="COM5",
-            timeout=1,
-            logger=spec_an_logger,
-        )
-        tt.send_set_command(azimuth=0, elevation=0)
-        # tt.move_to(azimuth=-5, elevation=0)
-
-        thread = threading.Thread(
-            target=spectrum_analyzer.scan_continuously,
-            daemon=True,
-            kwargs={
-                "scan_cf_amplitude": True,
-                "scan_peak": True,
-                "csv_file_path": "./test.csv",
-                "delay_between_observations": 0.0,
-            },
-        )
-
-        print("Starting thread")
-        thread.start()
-        print("Thread started")
-        import time
-        time.sleep(5)
-        tt.move_to(azimuth=0, elevation=10)
-        time.sleep(5)
-        tt.move_to(azimuth=0, elevation=-10)
-        time.sleep(5)
-        tt.send_emergency_move_command(azimuth=0, elevation=0)
-        time.sleep(60)
+        # time.sleep(5)
+        # tt.move_to(azimuth=0, elevation=10)
+        # time.sleep(5)
+        # tt.move_to(azimuth=0, elevation=-10)
+        # time.sleep(5)
+        # tt.send_emergency_move_command(azimuth=0, elevation=0)
+        # time.sleep(60)
         # print("Stopping thread")
         # thread.join()
 

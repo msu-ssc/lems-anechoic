@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from typing import Callable
 from typing import Literal
 
@@ -10,6 +11,8 @@ from msu_anechoic import AzEl
 from msu_anechoic import spec_an
 from msu_anechoic import turn_table
 
+if TYPE_CHECKING:
+    import logging
 
 def generate_grid(
     *,
@@ -98,8 +101,8 @@ def generate_grid(
 
 def user_guided_box_scan(
     *,
-    spec_an: spec_an.SpectrumAnalyzerHP8563E,
-    turn_table: turn_table.Turntable,
+    spectrum_analyzer: spec_an.SpectrumAnalyzerHP8563E,
+    turntable: turn_table.Turntable,
     # azimuth_min: float,
     # azimuth_max: float,
     # elevation_min: float,
@@ -109,8 +112,16 @@ def user_guided_box_scan(
     function_to_maximize: Callable[
         [spec_an.SpectrumAnalyzerHP8563E], float
     ] = spec_an.SpectrumAnalyzerHP8563E.get_center_frequency_amplitude,
+    # logger: logging.Logger | None = None,
 ) -> AzEl:
     """Perform a user-guided box scan."""
+
+    print(f"+------------------------+")
+    print(f"|  User-guided box scan  |")
+    print(f"+------------------------+")
+    for _ in range(10):
+        starting_position = turntable.get_position()
+        print(f"Starting position: {starting_position}")
 
     # Prompt the user for the azimuth and elevation ranges
     azimuth_min = float(input("Enter the minimum azimuth: "))
@@ -130,7 +141,7 @@ def user_guided_box_scan(
     # else:
     #     starting_point = None
     try:
-        starting_point = turn_table.get_position()
+        starting_point = turntable.get_position()
     except Exception:
         starting_point = None
 
@@ -142,6 +153,7 @@ def user_guided_box_scan(
         azimuth_step_count=azimuth_step_count,
         elevation_step_count=elevation_step_count,
         starting_point=starting_point,
+        preferred_travel="azimuth",
     )
 
     print(f"Doing grid search on {len(grid)} points. Measuring with method {function_to_maximize.__name__}")
@@ -149,8 +161,8 @@ def user_guided_box_scan(
     # Perform the box scan
     data: dict[AzEl, float] = {}
     for point in grid:
-        turn_table.move_to(azimuth=point.azimuth, elevation=point.elevation)
-        amplitude = function_to_maximize(spec_an)
+        turntable.move_to(azimuth=point.azimuth, elevation=point.elevation)
+        amplitude = function_to_maximize(spectrum_analyzer)
         data[point] = amplitude
 
     # Plot the data
@@ -191,7 +203,55 @@ def user_guided_box_scan(
     print(f"Displaying graph of {len(grid)} points. Close the graph to continue. Close the graph to continue.")
     plt.show()
 
-    return strongest_signal_point
+    current_position = turntable.get_position()
+    print(f"        Starting position: {starting_position}")
+    print(f"Strongest signal position: {strongest_signal_point}")
+    print(f"         Current position: {current_position}")
+
+    user_input = input("What should the center be? [START, CURRENT, STRONGEST, or <azimuth,elevation>]: ")
+    
+    if user_input.lower().strip() == "start":
+        selected_center = starting_position
+    elif user_input.lower().strip() == "current":
+        selected_center = current_position
+    elif user_input.lower().strip() == "strongest":
+        selected_center = strongest_signal_point
+    else:
+        azimuth, elevation = [float(x) for x in user_input.split(",")]
+        selected_center = AzEl(azimuth=azimuth, elevation=elevation)
+
+    print(f"Moving to the selected center: {selected_center}")
+
+    # Have to get the position just to establish communication
+    _ = turntable.get_position()
+    
+    turntable.move_to(azimuth=selected_center.azimuth, elevation=selected_center.elevation)
+    user_input = input("Set this as the center? [y/n]: ")
+    if user_input.lower().strip() == "y":
+        turntable.send_set_command(azimuth=0, elevation=0)
+    user_input = input("Do another scan? [y/n]: ")
+    if user_input.lower().strip() == "y":
+        return user_guided_box_scan(
+            spectrum_analyzer=spectrum_analyzer,
+            turntable=turntable,
+            function_to_maximize=function_to_maximize,
+        )
+    return selected_center
+    
+    # print("Moving to the strongest signal point.")
+    # turntable.move_to(azimuth=strongest_signal_point.azimuth, elevation=strongest_signal_point.elevation)
+
+    # user_input = input(f"Move to: (none, start, strongest): ")
+    # if user_input.lower().strip() == "start":
+    #     turntable.move_to(azimuth=starting_position.azimuth, elevation=starting_position.elevation)
+    #     # return starting_position
+    # elif user_input.lower().strip() == "strongest":
+    #     turntable.move_to(azimuth=strongest_signal_point.azimuth, elevation=strongest_signal_point.elevation)
+    #     # return strongest_signal_point
+    # else:
+    #     return current_position
+
+    # return strongest_signal_point
 
 
 # def box_scan(

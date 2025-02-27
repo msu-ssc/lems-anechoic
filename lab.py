@@ -43,6 +43,7 @@ source .venv\bin\activate
 
 import csv
 import datetime
+import time
 
 # `msu_ssc` is a package of generic Python utilities. It's on GitHub.
 from msu_ssc import ssc_log
@@ -63,11 +64,12 @@ ssc_log.init(
 lab_logger = ssc_log.logger.getChild("lab")
 spec_an_logger = ssc_log.logger.getChild("spec_an")
 turntable_logger = ssc_log.logger.getChild("turntable")
-spec_an_logger.setLevel("INFO")
 
 # Constants (capital letters)
 NOMINAL_CENTER_FREQUENCY = 8_450_000_000
 """Actual center frequency will vary by ~500 Hz"""
+
+SPEC_AN_REFERENCE_LEVEL = -30
 
 TURNTABLE_COM_PORT = "COM5"
 """This will be different on your computer. Find it in Windows Device Manager."""
@@ -95,6 +97,7 @@ if not spectrum_analyzer:
 
 # Configure the spectrum analyzer
 # Move the center frequency to the peak, starting with a 1 MHz span and going down to 1 kHz in steps
+spectrum_analyzer.set_reference_level(SPEC_AN_REFERENCE_LEVEL)
 center_frequency = spectrum_analyzer.move_center_to_peak(
     center_frequency=NOMINAL_CENTER_FREQUENCY,
     spans=(
@@ -106,6 +109,7 @@ center_frequency = spectrum_analyzer.move_center_to_peak(
     delay=3,
 )
 
+spec_an_logger.setLevel("INFO")
 
 # Connect to the turntable
 turntable = Turntable(
@@ -126,18 +130,19 @@ try:
     # Center the turntable as best you can, visually.
     # This method will print some stuff on the screen and ask you to type in some numbers
     # to guide you to the center.
-    turntable.interactively_center()
+    center_location = turntable.interactively_center()
 
     # Center the turntable using the spectrum analyzer
-    center_location = user_guided_box_scan(
-        turntable=turntable,
-        spectrum_analyzer=spectrum_analyzer,
-        center_frequency=center_frequency,
-        logger=lab_logger,
-    )
+    # NOTE: For the lab, we'll skip this because it's slow and doesn't yet work well.
+    # For the AUT, the center is very close to the actual center, so this is fine.
+    # 
+    # center_location = user_guided_box_scan(
+    #     turntable=turntable,
+    #     spectrum_analyzer=spectrum_analyzer,
+    # )
 
     # Move to the center location
-    turntable.move_to(center_location)
+    turntable.move_to(azimuth=center_location.azimuth, elevation=center_location.elevation)
 
     # Set current position to be center
     turntable.send_set_command(azimuth=0, elevation=0)

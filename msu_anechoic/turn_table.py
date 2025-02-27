@@ -335,12 +335,15 @@ class Turntable:
 
         return current_position
     
-    def interactively_center(self) -> None:
+    def interactively_center(self) -> AzEl:
         """Manually center the turntable interactively.
         
         This will clobber the turntable's current understanding of its position,
         and thus it is intended to be the very first thing done when powering the
         table on."""
+        print(f"+------------------------------+")
+        print(f"|  INTERACTIVE CENTERING MODE  |")
+        print(f"+------------------------------+")
         while True:
             time.sleep(0.1)
             position = self.get_position()
@@ -374,6 +377,9 @@ class Turntable:
 
             print(f"Moving to azimuth={azimuth_delta=}, elevation={elevation_delta=}")
             self.move_to(azimuth=azimuth_delta, elevation=elevation_delta)
+        
+        position = self.send_set_command(azimuth=0.0, elevation=0.0)
+        return position
 
 
 
