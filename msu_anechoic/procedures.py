@@ -12,7 +12,7 @@ from msu_anechoic import spec_an
 from msu_anechoic import turn_table
 
 if TYPE_CHECKING:
-    import logging
+    pass
 
 def generate_grid(
     *,

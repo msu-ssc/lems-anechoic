@@ -2,7 +2,6 @@
 
 Written by David Mayo, 2025-02-06"""
 
-import csv
 import getpass
 import os
 import platform
@@ -14,10 +13,10 @@ import serial
 from msu_ssc import ssc_log
 from serial.tools import list_ports
 
-from controller import AnechoicConfig, set_turn_table_location
+from controller import AnechoicConfig
 from controller import AzEl
 from controller import get_turn_table_location
-from controller import move_to
+from controller import set_turn_table_location
 
 
 def handle_exception(exc_type, exc_value, exc_traceback):

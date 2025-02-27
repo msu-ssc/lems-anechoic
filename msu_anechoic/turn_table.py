@@ -1,12 +1,11 @@
+import csv
 import datetime
-from pathlib import Path
 import re
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING
 
-import numpy as np
 import serial
-import csv
 
 from msu_anechoic import AzEl
 from msu_anechoic import create_null_logger

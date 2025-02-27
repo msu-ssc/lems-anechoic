@@ -45,6 +45,7 @@ import csv
 import datetime
 
 import numpy as np
+import rich.progress
 
 # `msu_ssc` is a package of generic Python utilities. It's on GitHub.
 from msu_ssc import ssc_log
@@ -85,7 +86,7 @@ LAB_DATA_FIELDS = [
     "center_amplitude",
     "peak_frequency",
     "peak_amplitude",
-    "cut_id"
+    "cut_id",
 ]
 
 # Connect to the spectrum analyzer
@@ -161,39 +162,59 @@ try:
 
     # Iterate over all the points you care about
     points: list[tuple[float, float, str]] = []
-    for azimuth in np.linspace(-120, 120, 30):
+
+    # PROTIP: When using np.linspace, the center point will be included if and only if
+    # you use an odd number of points.
+    for azimuth in np.linspace(-150, 150, 301):
         points.append((azimuth, 0, "azimuth-cut"))
-    for elevation in np.linspace(-29, 29, 30):
+    for elevation in np.linspace(-29, 29, 59):
         points.append((0, elevation, "elevation-cut"))
-    for (azimuth, elevation, cut_id) in points:
-        # Move the turntable to the correct point
-        turntable.move_to(azimuth=azimuth, elevation=elevation)
 
-        # Make a Python dictionary to store the data for this point
-        data = {}
-        data["timestamp_utc"] = datetime.datetime.now(datetime.timezone.utc)
-        data["cut_id"] = cut_id
+    # Give used a very rough estimate of how long this will take,
+    # based on the assumption that each point will take 4 seconds.
+    seconds = len(points) * 4
+    print(f"You are sampling {len(points):,} points. This will take about {seconds:0.2f} seconds = {seconds/60:0.2f} minutes = {seconds/3600:0.2f} hours.")
+    user_input = input("Continue? [y/n]: ")
+    if user_input.lower() != "y":
+        raise KeyboardInterrupt("User aborted test")
 
-        # Get the actual position of the turntable, which should
-        # be within 0.1 degrees of the commanded position
-        actual_azimuth, actual_elevation = turntable.get_position()
-        data["commanded_azimuth"] = azimuth
-        data["commanded_elevation"] = elevation
-        data["actual_azimuth"] = actual_azimuth
-        data["actual_elevation"] = actual_elevation
+    with rich.progress.Progress() as progress:
+        task_id = progress.add_task(f"Collecting data ({len(points):,} points)", total=len(points))
+        for point_index, (azimuth, elevation, cut_id) in enumerate(points):
+            # Move the turntable to the correct point
+            turntable.move_to(azimuth=azimuth, elevation=elevation)
 
-        # Collect data from the spec_an
-        data["center_frequency"] = center_frequency
-        data["center_amplitude"] = spectrum_analyzer.get_center_frequency_amplitude()
-        peak_frequency, peak_amplitude = spectrum_analyzer.get_peak_frequency_and_amplitude()
-        data["peak_frequency"] = peak_frequency
-        data["peak_amplitude"] = peak_amplitude
-        lab_logger.info(f"Collected datapoint: {data}")
+            # Make a Python dictionary to store the data for this point
+            data = {}
+            data["timestamp_utc"] = datetime.datetime.now(datetime.timezone.utc)
+            data["cut_id"] = cut_id
 
-        # Write this data as a line in the csv
-        with open(LAB_DATA_PATH, "a", newline="") as file:
-            writer = csv.DictWriter(file, fieldnames=LAB_DATA_FIELDS, dialect="unix")
-            writer.writerow(data)
+            # Get the actual position of the turntable, which should
+            # be within 0.1 degrees of the commanded position
+            actual_azimuth, actual_elevation = turntable.get_position()
+            data["commanded_azimuth"] = azimuth
+            data["commanded_elevation"] = elevation
+            data["actual_azimuth"] = actual_azimuth
+            data["actual_elevation"] = actual_elevation
+
+            # Collect data from the spec_an
+            data["center_frequency"] = center_frequency
+            data["center_amplitude"] = spectrum_analyzer.get_center_frequency_amplitude()
+            peak_frequency, peak_amplitude = spectrum_analyzer.get_peak_frequency_and_amplitude()
+            data["peak_frequency"] = peak_frequency
+            data["peak_amplitude"] = peak_amplitude
+            lab_logger.info(f"Collected datapoint: {data}")
+
+            # Write this data as a line in the csv
+            with open(LAB_DATA_PATH, "a", newline="") as file:
+                writer = csv.DictWriter(file, fieldnames=LAB_DATA_FIELDS, dialect="unix")
+                writer.writerow(data)
+
+            progress.update(
+                task_id,
+                completed=point_index + 1,
+                description=f"Collecting data ({point_index + 1:,} of {len(points)} points)",
+            )
 
     ##########################################
     #                                        #
