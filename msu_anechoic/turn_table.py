@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 import serial
 
 from msu_anechoic import AzEl
+from msu_anechoic import _turn_table_elevation_regime as _regime
 from msu_anechoic import create_null_logger
 
 if TYPE_CHECKING:
@@ -43,13 +44,13 @@ class Turntable:
             baudrate=self.baudrate,
             timeout=self.timeout,
         )
-        
+
         self.csv_file_path = csv_file_path
         if self.csv_file_path:
             self.csv_file_path = Path(self.csv_file_path).expanduser().resolve()
             self.csv_file_path.parent.mkdir(parents=True, exist_ok=True)
 
-            with self.csv_file_path.open(mode='w', newline='') as csvfile:
+            with self.csv_file_path.open(mode="w", newline="") as csvfile:
                 writer = csv.DictWriter(csvfile, fieldnames=self.csv_field_names, dialect="unix")
                 writer.writeheader()
 
@@ -57,6 +58,13 @@ class Turntable:
         """The most recent time that we successfully communicated with the turntable, as `time.monotonic()`."""
 
         self.has_been_set: bool = False
+        self._current_regime: _regime.TurnTableElevationRegime | None = None
+        """The current elevation regime of the turntable.
+        
+        Will be `None` until it is explicitly set."""
+
+        self._regime_elevation_offset: float | None = None
+        """The elevation offset of table between its reported ."""
 
     def parse_az_el(
         self,
@@ -158,10 +166,13 @@ class Turntable:
             self.logger.debug("No data read from turntable")
             return None
 
-    def get_position(self) -> AzEl | None:
-        """Get the current azimuth and elevation of the turn table. Return `None` on any failure.
+    def _get_reported_position(self) -> AzEl | None:
+        """Get the reported azimuth and elevation of the turn table.
 
-        Also, update the `most_recent_communication_time` attribute."""
+        "Reported" here means what the turntable itself reports,
+        which is BEFORE the regime offset is applied.
+        
+        Return `None` on any failure."""
         data = self.attempt_read()
         if not data:
             return None
@@ -177,16 +188,47 @@ class Turntable:
         self.most_recent_communication_time = time.monotonic()
 
         if self.csv_file_path:
-            with self.csv_file_path.open(mode='a', newline='') as csvfile:
+            with self.csv_file_path.open(mode="a", newline="") as csvfile:
                 writer = csv.DictWriter(csvfile, fieldnames=self.csv_field_names, dialect="unix")
-                writer.writerow({
-                    "timestamp": datetime.datetime.now(tz=datetime.timezone.utc),
-                    "azimuth": parsed_data.azimuth,
-                    "elevation": parsed_data.elevation,
-                })
+                writer.writerow(
+                    {
+                        "timestamp": datetime.datetime.now(tz=datetime.timezone.utc),
+                        "azimuth": parsed_data.azimuth,
+                        "elevation": parsed_data.elevation,
+                    }
+                )
         # self.logger.debug(f"Updated time to {self.most_recent_communication_time}")
 
         return parsed_data
+
+    def _wait_for_reported_position(self, delay: float = 0.05) -> AzEl:
+        """Wait for the turntable to report a position. This is a blocking operation,
+        so it could spin forever."""
+        while True:
+            reported_position = self._get_reported_position()
+            if reported_position:
+                return reported_position
+            time.sleep(delay)
+
+    def get_position(self) -> AzEl | None:
+        """Get the current azimuth and elevation of the turn table. Return `None` on any failure.
+
+        Also, update the `most_recent_communication_time` attribute."""
+        reported_position = self._get_reported_position()
+        if not reported_position:
+            return None
+        
+        #TODO: Handle regimes
+        return reported_position
+    
+    def wait_for_position(self, delay: float = 0.05) -> AzEl:
+        """Wait for the turntable to report a position. This is a blocking operation,
+        so it could spin forever."""
+        while True:
+            position = self.get_position()
+            if position:
+                return position
+            time.sleep(delay)
 
     def _validate_bounds(self, azimuth: float, elevation: float) -> None:
         """Validate that the given azimuth and elevation are within the valid range for the turntable."""
@@ -212,6 +254,7 @@ class Turntable:
                 f"Turntable has not been heard from in {time_since_last_communication} seconds, which is more than the allowable {self.DEAD_TIME} seconds"
             )
             self.has_been_set = False
+            self._current_regime = None
             return False
         else:
             return True
@@ -260,8 +303,18 @@ class Turntable:
         self.logger.info(f"Sending move command to turntable: {command!r}")
         self._serial.write(command)
 
-    def send_set_command(self, azimuth: float, elevation: float) -> AzEl:
-        """Send a set command to the turntable."""
+    def send_set_command(
+        self,
+        azimuth: float,
+        elevation: float,
+        _set_regime: bool = True,
+    ) -> AzEl:
+        """Send a set command to the turntable.
+
+        If `_set_regime` is `True`, then set the current elevation regime to the one that contains the given elevation.
+        In other words, you should ALWAYS set this if you are setting the turntable to a real elevation, which users should
+        generally speaking always be doing. It should only be set to `False` by internal processes.
+        """
 
         if not self.validate_set_command(azimuth, elevation):
             self.logger.error(f"Set command {azimuth=}, {elevation=} is invalid and WILL NOT BE SENT!")
@@ -281,19 +334,80 @@ class Turntable:
 
             # Verify that actual_position is within 0.1 degrees of set_position. If so, we're good. If not, keep waiting.
             if abs(actual_position.azimuth - set_position.azimuth) > 0.1:
-                self.logger.debug(
-                    f"Azimuth {actual_position.azimuth} is not within 0.1 degrees of {set_position.azimuth}"
-                )
+                # self.logger.debug(
+                #     f"Waiting for reported azimuth to match set azimuth... Azimuth {actual_position.azimuth} is not within 0.1 degrees of {set_position.azimuth}"
+                # )
                 continue
             if abs(actual_position.elevation - set_position.elevation) > 0.1:
-                self.logger.debug(
-                    f"Elevation {actual_position.elevation} is not within 0.1 degrees of {set_position.elevation}"
-                )
+                # self.logger.debug(
+                #     f"Waiting for reported elevation to match set elevation... Elevation {actual_position.elevation} is not within 0.1 degrees of {set_position.elevation}"
+                # )
                 continue
 
             self.logger.info(f"Successfully set turntable to {set_position=} {actual_position=}")
             self.has_been_set = True
+
+            if _set_regime:
+                self._current_regime = _regime.find_best_regime(actual_position.elevation)
+                self.logger.info(f"Set current regime to {self._current_regime}")
+
             return set_position
+
+    def _move_to_next_regime(
+        self,
+        *,
+        azimuth: float,
+        elevation: float,
+        azimuth_margin: float = 0.1,
+        elevation_margin: float = 0.1,
+        delay: float = 0.05,
+    ) -> None:
+        assert self._current_regime is not None
+        
+        next_regime = _regime.find_next_regime(
+            destination_angle=elevation,
+            current_regime=self._current_regime,
+        )
+
+        # Find the closest waypoint in the next regime to the current elevation.
+        # The way regimes are defined, this point will always be in the current regime...
+        waypoint_elevation = next_regime.get_closest_waypoint(elevation)
+        self.logger.info(f"Moving to closest waypoint {waypoint_elevation} in next regime {next_regime}")
+
+        # ...but lets check it anyway
+        assert waypoint_elevation in self._current_regime, f"{waypoint_elevation=} {self._current_regime=}"
+
+        # Move to the closest waypoint in the neighboring regime.
+        self.move_to(
+            azimuth=azimuth,
+            elevation=waypoint_elevation,
+            azimuth_margin=azimuth_margin,
+            elevation_margin=elevation_margin,
+            delay=delay,
+        )
+
+        reported_position = self.wait_for_position()
+
+        # Let's sanity check that the current point (nery near a waypoint)
+        # is within both of its neighbors regimes
+        assert reported_position.elevation in self._current_regime
+        assert reported_position.elevation in next_regime
+
+        # Do the elevation offset math now. This is a fiddly thing, so be careful.
+        if self._regime_elevation_offset is None:
+            self.logger.info(f"Setting regime elevation offset to {reported_position.elevation}. Was previously None.")
+            new_regime_elevation_offset = -reported_position.elevation
+            self._regime_elevation_offset = new_regime_elevation_offset
+        else:
+            new_regime_elevation_offset = self._regime_elevation_offset - reported_position.elevation
+            self.logger.info(f"Adjusting regime elevation offset by {new_regime_elevation_offset}. Was previously {self._regime_elevation_offset}")
+            self._regime_elevation_offset = new_regime_elevation_offset
+
+        # Set the position to the same azimuth, but elevation 0
+        self.send_set_command(azimuth=azimuth, elevation=0.0, _set_regime=False,)
+
+        self.logger.warning(f"Moved from regime {self._current_regime} to next regime {next_regime} with elevation offset {self._regime_elevation_offset}")
+        self._current_regime = next_regime
 
     def move_to(
         self,
@@ -305,6 +419,22 @@ class Turntable:
         delay: float = 0.05,
     ) -> AzEl:
         """Move to the given azimuth and elevation. Return the final position."""
+
+        # Determine if this is requires a regime change.
+        if not self._current_regime:
+            raise RuntimeError("Current regime is not set. Cannot move to a position without a regime.")
+        while elevation not in self._current_regime:
+            self.logger.warning(
+                f"Current regime {self._current_regime} does not contain elevation {elevation}. Moving regimes."
+            )
+            self._move_to_next_regime(
+                azimuth=azimuth,
+                elevation=elevation,
+                azimuth_margin=azimuth_margin,
+                elevation_margin=elevation_margin,
+                delay=delay,
+            )
+
         if not self.validate_move_command(azimuth, elevation):
             self.logger.error(f"Move command {azimuth=}, {elevation=} is invalid and WILL NOT BE SENT!")
             return None
@@ -334,10 +464,10 @@ class Turntable:
             time.sleep(delay)
 
         return current_position
-    
+
     def interactively_center(self) -> AzEl:
         """Manually center the turntable interactively.
-        
+
         This will clobber the turntable's current understanding of its position,
         and thus it is intended to be the very first thing done when powering the
         table on."""
@@ -363,11 +493,13 @@ class Turntable:
             except Exception:
                 print("Invalid input. Try again.")
                 continue
-            
+
             az_direction = "CLOCKWISE" if azimuth_delta >= 0 else "COUNTERCLOCKWISE"
             el_direction = "UP" if elevation_delta >= 0 else "DOWN"
-            
-            user_input = input(f"About to move {az_direction} {abs(azimuth_delta)} degrees and {el_direction} {abs(elevation_delta)} degrees.\nContinue [y/n]?")
+
+            user_input = input(
+                f"About to move {az_direction} {abs(azimuth_delta)} degrees and {el_direction} {abs(elevation_delta)} degrees.\nContinue [y/n]?"
+            )
             if user_input.lower() != "y":
                 print("User did not confirm.")
                 continue
@@ -377,13 +509,10 @@ class Turntable:
 
             print(f"Moving to azimuth={azimuth_delta=}, elevation={elevation_delta=}")
             self.move_to(azimuth=azimuth_delta, elevation=elevation_delta)
-        
+
         position = self.send_set_command(azimuth=0.0, elevation=0.0)
         return position
 
-
-
-            
     def send_emergency_stop_command(
         self,
         *,
@@ -391,7 +520,7 @@ class Turntable:
         delay: float = 0.2,
     ):
         """Send an emergency stop command to the turntable. Repeat the given number of times with the given delay.
-        
+
         Default is to repeat 5 times with a 0.2 second delay between each command."""
         command = b"p"
         self.logger.warning(f"Sending emergency stop command to turntable: {command!r}")
@@ -482,7 +611,7 @@ if __name__ == "__main__":
             stop = time.monotonic()
             with open("turntable_move_times.txt", "a") as f:
                 f.write(f"+AZIMUTH,{distance}, {stop - start}\n")
-            
+
             tt.move_to(azimuth=0.0, elevation=0.0)
             start = time.monotonic()
             tt.move_to(azimuth=-distance, elevation=0.0)
@@ -496,7 +625,7 @@ if __name__ == "__main__":
             stop = time.monotonic()
             with open("turntable_move_times.txt", "a") as f:
                 f.write(f"+ELEVATION,{distance}, {stop - start}\n")
-            
+
             tt.move_to(azimuth=0.0, elevation=0.0)
             start = time.monotonic()
             tt.move_to(azimuth=0.0, elevation=-distance)
@@ -517,7 +646,6 @@ if __name__ == "__main__":
             stop = time.monotonic()
             with open("turntable_move_times.txt", "a") as f:
                 f.write(f"-BOTH,{distance}, {stop - start}\n")
-
 
         # start = time.monotonic()
         # for azimuth in np.arange(0.25, 20.25, 0.25):
