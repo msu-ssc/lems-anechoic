@@ -165,9 +165,9 @@ try:
 
     # PROTIP: When using np.linspace, the center point will be included if and only if
     # you use an odd number of points.
-    for azimuth in np.linspace(-150, 150, 301):
-        points.append((azimuth, 0, "azimuth-cut"))
-    for elevation in np.linspace(-29, 29, 59):
+    # for azimuth in np.linspace(-150, 150, 301):
+    #     points.append((azimuth, 0, "azimuth-cut"))
+    for elevation in np.arange(-85, 42.5, 2.5):
         points.append((0, elevation, "elevation-cut"))
 
     # Give used a very rough estimate of how long this will take,

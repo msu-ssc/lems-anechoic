@@ -27,7 +27,7 @@ class Turntable:
     
     Moving outside this range will require a regime change."""
 
-    DEAD_TIME = 10.0
+    DEAD_TIME = 1000.0
     csv_field_names = ["timestamp", "azimuth", "elevation"]
 
     def __init__(
@@ -224,12 +224,13 @@ class Turntable:
         if not reported_position:
             return None
 
-        # TODO: Handle regimes
         if not self._current_regime:
-            raise RuntimeError("Current regime is not set. Cannot get a position without a regime.")
+            self.logger.warning(f"Regime is not set. Assuming internal elevation is correct.")
+            return reported_position
+            # raise RuntimeError("Current regime is not set. Cannot get a position without a regime.")
 
         # Apply the regime offset to the reported elevation
-        elevation = reported_position.elevation - self._regime_elevation_offset
+        elevation = self._convert_from_regime_elevation(reported_position.elevation)
         modified_position = AzEl(
             azimuth=reported_position.azimuth,
             elevation=elevation,

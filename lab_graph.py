@@ -6,10 +6,10 @@ import pandas as pd  # For data manipulation
 # Read the CSV file into a DataFrame
 df = pd.read_csv("lab_data.csv", parse_dates=["timestamp_utc"])
 
-# Filter out points where commanded azimuth and actual azimuth differ by more than 1.0 degree
-df = df[np.abs(df["commanded_azimuth"] - df["actual_azimuth"]) <= 1.0]
-# Filter out points where commanded elevation and actual elevation differ by more than 1.0 degree
-df = df[np.abs(df["commanded_elevation"] - df["actual_elevation"]) <= 1.0]
+# # Filter out points where commanded azimuth and actual azimuth differ by more than 1.0 degree
+# df = df[np.abs(df["commanded_azimuth"] - df["actual_azimuth"]) <= 1.0]
+# # Filter out points where commanded elevation and actual elevation differ by more than 1.0 degree
+# df = df[np.abs(df["commanded_elevation"] - df["actual_elevation"]) <= 1.0]
 # Print the first few rows of the DataFrame to understand its structure
 print(df.head())
 
