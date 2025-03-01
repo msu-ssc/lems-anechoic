@@ -20,9 +20,13 @@ azimuth_elevation_regex = re.compile(r"Pos\s*=\s*El:\s*(?P<elevation>[-\d\.]+)\s
 
 
 class Turntable:
-    AZIMUTH_BOUNDS = (-175, 175)
-    # ELEVATION_BOUNDS = (-85, 45)
-    ELEVATION_BOUNDS = (-29.5, 29.5)
+    ABSOLUTE_AZIMUTH_BOUNDS = (-175, 175)
+    ABSOLUTE_ELEVATION_BOUNDS = (-90, 45)
+    REGIME_ELEVATION_BOUNDS = (-29.5, 29.5)
+    """The bounds of the turntable's elevation regime, in degrees.
+    
+    Moving outside this range will require a regime change."""
+
     DEAD_TIME = 10.0
     csv_field_names = ["timestamp", "azimuth", "elevation"]
 
@@ -34,10 +38,12 @@ class Turntable:
         timeout: float | None = None,
         logger: "logging.Logger | None" = None,
         csv_file_path: str | Path | None = None,
+        show_move_debug: bool = False,
     ):
         self.port = port
         self.baudrate = baudrate
         self.timeout = timeout
+        self._show_move_debug = show_move_debug
         self.logger = logger or create_null_logger()
         self._serial = serial.Serial(
             port=self.port,
@@ -171,9 +177,9 @@ class Turntable:
 
         "Reported" here means what the turntable itself reports,
         which is BEFORE the regime offset is applied.
-        
+
         Return `None` on any failure."""
-        data = self.attempt_read()
+        data = self.attempt_read(100)
         if not data:
             return None
 
@@ -217,10 +223,19 @@ class Turntable:
         reported_position = self._get_reported_position()
         if not reported_position:
             return None
-        
-        #TODO: Handle regimes
-        return reported_position
-    
+
+        # TODO: Handle regimes
+        if not self._current_regime:
+            raise RuntimeError("Current regime is not set. Cannot get a position without a regime.")
+
+        # Apply the regime offset to the reported elevation
+        elevation = reported_position.elevation - self._regime_elevation_offset
+        modified_position = AzEl(
+            azimuth=reported_position.azimuth,
+            elevation=elevation,
+        )
+        return modified_position
+
     def wait_for_position(self, delay: float = 0.05) -> AzEl:
         """Wait for the turntable to report a position. This is a blocking operation,
         so it could spin forever."""
@@ -230,16 +245,47 @@ class Turntable:
                 return position
             time.sleep(delay)
 
-    def _validate_bounds(self, azimuth: float, elevation: float) -> None:
-        """Validate that the given azimuth and elevation are within the valid range for the turntable."""
+    def _validate_elevation_regime_bounds(
+        self,
+        *,
+        absolute_elevation: float | None = None,
+        within_regime_elevation: float | None = None,
+    ) -> bool:
+        """Validate that the given elevation is within the valid range for the turntable's current regime."""
+
+        if absolute_elevation is None and within_regime_elevation is None:
+            raise ValueError("Must provide either absolute elevation or within regime elevation.")
+        if absolute_elevation is not None and within_regime_elevation is not None:
+            raise ValueError("Cannot provide both absolute elevation and within regime elevation.")
+
+        if not self._current_regime:
+            raise RuntimeError("Current regime is not set. Cannot validate position without a regime.")
+
+        if within_regime_elevation is None:
+            within_regime_elevation = self._convert_to_regime_elevation(absolute_elevation)
+
+        if self.REGIME_ELEVATION_BOUNDS[0] <= within_regime_elevation <= self.REGIME_ELEVATION_BOUNDS[1]:
+            pass
+        else:
+            self.logger.debug(
+                f"Within regime elevation {within_regime_elevation} is NOT inside within-regime bounds {self.REGIME_ELEVATION_BOUNDS}"
+            )
+            return False
+
+        return True
+
+    def _validate_absolute_bounds(self, azimuth: float, elevation: float) -> bool:
+        """Validate that the given azimuth and elevation are within the valid physical range for the turntable.
+
+        Approximately -90 to +45 elevation and -175 to +175 azimuth."""
         # Validate azimuth within bounds
-        if not self.AZIMUTH_BOUNDS[0] <= azimuth <= self.AZIMUTH_BOUNDS[1]:
-            self.logger.error(f"Azimuth {azimuth} is out of bounds {self.AZIMUTH_BOUNDS}")
+        if not self.ABSOLUTE_AZIMUTH_BOUNDS[0] <= azimuth <= self.ABSOLUTE_AZIMUTH_BOUNDS[1]:
+            self.logger.error(f"Azimuth {azimuth} is out of bounds {self.ABSOLUTE_AZIMUTH_BOUNDS}")
             return False
 
         # Validate elevation within bounds
-        if not self.ELEVATION_BOUNDS[0] <= elevation <= self.ELEVATION_BOUNDS[1]:
-            self.logger.error(f"Elevation {elevation} is out of bounds {self.ELEVATION_BOUNDS}")
+        if not self.ABSOLUTE_ELEVATION_BOUNDS[0] <= elevation <= self.ABSOLUTE_ELEVATION_BOUNDS[1]:
+            self.logger.error(f"Elevation {elevation} is out of bounds {self.ABSOLUTE_ELEVATION_BOUNDS}")
             return False
 
         # Assume good
@@ -261,18 +307,46 @@ class Turntable:
 
     def validate_set_command(self, azimuth: float, elevation: float) -> None:
         """Validate that the given azimuth and elevation are within the valid range for the turntable."""
-        valid_bounds = self._validate_bounds(azimuth, elevation)
+        valid_bounds = self._validate_absolute_bounds(azimuth, elevation)
         if not valid_bounds:
             return False
 
         self.logger.debug(f"Set command {azimuth=}, {elevation=} is valid.")
         return True
 
-    def validate_move_command(self, azimuth: float, elevation: float) -> None:
+    def _convert_to_regime_elevation(self, elevation: float) -> float:
+        """Convert the given elevation to the turntable's internal conception of elevation.
+
+        This will apply the current regime offset to the given elevation."""
+        if self._regime_elevation_offset is None:
+            raise RuntimeError("Regime elevation offset is not set. Cannot convert elevation.")
+        return elevation - self._regime_elevation_offset
+
+    def _convert_from_regime_elevation(self, elevation: float) -> float:
+        """Convert the given elevation from the turntable's internal conception of elevation.
+
+        This will apply the current regime offset to the given elevation."""
+        if self._regime_elevation_offset is None:
+            raise RuntimeError("Regime elevation offset is not set. Cannot convert elevation.")
+        return elevation + self._regime_elevation_offset
+
+    def validate_move_command(
+        self,
+        azimuth: float,
+        absolute_elevation: float | None = None,
+        within_regime_elevation: float | None = None,
+    ) -> None:
         """Validate that the given azimuth and elevation are within the valid range for the turntable."""
 
-        valid_bounds = self._validate_bounds(azimuth, elevation)
-        if not valid_bounds:
+        valid_absolute = self._validate_absolute_bounds(azimuth, absolute_elevation)
+        if not valid_absolute:
+            return False
+
+        valid_regime = self._validate_elevation_regime_bounds(
+            absolute_elevation=absolute_elevation,
+            within_regime_elevation=within_regime_elevation,
+        )
+        if not valid_regime:
             return False
 
         # Validate that we have heard from the turntable recently enough.
@@ -289,7 +363,7 @@ class Turntable:
             return False
 
         # Assume good
-        self.logger.debug(f"Move command {azimuth=}, {elevation=} is valid.")
+        self.logger.debug(f"Move command {azimuth=}, {absolute_elevation=} is valid.")
         return True
 
     def send_move_command(self, azimuth: float, elevation: float) -> None:
@@ -328,27 +402,29 @@ class Turntable:
         set_position = AzEl(azimuth=azimuth, elevation=elevation)
         while True:
             time.sleep(0.05)
-            actual_position = self.get_position()
-            if not actual_position:
+            reported_position = self._get_reported_position()
+            if not reported_position:
                 continue
 
             # Verify that actual_position is within 0.1 degrees of set_position. If so, we're good. If not, keep waiting.
-            if abs(actual_position.azimuth - set_position.azimuth) > 0.1:
+            if abs(reported_position.azimuth - set_position.azimuth) > 0.1:
                 # self.logger.debug(
                 #     f"Waiting for reported azimuth to match set azimuth... Azimuth {actual_position.azimuth} is not within 0.1 degrees of {set_position.azimuth}"
                 # )
                 continue
-            if abs(actual_position.elevation - set_position.elevation) > 0.1:
+            if abs(reported_position.elevation - set_position.elevation) > 0.1:
                 # self.logger.debug(
                 #     f"Waiting for reported elevation to match set elevation... Elevation {actual_position.elevation} is not within 0.1 degrees of {set_position.elevation}"
                 # )
                 continue
 
-            self.logger.info(f"Successfully set turntable to {set_position=} {actual_position=}")
+            self.logger.info(f"Successfully set turntable to {set_position=} {reported_position=}")
             self.has_been_set = True
 
             if _set_regime:
-                self._current_regime = _regime.find_best_regime(actual_position.elevation)
+                self._current_regime = _regime.find_best_regime(reported_position.elevation)
+                if self._regime_elevation_offset is None:
+                    self._regime_elevation_offset = 0.0
                 self.logger.info(f"Set current regime to {self._current_regime}")
 
             return set_position
@@ -363,24 +439,25 @@ class Turntable:
         delay: float = 0.05,
     ) -> None:
         assert self._current_regime is not None
-        
+
         next_regime = _regime.find_next_regime(
             destination_angle=elevation,
             current_regime=self._current_regime,
         )
 
-        # Find the closest waypoint in the next regime to the current elevation.
         # The way regimes are defined, this point will always be in the current regime...
-        waypoint_elevation = next_regime.get_closest_waypoint(elevation)
-        self.logger.info(f"Moving to closest waypoint {waypoint_elevation} in next regime {next_regime}")
+        next_regime_center_elevation = next_regime.center_angle
+        self.logger.info(f"Moving to closest waypoint {next_regime_center_elevation} in next regime {next_regime}")
 
         # ...but lets check it anyway
-        assert waypoint_elevation in self._current_regime, f"{waypoint_elevation=} {self._current_regime=}"
+        assert next_regime_center_elevation in self._current_regime, (
+            f"{next_regime_center_elevation=} {self._current_regime=}"
+        )
 
         # Move to the closest waypoint in the neighboring regime.
         self.move_to(
             azimuth=azimuth,
-            elevation=waypoint_elevation,
+            elevation=next_regime_center_elevation,
             azimuth_margin=azimuth_margin,
             elevation_margin=elevation_margin,
             delay=delay,
@@ -390,23 +467,37 @@ class Turntable:
 
         # Let's sanity check that the current point (nery near a waypoint)
         # is within both of its neighbors regimes
-        assert reported_position.elevation in self._current_regime
-        assert reported_position.elevation in next_regime
+        reported_position_elevation = reported_position.elevation
+        real_elevation = self._convert_from_regime_elevation(reported_position_elevation)
+        assert real_elevation in self._current_regime, (
+            f"{reported_position_elevation=} {real_elevation=} {self._current_regime=}"
+        )
+        assert real_elevation in next_regime, f"{reported_position_elevation=} {real_elevation=} {next_regime=}"
 
         # Do the elevation offset math now. This is a fiddly thing, so be careful.
         if self._regime_elevation_offset is None:
+            new_regime_elevation_offset = reported_position.elevation
             self.logger.info(f"Setting regime elevation offset to {reported_position.elevation}. Was previously None.")
-            new_regime_elevation_offset = -reported_position.elevation
             self._regime_elevation_offset = new_regime_elevation_offset
         else:
-            new_regime_elevation_offset = self._regime_elevation_offset - reported_position.elevation
-            self.logger.info(f"Adjusting regime elevation offset by {new_regime_elevation_offset}. Was previously {self._regime_elevation_offset}")
+            new_regime_elevation_offset = self._regime_elevation_offset + reported_position.elevation
+            self.logger.info(
+                f"Setting regime elevation offset to {new_regime_elevation_offset}. Was previously {self._regime_elevation_offset}. This is being set by {reported_position.elevation=}"
+            )
             self._regime_elevation_offset = new_regime_elevation_offset
 
         # Set the position to the same azimuth, but elevation 0
-        self.send_set_command(azimuth=azimuth, elevation=0.0, _set_regime=False,)
+        # VERY IMPORTANT!!!: Do NOT set the regime here, since there is now divergence
+        # between the table's internal conception of its elevation and its actual elevation.
+        self.send_set_command(
+            azimuth=azimuth,
+            elevation=0.0,
+            _set_regime=False,
+        )
 
-        self.logger.warning(f"Moved from regime {self._current_regime} to next regime {next_regime} with elevation offset {self._regime_elevation_offset}")
+        self.logger.warning(
+            f"Moved from regime {self._current_regime} to next regime {next_regime} with elevation offset {self._regime_elevation_offset}"
+        )
         self._current_regime = next_regime
 
     def move_to(
@@ -420,7 +511,8 @@ class Turntable:
     ) -> AzEl:
         """Move to the given azimuth and elevation. Return the final position."""
 
-        # Determine if this is requires a regime change.
+        # Determine if this proposed movement
+        # will require a regime change.
         if not self._current_regime:
             raise RuntimeError("Current regime is not set. Cannot move to a position without a regime.")
         while elevation not in self._current_regime:
@@ -435,32 +527,58 @@ class Turntable:
                 delay=delay,
             )
 
-        if not self.validate_move_command(azimuth, elevation):
-            self.logger.error(f"Move command {azimuth=}, {elevation=} is invalid and WILL NOT BE SENT!")
-            return None
+        # User will have specified this in real elevation, so convert it to regime elevation.
+        within_regime_elevation = self._convert_to_regime_elevation(elevation)
+
+        return self._move_to_within_regime(
+            azimuth=azimuth,
+            within_regime_elevation=within_regime_elevation,
+            azimuth_margin=azimuth_margin,
+            elevation_margin=elevation_margin,
+            delay=delay,
+        )
+
+    def _move_to_within_regime(
+        self,
+        *,
+        azimuth: float,
+        within_regime_elevation: float,
+        azimuth_margin: float = 0.1,
+        elevation_margin: float = 0.1,
+        delay: float = 0.05,
+    ) -> AzEl:
+        """"""
+        if not self.validate_move_command(azimuth, within_regime_elevation):
+            message = f"Move command {azimuth=}, {within_regime_elevation=} is invalid and WILL NOT BE SENT!"
+            self.logger.error(message)
+            raise ValueError(message)
 
         starting_position = self.get_position()
         if not starting_position:
             self.logger.error("Failed to get current position. Will not send MOVE command.")
             return None
 
-        self.send_move_command(azimuth, elevation)
+        self.send_move_command(azimuth, within_regime_elevation)
 
-        target_position = AzEl(azimuth=azimuth, elevation=elevation)
+        target_position = AzEl(azimuth=azimuth, elevation=within_regime_elevation)
 
         while True:
-            current_position = self.get_position()
+            current_position = self._get_reported_position()
             if not current_position:
                 continue
             azimuth_delta = abs(current_position.azimuth - azimuth)
-            elevation_delta = abs(current_position.elevation - elevation)
+            elevation_delta = abs(current_position.elevation - within_regime_elevation)
             if azimuth_delta <= azimuth_margin and elevation_delta <= elevation_margin:
                 self.logger.info(f"Successfully moved to {current_position=} from {starting_position=}")
                 break
             else:
-                self.logger.debug(
-                    f"Still moving... {current_position=} {target_position=} {starting_position=} {azimuth_delta=}, {elevation_delta=}"
-                )
+                if self._show_move_debug:
+                    # self.logger.debug(
+                    #     f"Still moving... {current_position=} {target_position=} {starting_position=} {azimuth_delta=}, {elevation_delta=}"
+                    # )
+                    self.logger.debug(
+                        f"TT moving. cur_az={current_position.azimuth:.1f}, cur_el={current_position.elevation:.1f}; target_az={target_position.azimuth:.1f}, target_el={target_position.elevation:.1f}"
+                    )
             time.sleep(delay)
 
         return current_position
