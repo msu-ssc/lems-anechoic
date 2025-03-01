@@ -52,13 +52,13 @@ elevation_regimes = tuple(
         allowable_offset=29,
     )
     for angle in [
-        -75,
-        -50,
-        -25,
+        -81,
+        -54,
+        -27,
         0,
-        25,
-        50,
-        75,
+        27,
+        54,
+        81,
     ]
 )
 """The valid elevation regimes for the turn table."""

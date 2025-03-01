@@ -20,7 +20,7 @@ azimuth_elevation_regex = re.compile(r"Pos\s*=\s*El:\s*(?P<elevation>[-\d\.]+)\s
 
 
 class Turntable:
-    ABSOLUTE_AZIMUTH_BOUNDS = (-175, 175)
+    ABSOLUTE_AZIMUTH_BOUNDS = (-180, 180)
     ABSOLUTE_ELEVATION_BOUNDS = (-90, 45)
     REGIME_ELEVATION_BOUNDS = (-29.5, 29.5)
     """The bounds of the turntable's elevation regime, in degrees.
