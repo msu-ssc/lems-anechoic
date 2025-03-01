@@ -9,11 +9,15 @@ from textual.app import ComposeResult
 from textual.containers import Center
 from textual.containers import HorizontalGroup
 from textual.containers import Vertical
+from textual.logging import TextualHandler
 from textual.widget import Widget
 from textual.widgets import Button
 from textual.widgets import Label
 from textual.widgets import ProgressBar
 from textual.widgets import RichLog
+
+from msu_anechoic.spec_an import SpectrumAnalyzerHP8563E
+from msu_anechoic.turn_table import Turntable
 
 
 def pretty_timedelta_str(delta: datetime.timedelta) -> str:
@@ -213,29 +217,52 @@ class RichLogApp(App):
         # self.set_timer(0.05, self.next_point)
         self.set_timer(random.uniform(0.5, 1), self.next_point)
 
-    # lol
-    def _random_log_messages(self):
-        if self.test_done:
-            self.logger.info("Test is done, stopping random log messages.")
+    # # lol
+    # def _random_log_messages(self):
+    #     if self.test_done:
+    #         self.logger.info("Test is done, stopping random log messages.")
+    #         return
+
+    #     for _ in range(random.randint(1, 10)):
+    #         log_levels = [logging.DEBUG] * 20 + [logging.INFO] * 3 + [logging.WARNING, logging.ERROR]
+    #         log_level = random.choice(log_levels)
+    #         log_message = f"{logging.getLevelName(log_level)} Some message, additional info: {random.randint(1, 1000)}"
+    #         if random.random() < 0.3:  # 30% chance to make the message longer
+    #             log_message += " " + ("extra details " * random.randint(5, 20))
+    #         if random.random() < 0.01:
+    #             try:
+    #                 raise ValueError("An example exception for logging")
+    #             except Exception as e:
+    #                 self.logger.exception("An exception occurred: %s", e)
+    #         else:
+    #             self.logger.log(log_level, log_message[: random.randint(50, 200)])
+    #     self.set_timer(random.random() / 10, self._random_log_messages)
+
+    def begin_test(self) -> None:
+        self.main_content.write("Connecting to spectrum analyzer . . . ")
+        self.logger.info("Connectiong to spectrum analyzer")
+        self.spec_an = SpectrumAnalyzerHP8563E.find(
+            logger=self.logger.getChild("spec_an"),
+        )
+        if not self.spec_an:
+            self.main_content.write("Failed to connect to spectrum analyzer")
+            self.logger.error("Failed to connect to spectrum analyzer")
             return
 
-        for _ in range(random.randint(1, 10)):
-            log_levels = [logging.DEBUG] * 20 + [logging.INFO] * 3 + [logging.WARNING, logging.ERROR]
-            log_level = random.choice(log_levels)
-            log_message = f"{logging.getLevelName(log_level)} Some message, additional info: {random.randint(1, 1000)}"
-            if random.random() < 0.3:  # 30% chance to make the message longer
-                log_message += " " + ("extra details " * random.randint(5, 20))
-            if random.random() < 0.01:
-                try:
-                    raise ValueError("An example exception for logging")
-                except Exception as e:
-                    self.logger.exception("An exception occurred: %s", e)
-            else:
-                self.logger.log(log_level, log_message[: random.randint(50, 200)])
-        self.set_timer(random.random() / 10, self._random_log_messages)
+        self.main_content.write("Centering on peak . . . ")
+        self.logger.info("Centering on peak")
+        self.spec_an.move_center_to_peak(
+            center_frequency=8_450_000_000,
+            spans = (
+                1_000_000,
+                100_000,
+                10_000,
+                1_000,
+            )
+        )
+        self.logger.info("Centered on peak.")
+        self.main_content.write("Centered on peak.")
 
-    def on_ready(self) -> None:
-        """Called  when the DOM is ready."""
 
         # METADATA STUFF
         self.test_start_time = datetime.datetime.now()
@@ -257,7 +284,12 @@ class RichLogApp(App):
 
         # Start the actual work
         self.set_timer(0.1, self.next_point)
-        self._random_log_messages_timer = self.set_timer(0.5, self._random_log_messages)
+        # self._random_log_messages_timer = self.set_timer(0.5, self._random_log_messages)
+
+    def on_ready(self) -> None:
+        """Called  when the DOM is ready."""
+        self.set_timer(0.1, self.begin_test)
+        
 
 
 if __name__ == "__main__":

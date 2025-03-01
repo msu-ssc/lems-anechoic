@@ -89,7 +89,7 @@ class Turntable:
             try:
                 string = line.decode(encoding="ascii")
             except UnicodeDecodeError:
-                self.logger.debug(f"Failed to decode line {line!r} as ASCII")
+                # self.logger.debug(f"Failed to decode line {line!r} as ASCII")
                 continue
 
             # Try to match the regex. If it doesn't match, continue.
