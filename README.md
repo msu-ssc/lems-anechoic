@@ -1,7 +1,7 @@
 # lems-anechoic
 LEMS anechoic chamber test scripts
 
-> [!IMPORTANT]  
+> [!CAUTION]  
 > Remember, CUI/ITAR/etc. data (including code/config files/design docs) does not belong on GitHub at all.
 
 ### Provenance

@@ -658,13 +658,13 @@ class Turntable:
         position = self.send_set_command(azimuth=0.0, elevation=0.0)
         return position
 
-    def send_emergency_stop_command(
+    def send_stop_command(
         self,
         *,
         repeat: int = 5,
         delay: float = 0.2,
     ):
-        """Send an emergency stop command to the turntable. Repeat the given number of times with the given delay.
+        """Send a stop command to the turntable. Repeat the given number of times with the given delay.
 
         Default is to repeat 5 times with a 0.2 second delay between each command."""
         command = b"p"

@@ -99,13 +99,13 @@ if __name__ == "__main__":
 
     fig, ax = plt.subplots(subplot_kw={"projection": "polar"})
     colors = [
-        "#880000",
-        "#008800",
-        "#000088",
-        "#888800",
-        "#880088",
-        "#008888",
-        "#888888",
+        "#ff0000",
+        "#00ff00",
+        "#0000ff",
+        "#ffff00",
+        "#ff00ff",
+        "#00ffff",
+        # "#ffffff",
     ]
     np.random.seed(40351)
     radius = 1
@@ -158,8 +158,8 @@ if __name__ == "__main__":
     ax.set_thetamin(-180)
     ax.set_thetamax(180)
     ax.set_yticklabels([])  # Remove radial scale labels
-    ax.set_xticks(np.radians(np.arange(-180, 181, 15)))
-    ax.set_xticks(np.radians(np.arange(-180, 181, 90)))
+    # ax.set_xticks(np.radians(np.arange(-180, 181, 15)))
+    ax.set_xticks(np.radians(np.arange(-180, 180, 90)))
     plt.show()
 
     start_angle = -90

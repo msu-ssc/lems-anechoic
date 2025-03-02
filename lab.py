@@ -231,6 +231,6 @@ except (Exception, KeyboardInterrupt) as exc:
     ssc_log.logger.exception(exc, exc_info=exc)
 
     # If anything went wrong, attempt to stop the turntable.
-    turntable.send_emergency_stop_command()
+    turntable.send_stop_command()
 
 lab_logger.info("Lab script complete. Exiting.")
