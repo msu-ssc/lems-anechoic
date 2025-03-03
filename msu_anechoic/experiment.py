@@ -76,8 +76,10 @@ class Grid(pydantic.BaseModel):
         return points
 
     def cuts(self) -> Generator[list[Coordinate], None, None]:
+        should_reverse = False
         for cut_angle in self.cut_angles():
-            yield list(self.cut_points(cut_angle))
+            yield list(self.cut_points(cut_angle, should_reverse=should_reverse))
+            should_reverse = not should_reverse
 
     def __len__(self) -> int:
         return len(self.cut_angles()) * len(self.cut_points(0))
