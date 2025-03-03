@@ -158,6 +158,16 @@ class Coordinate(pydantic.BaseModel):
     ]
     """What was the original source of the coordinate."""
 
+    def __repr__(self):
+        if self.kind == "antenna":
+            method = self.__class__.__name__ + ".from_antenna"
+        elif self.kind == "turntable":
+            method = self.__class__.__name__ + ".from_turntable"
+        elif self.kind == "absolute_turntable":
+            method = self.__class__.__name__ + ".from_absolute_turntable"
+        
+        return f"{method}(azimuth={self.azimuth}, elevation={self.elevation}, neutral_elevation={self.neutral_elevation})"
+
     def __str__(self):
         kind_str = self.kind.replace("_", " ").capitalize()
         return f"<az={self.azimuth:+.1f}, el={self.elevation:+.1f} ({kind_str})>"
@@ -342,13 +352,13 @@ if __name__ == "__main__":
     )
 
     print(f"{turntable_location=!s}")
-    # print(f"{turntable_location=!r}")
+    print(f"{turntable_location=!r}")
 
     print(f"{absolute_turntable_location=!s}")
-    # print(f"{absolute_turntable_location=!r}")
+    print(f"{absolute_turntable_location=!r}")
 
     print(f"{antenna_location=!s}")
-    # print(f"{antenna_location=!r}")
+    print(f"{antenna_location=!r}")
     # print(turntable_location.model_dump_json(indent=4))
 
     point1 = Coordinate.from_antenna(azimuth=45, elevation=35, neutral_elevation=5)
