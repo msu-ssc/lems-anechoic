@@ -1,7 +1,8 @@
 import csv
 import datetime
 from pathlib import Path
-from typing import Any, Generator
+from typing import Any
+from typing import Generator
 from typing import Literal
 
 import numpy as np
@@ -20,7 +21,7 @@ EXPERIMENTS_FOLDER_PATH = Path("./experiments")
 class Grid(pydantic.BaseModel):
     min_azimuth: float
     max_azimuth: float
-    aziumuth_step_size: float
+    azimuth_step_size: float
     min_elevation: float
     max_elevation: float
     elevation_step_size: float
@@ -34,9 +35,7 @@ class Grid(pydantic.BaseModel):
         )
 
     def azimuths(self) -> list[float]:
-        return list(
-            np.arange(self.min_azimuth, self.max_azimuth + self.aziumuth_step_size / 2, self.aziumuth_step_size)
-        )
+        return list(np.arange(self.min_azimuth, self.max_azimuth + self.azimuth_step_size / 2, self.azimuth_step_size))
 
     def cut_count(self) -> int:
         return len(self.cut_angles())
@@ -256,19 +255,19 @@ class Experiment(pydantic.BaseModel):
             try:
                 parameters = ExperimentParameters.model_validate_json(path.read_text(encoding="utf-8"))
                 paramaters_path = path
-            except Exception as exc:
+            except Exception:
                 pass
         else:
             for file_path in path.rglob("parameters.json"):
                 try:
                     parameters = ExperimentParameters.model_validate_json(file_path.read_text(encoding="utf-8"))
                     paramaters_path = file_path
-                except Exception as exc:
+                except Exception:
                     pass
 
         if parameters is None:
             raise ValueError(f"No valid parameters.json file found in {path}")
-        
+
         parameters.relative_folder_path = paramaters_path.parent
 
         print(f"Loaded parameters from {paramaters_path}")
@@ -333,12 +332,14 @@ class Experiment(pydantic.BaseModel):
             self._run_grid_experiment()
         elif self.parameters.points:
             self._run_points_experiment()
-        
+
         # TEST IS DONE
         test_end_time = datetime.datetime.now(datetime.timezone.utc)
         duration = test_end_time - test_start_time
 
-        print(f"Test started at {test_start_time} and ended at {test_end_time}. Total duration: {duration.total_seconds():,.0f} seconds = {duration.total_seconds() / 60:,.1f} minutes = {duration.total_seconds() / 60 / 60:,.2f} hours")
+        print(
+            f"Test started at {test_start_time} and ended at {test_end_time}. Total duration: {duration.total_seconds():,.0f} seconds = {duration.total_seconds() / 60:,.1f} minutes = {duration.total_seconds() / 60 / 60:,.2f} hours"
+        )
         return self
 
     def _run_grid_experiment(self) -> None:
@@ -346,7 +347,9 @@ class Experiment(pydantic.BaseModel):
         assert grid is not None, "Grid should not be `None` here"
 
         while True:
-            print(f"This grid has {len(grid):,} points and will take approximately {grid.rough_time_estimate():,.0f} seconds to complete.")
+            print(
+                f"This grid has {len(grid):,} points and will take approximately {grid.rough_time_estimate():,.0f} seconds to complete."
+            )
             user_input = input("Do you want to continue? [y/n]: ")
             if user_input.lower() == "y":
                 break
@@ -355,7 +358,6 @@ class Experiment(pydantic.BaseModel):
                 return
             else:
                 print("Did not understand input.")
-
 
         from rich.progress import Progress
 
@@ -387,7 +389,7 @@ class Experiment(pydantic.BaseModel):
                     completed=cut_index,
                     description=f"Doing cut #{cut_index + 1} of {grid.cut_count():,}",
                 )
-            
+
             # EXPERIMENT DONE!
             # Reset turntable
             self.turntable.move_to(azimuth=0, elevation=0)
@@ -456,7 +458,6 @@ class Experiment(pydantic.BaseModel):
         pass
 
 
-
 if __name__ == "__main__":
     spec_an_config = SpecAnConfig(
         initial_center_frequency=8_450_000_000,
@@ -479,7 +480,7 @@ if __name__ == "__main__":
     grid = Grid(
         min_azimuth=-10,
         max_azimuth=10,
-        aziumuth_step_size=10,
+        azimuth_step_size=10,
         min_elevation=-2,
         max_elevation=2,
         elevation_step_size=2,
