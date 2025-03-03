@@ -165,10 +165,10 @@ try:
 
     # PROTIP: When using np.linspace, the center point will be included if and only if
     # you use an odd number of points.
-    # for azimuth in np.linspace(-150, 150, 301):
-    #     points.append((azimuth, 0, "azimuth-cut"))
-    for elevation in np.arange(-85, 42.5, 2.5):
-        points.append((0, elevation, "elevation-cut"))
+    for azimuth in np.linspace(-20, 20, 9):
+        points.append((azimuth, 0, "azimuth-cut"))
+    # for elevation in np.arange(-85, 42.5, 2.5):
+    #     points.append((0, elevation, "elevation-cut"))
 
     # Give used a very rough estimate of how long this will take,
     # based on the assumption that each point will take 4 seconds.
@@ -191,7 +191,10 @@ try:
 
             # Get the actual position of the turntable, which should
             # be within 0.1 degrees of the commanded position
-            actual_azimuth, actual_elevation = turntable.get_position()
+            actual_position = turntable.wait_for_position()
+            actual_azimuth = actual_position.turntable_azimuth
+            actual_elevation = actual_position.turntable_elevation
+            # actual_azimuth, actual_elevation = turntable.get_position()
             data["commanded_azimuth"] = azimuth
             data["commanded_elevation"] = elevation
             data["actual_azimuth"] = actual_azimuth
