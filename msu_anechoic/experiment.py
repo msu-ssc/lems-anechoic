@@ -8,6 +8,7 @@ from msu_anechoic import AzElTurntable
 
 EXPERIMENTS_FOLDER_PATH = Path("./experiments")
 
+
 class Grid(pydantic.BaseModel):
     min_azimuth: float
     max_azimuth: float
@@ -19,8 +20,9 @@ class Grid(pydantic.BaseModel):
 
 
 class SpecAnConfig(pydantic.BaseModel):
-    center_frequency: float
-    span: float
+    initial_center_frequency: float
+    spans_when_searching: list[float]
+    reference_level: float = -10
 
 
 class SigGenConfig(pydantic.BaseModel):
@@ -29,7 +31,7 @@ class SigGenConfig(pydantic.BaseModel):
     vernier_power: float
 
 
-class ExperimentMetadata(pydantic.BaseModel):
+class ExperimentParameters(pydantic.BaseModel):
     short_description: str = "default"
     long_description: str = "default"
 
@@ -41,7 +43,7 @@ class ExperimentMetadata(pydantic.BaseModel):
 
     grid: Grid | None = None
     points: list[AzElTurntable] | None = None
-    
+
     desired_sig_gen_config: SigGenConfig | None = None
     actual_start_sig_gen_config: SigGenConfig | None = None
     actual_finish_sig_gen_config: SigGenConfig | None = None
@@ -49,7 +51,7 @@ class ExperimentMetadata(pydantic.BaseModel):
     desired_spec_an_config: SpecAnConfig | None = None
     actual_start_spec_an_config: SpecAnConfig | None = None
     actual_finish_spec_an_config: SpecAnConfig | None = None
-    
+
     # experiment_start_time_utc: datetime.datetime | None = None
     # experiment_finish_time_utc: datetime.datetime | None = None
     points: dict[int, AzElTurntable] | None = None
@@ -83,8 +85,62 @@ class ExperimentMetadata(pydantic.BaseModel):
         self.metadata_json_path.write_text(self.model_dump_json(indent=4))
 
 
+def run_experiment(
+    *,
+    parameters: ExperimentParameters,
+) -> None:
+    from msu_anechoic.spec_an import SpectrumAnalyzerHP8563E
+    from msu_anechoic.turn_table import Turntable
+
+    # TODO: Make log params part of the config
+    # isort: off
+    from msu_ssc import ssc_log
+
+    ssc_log.init(
+        level="DEBUG",
+        plain_text_file_path=parameters.log_plaintext_path,
+        jsonl_file_path=parameters.log_jsonl_path,
+    )
+    logger = ssc_log.logger.getChild("experiment")
+    # isort: on
+
+    # CONNECT TO TURNTABLE
+    turn_table = Turntable.find(
+        logger=logger.getChild("turntable"),
+    )
+    if turn_table is None:
+        raise ValueError("Could not find turn table")
+
+    # CONNECT TO SPECTRUM ANALYZER
+    spec_an = SpectrumAnalyzerHP8563E.find(
+        logger=logger.getChild("spec_an"),
+    )
+    if spec_an is None:
+        raise ValueError("Could not find spectrum analyzer")
+
+    # CONFIGURE SPEC AN
+    # TODO: Write this method
+    spec_an.configure(parameters.desired_spec_an_config)
+    center_frequency = spec_an.move_center_to_peak(
+        center_frequency=parameters.desired_spec_an_config.initial_center_frequency,
+        spans=parameters.desired_spec_an_config.spans_when_searching,
+    )
+    spec_an.set_reference_level(-10)
+
+    # CONFIGURE SIG GEN
+    # This is manual for now
+    print("Configure the signal generator manually")
+    print(f"{parameters.desired_sig_gen_config.model_dump_json(indent=4)}")
+
+    # CONFIGURE TURNTABLE
+    turn_table.interactively_center()
+
+    # RUN EXPERIMENT
+    # TODO
+
+
 if __name__ == "__main__":
-    spec_an_config = SpecAnConfig(center_frequency=8_450_000_000, span=1_000)
+    spec_an_config = SpecAnConfig(initial_center_frequency=8_450_000_000, spans_when_searching=1_000)
     sig_gen_config = SigGenConfig(center_frequency=8_450_000_000, power=-10, vernier_power=0)
     # points = {
     #     0: AzElTurntable(azimuth=-5, elevation=5),
@@ -101,7 +157,7 @@ if __name__ == "__main__":
         elevation_step_size=1,
         orientation="horizontal",
     )
-    experiment = ExperimentMetadata(
+    experiment = ExperimentParameters(
         short_description="3x3 8.45 GHz",
         long_description="Initial test of a 3x3 grid at 8.45 GHz",
         desired_spec_an_config=spec_an_config,
@@ -114,9 +170,7 @@ if __name__ == "__main__":
     print(f"{experiment=}")
     print(experiment.model_dump_json(indent=4))
 
-    experiment_2 = ExperimentMetadata.model_validate_json(experiment.model_dump_json())
+    experiment_2 = ExperimentParameters.model_validate_json(experiment.model_dump_json())
     print(f"{experiment_2=}")
 
     experiment.write_metadata()
-
-    
