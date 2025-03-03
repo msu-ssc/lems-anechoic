@@ -492,21 +492,23 @@ class Turntable:
         # Wait here until we get a response from the turntable. This is a blocking operation.
         set_position = AzEl(azimuth=azimuth, elevation=elevation)
         while True:
-            time.sleep(0.05)
+            time.sleep(0.10)
             reported_position = self._get_within_regime_position()
             if not reported_position:
                 continue
 
             # Verify that actual_position is within 0.1 degrees of set_position. If so, we're good. If not, keep waiting.
             if abs(reported_position.azimuth - set_position.azimuth) > 0.1:
-                # self.logger.debug(
-                #     f"Waiting for reported azimuth to match set azimuth... Azimuth {actual_position.azimuth} is not within 0.1 degrees of {set_position.azimuth}"
-                # )
+                if self._show_move_debug:
+                    self.logger.debug(
+                        f"Waiting for reported azimuth to match set azimuth... Azimuth {reported_position.azimuth} is not within 0.1 degrees of {set_position.azimuth}"
+                    )
                 continue
             if abs(reported_position.elevation - set_position.elevation) > 0.1:
-                # self.logger.debug(
-                #     f"Waiting for reported elevation to match set elevation... Elevation {actual_position.elevation} is not within 0.1 degrees of {set_position.elevation}"
-                # )
+                if self._show_move_debug:
+                    self.logger.debug(
+                        f"Waiting for reported elevation to match set elevation... Elevation {reported_position.elevation} is not within 0.1 degrees of {set_position.elevation}"
+                    )
                 continue
 
             self.logger.info(f"Successfully set turntable to {set_position=} {reported_position=}")

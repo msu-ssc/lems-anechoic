@@ -4,7 +4,7 @@ import numpy as np  # For numerical operations
 import pandas as pd  # For data manipulation
 
 # Read the CSV file into a DataFrame
-df = pd.read_csv("lab_data.csv", parse_dates=["timestamp_utc"])
+df = pd.read_csv(R"C:\Users\ssc\dev\lems-anechoic\lab_data.known_good.csv", parse_dates=["timestamp_utc"])
 
 # # Filter out points where commanded azimuth and actual azimuth differ by more than 1.0 degree
 # df = df[np.abs(df["commanded_azimuth"] - df["actual_azimuth"]) <= 1.0]

@@ -1,10 +1,18 @@
+import csv
+import datetime
 from pathlib import Path
+from typing import Any, Generator
 from typing import Literal
 
+import numpy as np
+import pandas as pd
 import pydantic
 from msu_ssc import path_util
 
 from msu_anechoic import AzElTurntable
+from msu_anechoic.spec_an import SpectrumAnalyzerHP8563E
+from msu_anechoic.turn_table import Turntable
+from msu_anechoic.util.coordinate import Coordinate
 
 EXPERIMENTS_FOLDER_PATH = Path("./experiments")
 
@@ -17,6 +25,72 @@ class Grid(pydantic.BaseModel):
     max_elevation: float
     elevation_step_size: float
     orientation: Literal["horizontal", "vertical"]
+    kind: Literal["turntable", "antenna"] = "turntable"
+    neutral_elevation: float = 0.0
+
+    def elevations(self) -> list[float]:
+        return list(
+            np.arange(self.min_elevation, self.max_elevation + self.elevation_step_size / 2, self.elevation_step_size)
+        )
+
+    def azimuths(self) -> list[float]:
+        return list(
+            np.arange(self.min_azimuth, self.max_azimuth + self.aziumuth_step_size / 2, self.aziumuth_step_size)
+        )
+
+    def cut_count(self) -> int:
+        return len(self.cut_angles())
+
+    def size_of_cut(self) -> int:
+        return len(self.cut_points(0))
+
+    def cut_angles(self) -> list[float]:
+        if self.orientation == "horizontal":
+            return list(self.elevations())
+        else:
+            return list(self.azimuths())
+
+    def cut_points(self, cut_angle: float, should_reverse: bool = False) -> list[float]:
+        within_cut_angles = self.azimuths() if self.orientation == "horizontal" else self.elevations()
+        if should_reverse:
+            within_cut_angles = reversed(within_cut_angles)
+
+        points = []
+
+        for within_cut_angle in within_cut_angles:
+            if self.orientation == "horizontal":
+                points.append(
+                    Coordinate.from_turntable(
+                        azimuth=within_cut_angle,
+                        elevation=cut_angle,
+                        neutral_elevation=self.neutral_elevation,
+                    )
+                )
+            else:
+                points.append(
+                    Coordinate.from_turntable(
+                        azimuth=cut_angle,
+                        elevation=within_cut_angle,
+                        neutral_elevation=self.neutral_elevation,
+                    )
+                )
+        return points
+
+    def cuts(self) -> Generator[list[Coordinate], None, None]:
+        for cut_angle in self.cut_angles():
+            yield list(self.cut_points(cut_angle))
+
+    def __len__(self) -> int:
+        return len(self.cut_angles()) * len(self.cut_points(0))
+
+    def __iter__(self) -> Generator[Coordinate, None, None]:
+        for cut in self.cuts():
+            for point in cut:
+                yield point
+
+    def rough_time_estimate(self, seconds_per_point: float = 5) -> float:
+        """A VERY rough estimate of how long this grid will take, based on the assumption that each point will take `seconds_per_point` seconds."""
+        return len(self) * seconds_per_point
 
 
 class SpecAnConfig(pydantic.BaseModel):
@@ -31,53 +105,61 @@ class SigGenConfig(pydantic.BaseModel):
     vernier_power: float
 
 
+class PolarizationConfig(pydantic.BaseModel):
+    kind: Literal["vertical", "horizontal"]
+
+
 class ExperimentParameters(pydantic.BaseModel):
     short_description: str = "default"
     long_description: str = "default"
-
     relative_folder_path: Path | None = None
-    raw_data_csv_path: Path | None = None
-    metadata_json_path: Path | None = None
-    log_jsonl_path: Path | None = None
-    log_plaintext_path: Path | None = None
-
     grid: Grid | None = None
+    sig_gen_config: SigGenConfig | None = None
+    spec_an_config: SpecAnConfig | None = None
+    polarization_config: PolarizationConfig | None = None
     points: list[AzElTurntable] | None = None
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "DEBUG"
 
-    desired_sig_gen_config: SigGenConfig | None = None
-    actual_start_sig_gen_config: SigGenConfig | None = None
-    actual_finish_sig_gen_config: SigGenConfig | None = None
-
-    desired_spec_an_config: SpecAnConfig | None = None
-    actual_start_spec_an_config: SpecAnConfig | None = None
-    actual_finish_spec_an_config: SpecAnConfig | None = None
-
-    # experiment_start_time_utc: datetime.datetime | None = None
-    # experiment_finish_time_utc: datetime.datetime | None = None
-    points: dict[int, AzElTurntable] | None = None
-    # az_el_cls: Literal["AzElSpherical", "AzElTurntable"] | None = None
+    collect_center_frequency_data: bool = True
+    collect_peak_data: bool = True
+    collect_trace_data: bool = False
 
     @pydantic.model_validator(mode="after")
     def _after_validator(self) -> None:
         if self.relative_folder_path is None:
             self.relative_folder_path = path_util.clean_path(EXPERIMENTS_FOLDER_PATH / self.short_description)
-        if self.raw_data_csv_path is None:
-            self.raw_data_csv_path = self.relative_folder_path / "raw_data.csv"
-        if self.metadata_json_path is None:
-            self.metadata_json_path = self.relative_folder_path / "experiment_metadata.json"
-        if self.log_jsonl_path is None:
-            self.log_jsonl_path = self.relative_folder_path / "logs" / "log.jsonl"
-        if self.log_plaintext_path is None:
-            self.log_plaintext_path = self.relative_folder_path / "logs" / "log.txt"
 
         if self.grid is not None and self.points is not None:
             raise ValueError("Cannot have both `grid` and `points`")
         elif self.grid is None and self.points is None:
             raise ValueError("Must have either `grid` or `points`")
+        return self
 
     # @property
     # def experiment_folder_path(self) -> Path:
     #     return path_util.clean_path(EXPERIMENTS_FOLDER_PATH / self.short_description).expanduser().resolve()
+
+    @property
+    def metadata_json_path(self) -> Path:
+        return self.relative_folder_path / "metadata.json"
+
+    @property
+    def log_plaintext_path(self) -> Path:
+        return self.relative_folder_path / "logs" / "log.log"
+
+    @property
+    def log_jsonl_path(self) -> Path:
+        return self.relative_folder_path / "logs" / "log.jsonl"
+
+    @property
+    def raw_data_csv_path(self) -> Path:
+        return self.relative_folder_path / "raw_data" / "data.csv"
+
+    def run(self) -> "Experiment":
+        """Run this experiment."""
+        experiment = Experiment(parameters=self)
+        experiment.run()
+        return experiment
 
     def write_metadata(self) -> None:
         parent = self.metadata_json_path.parent
@@ -85,63 +167,309 @@ class ExperimentParameters(pydantic.BaseModel):
         self.metadata_json_path.write_text(self.model_dump_json(indent=4))
 
 
-def run_experiment(
-    *,
-    parameters: ExperimentParameters,
-) -> None:
-    from msu_anechoic.spec_an import SpectrumAnalyzerHP8563E
-    from msu_anechoic.turn_table import Turntable
+class ExperimentDatapoint(pydantic.BaseModel):
+    cut_id: str | int | None = None
+    timestamp: datetime.datetime | None = None
 
-    # TODO: Make log params part of the config
-    # isort: off
-    from msu_ssc import ssc_log
+    commanded_coordinate: Coordinate | None = None
+    actual_coordinate: Coordinate | None = None
 
-    ssc_log.init(
-        level="DEBUG",
-        plain_text_file_path=parameters.log_plaintext_path,
-        jsonl_file_path=parameters.log_jsonl_path,
-    )
-    logger = ssc_log.logger.getChild("experiment")
-    # isort: on
+    center_frequency: float | None = None
+    center_amplitude: float | None = None
+    peak_frequency: float | None = None
+    peak_amplitude: float | None = None
 
-    # CONNECT TO TURNTABLE
-    turn_table = Turntable.find(
-        logger=logger.getChild("turntable"),
-    )
-    if turn_table is None:
-        raise ValueError("Could not find turn table")
+    trace_lower_bound: float | None = None
+    trace_upper_bound: float | None = None
+    trace_data: list[float] | None = None
 
-    # CONNECT TO SPECTRUM ANALYZER
-    spec_an = SpectrumAnalyzerHP8563E.find(
-        logger=logger.getChild("spec_an"),
-    )
-    if spec_an is None:
-        raise ValueError("Could not find spectrum analyzer")
+    def to_csv_dict(self) -> dict[str, Any]:
+        rv = {
+            "timestamp": self.timestamp,
+            "cut_id": self.cut_id,
+            # "actual_azimuth": None,
+            # "actual_elevation": None,
+            "center_frequency": self.center_frequency,
+            "center_amplitude": self.center_amplitude,
+            "peak_frequency": self.peak_frequency,
+            "peak_amplitude": self.peak_amplitude,
+            # "trace_lower_bound": self.trace_lower_bound,
+            # "trace_upper_bound": self.trace_upper_bound,
+            # "trace_data": self.trace_data,
+        }
 
-    # CONFIGURE SPEC AN
-    # TODO: Write this method
-    spec_an.configure(parameters.desired_spec_an_config)
-    center_frequency = spec_an.move_center_to_peak(
-        center_frequency=parameters.desired_spec_an_config.initial_center_frequency,
-        spans=parameters.desired_spec_an_config.spans_when_searching,
-    )
-    spec_an.set_reference_level(-10)
+        if self.commanded_coordinate is not None:
+            rv["commanded_azimuth"] = self.commanded_coordinate.turntable_azimuth
+            rv["commanded_elevation"] = self.commanded_coordinate.turntable_elevation
+        if self.actual_coordinate is not None:
+            rv["actual_azimuth"] = self.actual_coordinate.turntable_azimuth
+            rv["actual_elevation"] = self.actual_coordinate.turntable_elevation
+        if self.trace_data:
+            rv["trace_data"] = ";".join(str(x) for x in self.trace_data)
+            rv["trace_lower_bound"] = self.trace_lower_bound
+            rv["trace_upper_bound"] = self.trace_upper_bound
 
-    # CONFIGURE SIG GEN
-    # This is manual for now
-    print("Configure the signal generator manually")
-    print(f"{parameters.desired_sig_gen_config.model_dump_json(indent=4)}")
+        rv = {k: v for k, v in rv.items() if v is not None}
 
-    # CONFIGURE TURNTABLE
-    turn_table.interactively_center()
+        return rv
 
-    # RUN EXPERIMENT
-    # TODO
+
+class ExperimentResults(pydantic.BaseModel):
+    datapoints: list[ExperimentDatapoint] = pydantic.Field(default_factory=list)
+
+    def append_csv(self, *, csv_path: Path, data: ExperimentDatapoint) -> None:
+        """Append a datapoint to a CSV file.
+
+        Have a manual thing for this to avoid Pandas overhead, and also because
+        trace data needs to be stringified"""
+        data_dict = data.to_csv_dict()
+        fieldnames = data_dict.keys()
+        if not csv_path.exists():
+            csv_path.parent.mkdir(parents=True, exist_ok=True)
+
+            with open(csv_path, "w", encoding="utf-8", newline="") as file:
+                writer = csv.DictWriter(file, fieldnames=fieldnames, dialect="unix")
+                writer.writeheader()
+
+        with open(csv_path, "a", encoding="utf-8", newline="") as file:
+            writer = csv.DictWriter(file, fieldnames=fieldnames, dialect="unix")
+            writer.writerow(data_dict)
+
+    def to_pandas(self) -> pd.DataFrame:
+        return pd.DataFrame([datapoint.model_dump() for datapoint in self.datapoints])
+
+    def to_csv(self, path: Path) -> None:
+        self.to_pandas().to_csv(path, index=False)
+
+
+class Experiment(pydantic.BaseModel):
+    parameters: ExperimentParameters
+    results: ExperimentResults | None = None
+
+    model_config = pydantic.ConfigDict(extra="allow")
+
+    @classmethod
+    def run_file(cls, *, path: Path) -> "Experiment":
+        parameters = None
+        paramaters_path = None
+        if path.is_file():
+            try:
+                parameters = ExperimentParameters.model_validate_json(path.read_text(encoding="utf-8"))
+                paramaters_path = path
+            except Exception as exc:
+                pass
+        else:
+            for file_path in path.rglob("parameters.json"):
+                try:
+                    parameters = ExperimentParameters.model_validate_json(file_path.read_text(encoding="utf-8"))
+                    paramaters_path = file_path
+                except Exception as exc:
+                    pass
+
+        if parameters is None:
+            raise ValueError(f"No valid parameters.json file found in {path}")
+        
+        parameters.relative_folder_path = paramaters_path.parent
+
+        print(f"Loaded parameters from {paramaters_path}")
+
+        experiment = cls(parameters=parameters)
+        experiment.run()
+        print(f"Experiment finished. Data saved to {parameters.raw_data_csv_path}")
+
+        return experiment
+
+    def run(self) -> "Experiment":
+        from msu_ssc import ssc_log
+
+        ssc_log.init(
+            level=self.parameters.log_level,
+            plain_text_file_path=self.parameters.log_plaintext_path,
+            jsonl_file_path=self.parameters.log_jsonl_path,
+        )
+        self.logger = ssc_log.logger.getChild("experiment")
+
+        # CONNECT TO AND CONFIGURE SPEC AN
+        self.spec_an = SpectrumAnalyzerHP8563E.find(
+            logger=self.logger.getChild("spec_an"),
+        )
+        if not self.spec_an:
+            raise ValueError("No spectrum analyzer found")
+
+        self.spec_an.set_reference_level(self.parameters.spec_an_config.reference_level)
+        self.actual_center_frequency = self.spec_an.move_center_to_peak(
+            center_frequency=self.parameters.spec_an_config.initial_center_frequency,
+            spans=self.parameters.spec_an_config.spans_when_searching,
+        )
+
+        # CONNECT TO AND CONFIGURE SIGNAL GENERATOR
+        while True:
+            print(f"Configure the signal generator manually:")
+            print(f"{self.parameters.sig_gen_config.model_dump_json(indent=4)}")
+            user_input = input("Is signal generator configured? [y/n]: ")
+            if user_input.lower() == "y":
+                break
+
+        # CONNECT TO AND CONFIGURE TURNTABLE
+        self.turntable = Turntable.find(
+            logger=self.logger.getChild("turntable"),
+            timeout=1.0,
+            show_move_debug=True,
+        )
+        if not self.turntable:
+            raise ValueError("No turn table found")
+        self.turntable.interactively_center()
+
+        # CREATE RESULTS OBJECT
+        self.results = ExperimentResults()
+
+        # Delete the CSV, if it exists
+        if self.parameters.raw_data_csv_path.exists():
+            self.parameters.raw_data_csv_path.unlink()
+
+        # DO THE TEST!
+        test_start_time = datetime.datetime.now(datetime.timezone.utc)
+        if self.parameters.grid:
+            self._run_grid_experiment()
+        elif self.parameters.points:
+            self._run_points_experiment()
+        
+        # TEST IS DONE
+        test_end_time = datetime.datetime.now(datetime.timezone.utc)
+        duration = test_end_time - test_start_time
+
+        print(f"Test started at {test_start_time} and ended at {test_end_time}. Total duration: {duration.total_seconds():,.0f} seconds = {duration.total_seconds() / 60:,.1f} minutes = {duration.total_seconds() / 60 / 60:,.2f} hours")
+        return self
+
+    def _run_grid_experiment(self) -> None:
+        grid = self.parameters.grid
+        assert grid is not None, "Grid should not be `None` here"
+
+        while True:
+            print(f"This grid has {len(grid):,} points and will take approximately {grid.rough_time_estimate():,.0f} seconds to complete.")
+            user_input = input("Do you want to continue? [y/n]: ")
+            if user_input.lower() == "y":
+                break
+            elif user_input.lower() == "n":
+                print("Aborting experiment.")
+                return
+            else:
+                print("Did not understand input.")
+
+
+        from rich.progress import Progress
+
+        with Progress(transient=True) as progress:
+            overall_progress_task = progress.add_task(
+                f"Overall progress point 1 of ({len(grid):,} points)", total=len(grid)
+            )
+            cut_progress_task = progress.add_task(f"Doing cut #1 of {grid.cut_count():,}", total=grid.cut_count())
+            this_cut_progress_task = progress.add_task(
+                f"Doing point #1 of {grid.size_of_cut()} within cut", total=grid.size_of_cut()
+            )
+            point_index = 0
+            for cut_index, cut in enumerate(grid.cuts()):
+                for coordinate_index, coordinate in enumerate(cut):
+                    self._run_experiment_at_point(point=coordinate, cut_id=cut_index)
+                    point_index += 1
+                    progress.update(
+                        overall_progress_task,
+                        completed=point_index,
+                        description=f"Overall progress point #{point_index + 1} of ({len(grid):,} points)",
+                    )
+                    progress.update(
+                        this_cut_progress_task,
+                        completed=coordinate_index,
+                        description=f"Doing point #{coordinate_index + 1} of {grid.size_of_cut()} within cut",
+                    )
+                progress.update(
+                    cut_progress_task,
+                    completed=cut_index,
+                    description=f"Doing cut #{cut_index + 1} of {grid.cut_count():,}",
+                )
+            
+            # EXPERIMENT DONE!
+            # Reset turntable
+            self.turntable.move_to(azimuth=0, elevation=0)
+            print(f"FINISHED!!!")
+            print(f"Data saved to {self.parameters.raw_data_csv_path}")
+
+    def _run_experiment_at_point(
+        self,
+        *,
+        point: Coordinate,
+        cut_id: str | int | None = None,
+    ) -> None:
+        self.turntable.move_to(azimuth=point.turntable_azimuth, elevation=point.turntable_elevation)
+        actual_position = self.turntable.wait_for_position()
+        data = ExperimentDatapoint()
+        data.actual_coordinate = Coordinate.from_turntable(
+            azimuth=actual_position.turntable_azimuth,
+            elevation=actual_position.turntable_elevation,
+            neutral_elevation=self.parameters.grid.neutral_elevation,
+        )
+        data.timestamp = datetime.datetime.now(datetime.timezone.utc)
+        data.cut_id = cut_id
+
+        if self.parameters.collect_center_frequency_data:
+            center_amplitude = self.spec_an.get_center_frequency_amplitude()
+            center_frequency = self.spec_an.get_center_frequency()
+            data.center_frequency = center_frequency
+            data.center_amplitude = center_amplitude
+
+        if self.parameters.collect_peak_data:
+            peak_frequency, peak_amplitude = self.spec_an.get_peak_frequency_and_amplitude()
+            data.peak_frequency = peak_frequency
+            data.peak_amplitude = peak_amplitude
+
+        if self.parameters.collect_trace_data:
+            trace_lower_bound = self.spec_an.get_lower_frequency()
+            trace_upper_bound = self.spec_an.get_upper_frequency()
+            trace_data = self.spec_an.get_trace()
+            data.trace_lower_bound = trace_lower_bound
+            data.trace_upper_bound = trace_upper_bound
+            data.trace_data = list(trace_data)
+
+        print(f"At coordinate {point}, collected data: {data}")
+
+        self.results.datapoints.append(data)
+        self.results.append_csv(
+            data=data,
+            csv_path=self.parameters.raw_data_csv_path,
+        )
+
+    def _run_points_experiment(self) -> None:
+        points = self.parameters.points
+        assert points is not None, "Points should not be `None` here"
+
+        from rich.progress import Progress
+
+        with Progress(transient=True) as progress:
+            task_id = progress.add_task(f"Collecting data ({len(points):,} points)", total=len(points))
+            for point_index, point in enumerate(points):
+                self._run_experiment_at_point(point=point, cut_id="none")
+                progress.update(
+                    task_id,
+                    completed=point_index + 1,
+                    description=f"Collecting data ({point_index + 1:,} of {len(points)} points)",
+                )
+        pass
+
 
 
 if __name__ == "__main__":
-    spec_an_config = SpecAnConfig(initial_center_frequency=8_450_000_000, spans_when_searching=1_000)
+    spec_an_config = SpecAnConfig(
+        initial_center_frequency=8_450_000_000,
+        spans_when_searching=[
+            1_000_000,
+            100_000,
+            10_000,
+            1_000,
+        ],
+        reference_level=-10,
+    )
     sig_gen_config = SigGenConfig(center_frequency=8_450_000_000, power=-10, vernier_power=0)
+    polarization_config = PolarizationConfig(kind="vertical")
     # points = {
     #     0: AzElTurntable(azimuth=-5, elevation=5),
     #     1: AzElTurntable(azimuth=5, elevation=5),
@@ -151,26 +479,43 @@ if __name__ == "__main__":
     grid = Grid(
         min_azimuth=-10,
         max_azimuth=10,
-        aziumuth_step_size=1,
+        aziumuth_step_size=10,
         min_elevation=-2,
         max_elevation=2,
-        elevation_step_size=1,
+        elevation_step_size=2,
         orientation="horizontal",
     )
-    experiment = ExperimentParameters(
+    experiment_parameters = ExperimentParameters(
         short_description="3x3 8.45 GHz",
         long_description="Initial test of a 3x3 grid at 8.45 GHz",
-        desired_spec_an_config=spec_an_config,
-        desired_sig_gen_config=sig_gen_config,
+        spec_an_config=spec_an_config,
+        sig_gen_config=sig_gen_config,
         # points=points,
         grid=grid,
+        polarization_config=polarization_config,
         # folder=Path("./experiments/mayo01"),
         # az_el_cls="AzElSpherical",
+        collect_center_frequency_data=True,
+        collect_peak_data=True,
+        collect_trace_data=True,
     )
-    print(f"{experiment=}")
-    print(experiment.model_dump_json(indent=4))
+    print(f"{experiment_parameters=}")
+    print(experiment_parameters.model_dump_json(indent=4))
 
-    experiment_2 = ExperimentParameters.model_validate_json(experiment.model_dump_json())
-    print(f"{experiment_2=}")
+    Experiment.run_file(path=Path("./experiments/mayo_experiment"))
+    exit()
+    # exit()
+    # experiment_2 = ExperimentParameters.model_validate_json(experiment_parameters.model_dump_json())
+    # print(f"{experiment_2=}")
 
-    experiment.write_metadata()
+    # experiment_parameters.write_metadata()
+
+    print("+++++++++++++++++")
+    # print(f"{experiment_parameters=}")
+    experiment = Experiment(parameters=experiment_parameters)
+    print("--------")
+    print(f"{experiment.model_dump_json(indent=4)}")
+    print("--------")
+
+    experiment.run()
+    print("+++++++++++++++")
