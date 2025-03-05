@@ -444,7 +444,7 @@ class Turntable:
         self.logger.debug(f"Move command {azimuth=}, {absolute_elevation=} is valid.")
         return True
 
-    def _send_move_command(self, azimuth: float, elevation: float) -> None:
+    def _send_move_command(self, azimuth: float, elevation: float, reps: int = 3) -> None:
         """Send a move command to the turntable.
         This elevation should be a regime elevation."""
         command = f"CMD:MOV:{azimuth:.3f},{elevation:.3f};".encode(encoding="ascii")
@@ -457,7 +457,9 @@ class Turntable:
             return
 
         self.logger.info(f"Sending move command to turntable: {command!r}")
-        self._serial.write(command)
+        for _ in range(reps):
+            self._serial.write(command)
+            time.sleep(0.05)
 
     def send_set_command(
         self,
@@ -835,6 +837,7 @@ class Turntable:
         *,
         azimuth: float = 0.0,
         elevation: float = 0.0,
+        reps: int = 3,
     ) -> None:
         """Move to the given azimuth and elevation immediately, without checking if the turntable is ready.
 
@@ -842,7 +845,9 @@ class Turntable:
         some fatal error"""
         command = f"CMD:MOV:{azimuth:.3f},{elevation:.3f};".encode(encoding="ascii")
         self.logger.warning(f"Sending emergency move command to turntable: {command!r}")
-        self._serial.write(command)
+        for _ in range(reps):
+            self._serial.write(command)
+            time.sleep(0.2)
         self.logger.warning(f"Sent emergency move command to turntable: {command!r}")
 
 
