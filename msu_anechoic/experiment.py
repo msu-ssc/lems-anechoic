@@ -256,6 +256,25 @@ class Experiment(pydantic.BaseModel):
     model_config = pydantic.ConfigDict(extra="allow")
 
     @classmethod
+    def from_parameters_file(
+        cls,
+        path: Path,
+        *,
+        results: ExperimentResults | None = None,
+    ) -> "Experiment":
+        """Create an `Experiment` object from a `parameters.json` file."""
+        path = Path(path).resolve().absolute()
+        if path.is_dir():
+            paths = list(path.rglob("parameters.json"))
+            if len(paths) == 0:
+                raise ValueError(f"No `parameters.json` file found in {path}")
+            elif len(paths) > 1:
+                raise ValueError(f"Multiple `parameters.json` files found in {path}")
+            path = paths[0]
+        parameters = ExperimentParameters.model_validate_json(path.read_text(encoding="utf-8"))
+        return cls(parameters=parameters, results=results)
+
+    @classmethod
     def run_file(
         cls,
         *,
