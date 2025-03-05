@@ -196,23 +196,7 @@ class Turntable:
         """The time since we last successfully communicated with the turntable, in seconds."""
         return time.monotonic() - self.most_recent_communication_time
 
-    def read(self, size: int = 1000) -> bytes:
-        """Read data from the turntable.
-
-        Allow exceptions to propagate.
-
-        Args:
-            size (int): The number of bytes to read. Defaults to 1000.
-
-        Returns:
-            bytes: The data read from the turntable.
-        """
-        # self.logger.debug(f"Attempting to read {size:,} bytes from turntable")
-        data = self._serial.read(size)
-        # self.logger.debug(f"Read {len(data):,} bytes from turntable")
-        return data
-
-    def attempt_read(self, size: int = 1000) -> bytes | None:
+    def attempt_read(self) -> bytes | None:
         """
         Attempt to read data from the turntable, returning None if no data is available
         or there is an exception reading from serial.
@@ -225,7 +209,14 @@ class Turntable:
         """
         # self.logger.debug(f"Attempting to read {size:,} bytes from turntable")
         try:
-            data = self.read(size)
+            in_waiting = self._serial.in_waiting
+            if in_waiting < 100:
+                # self.logger.debug(f"Only {in_waiting:,} bytes available to read from turntable, below minimum threshold of 100 bytes")
+                return None
+            else:
+                size = in_waiting
+                # data = self.read(size)
+                data = self._serial.read(size)
         except Exception as exc:
             self.logger.debug(f"Failed to read from turntable: {exc}", exc_info=exc)
         if data:
@@ -242,7 +233,7 @@ class Turntable:
         which is BEFORE the regime offset is applied.
 
         Return `None` on any failure."""
-        data = self.attempt_read(100)
+        data = self.attempt_read()
         if not data:
             return None
 
@@ -473,6 +464,7 @@ class Turntable:
         azimuth: float,
         elevation: float,
         _set_regime: bool = True,
+        reps: int = 3,
     ) -> AzEl:
         """Send a set command to the turntable.
 
@@ -486,8 +478,10 @@ class Turntable:
             return
 
         command = f"CMD:SET:{azimuth:.3f},{elevation:.3f};".encode(encoding="ascii")
-        self.logger.info(f"Sending set command to turntable: {command!r}")
-        self._serial.write(command)
+        self.logger.info(f"Sending set command to turntable: {command!r} ")
+        for _ in range(reps):
+            self._serial.write(command)
+            time.sleep(0.1)
 
         # Wait here until we get a response from the turntable. This is a blocking operation.
         set_position = AzEl(azimuth=azimuth, elevation=elevation)
@@ -651,7 +645,7 @@ class Turntable:
             self.logger.error(message)
             raise ValueError(message)
 
-        starting_position = self.get_position()
+        starting_position = self.wait_for_position()
         if not starting_position:
             self.logger.error("Failed to get current position. Will not send MOVE command.")
             return None
@@ -661,9 +655,7 @@ class Turntable:
         target_position = AzEl(azimuth=azimuth, elevation=within_regime_elevation)
 
         while True:
-            current_position = self._get_within_regime_position()
-            if not current_position:
-                continue
+            current_position = self._wait_for_within_regime_position()
             azimuth_delta = abs(current_position.azimuth - azimuth)
             elevation_delta = abs(current_position.elevation - within_regime_elevation)
             if azimuth_delta <= azimuth_margin and elevation_delta <= elevation_margin:
@@ -681,7 +673,7 @@ class Turntable:
 
         return current_position
 
-    def interactively_center(self) -> AzEl:
+    def interactively_center(self) -> None:
         """Manually center the turntable interactively.
 
         This will clobber the turntable's current understanding of its position,
@@ -691,43 +683,136 @@ class Turntable:
         print(f"|  INTERACTIVE CENTERING MODE  |")
         print(f"+------------------------------+")
         while True:
-            time.sleep(0.1)
-            position = self.get_position()
-            if not position:
-                continue
-            print(f"Current position: {position}")
-            user_input = input("Enter azimuth and elevation deltas, separated by a comma, or DONE to finish: ").strip()
-            if user_input.lower() == "done":
-                print(f"Done. Setting current position to (0, 0)")
-                self.send_set_command(azimuth=0.0, elevation=0.0)
-                print(f"Successfully completed interactive centering.")
-                break
+            _current_regime_position = self._wait_for_within_regime_position()
+            _current_regime_azimuth = _current_regime_position.azimuth
+            _current_regime_elevation = _current_regime_position.elevation
+
+            _current_absolute_position = None
             try:
-                azimuth_delta, elevation_delta = user_input.split(",")
-                azimuth_delta = float(azimuth_delta)
-                elevation_delta = float(elevation_delta)
-            except Exception:
-                print("Invalid input. Try again.")
-                continue
-
-            az_direction = "CLOCKWISE" if azimuth_delta >= 0 else "COUNTERCLOCKWISE"
-            el_direction = "UP" if elevation_delta >= 0 else "DOWN"
-
-            user_input = input(
-                f"About to move {az_direction} {abs(azimuth_delta)} degrees and {el_direction} {abs(elevation_delta)} degrees.\nContinue [y/n]?"
+                _absolute_azimuth = _current_regime_azimuth
+                _absolute_elevation = self._convert_from_regime_elevation(_current_regime_elevation)
+                _current_absolute_position = AzEl(azimuth=_absolute_azimuth, elevation=_absolute_elevation)
+            except Exception as exc:
+                # print(f"Failed to convert to absolute position: {exc}")
+                pass
+            print(f"[The following numbers may or may not be correct, and they may or may not be meaningful.]")
+            print(
+                f"Current regime position: {_current_regime_position}. Current absolute position: {_current_absolute_position or 'NOT YET SET'}."
             )
-            if user_input.lower() != "y":
-                print("User did not confirm.")
+            print(f"self.has_been_set: {self.has_been_set}. Current elevation regime: {self._current_regime}.")
+            print(f"What would you like to do? ['HELP' for options]")
+            user_input = input("> ").strip()
+
+            input_tokens = [token for token in user_input.split() if token]
+            first_token = input_tokens[0]
+            if first_token.lower() == "help":
+                print("+-----------+")
+                print("|  OPTIONS  |")
+                print("+-----------+")
+                print("")
+                print(f"  You can move in a relative way:")
+                print(f"MOVE UP 5")
+                print(f"MOVE DOWN 5")
+                print(f"MOVE LEFT 5")
+                print(f"MOVE RIGHT 5")
+                print(f"")
+                print(f"  You can move in an absolute way:")
+                print(f"ABSOLUTE 123.45 -65.432")
+                print(f"")
+                print(f"  You can SET the current position (azimuth FIRST):")
+                print(f"SET 123.45 -65,432")
+                print(f"")
+                print(f"  You can be DONE with this process")
+                print(f"DONE")
+                print("")
+                continue
+            elif first_token.lower() == "done":
+                # print("Exiting interactive centering mode.")
+                # self.logger.debug("Exiting interactive centering mode.")
+                break
+            elif first_token.lower() == "absolute":
+                try:
+                    _absolute_azimuth = float(input_tokens[1])
+                    _absolute_elevation = float(input_tokens[2])
+                except Exception:
+                    print("Invalid input for ABSOLUTE command. Try again.")
+                    continue
+
+                user_input = input(
+                    f"About to move to azimuth={_absolute_azimuth}, elevation={_absolute_elevation}. Continue [y/n]?\n> "
+                ).strip()
+                if user_input.lower() != "y":
+                    print("User did not confirm.")
+                    continue
+                self.move_to(azimuth=_absolute_azimuth, elevation=_absolute_elevation)
+            elif first_token.lower() == "move":
+                if not self.has_been_set:
+                    print("\nERROR!! Cannot move until the turntable has been set. Please do a 'SET' command.\n")
+                    continue
+                try:
+                    direction = input_tokens[1].lower()
+                    assert direction in ["up", "down", "left", "right"]
+                    distance = float(input_tokens[2])
+                    assert distance >= 0
+                    azimuth_delta = 0
+                    if direction == "left":
+                        azimuth_delta = -distance
+                    elif direction == "right":
+                        azimuth_delta = distance
+                    elevation_delta = 0
+                    if direction == "up":
+                        elevation_delta = distance
+                    elif direction == "down":
+                        elevation_delta = -distance
+                except Exception:
+                    print(f"Invalid input for MOVE command. Try again.")
+                    continue
+
+                if _current_absolute_position is None:
+                    _current_absolute_position = self.wait_for_position()
+
+                new_azimuth = _current_absolute_position.azimuth + azimuth_delta
+                new_elevation = _current_absolute_position.elevation + elevation_delta
+                target_position = AzEl(azimuth=new_azimuth, elevation=new_elevation)
+
+                message = f"About to move"
+                if azimuth_delta < 0:
+                    message += f" {abs(azimuth_delta)}° LEFT"
+                elif azimuth_delta > 0:
+                    message += f" {abs(azimuth_delta)}° RIGHT"
+
+                if elevation_delta < 0:
+                    message += f" {abs(elevation_delta)}° DOWN"
+                elif elevation_delta > 0:
+                    message += f" {abs(elevation_delta)}° UP"
+
+                message += f" [Current absolute: {_current_absolute_position}. Target absolute: {target_position}]"
+
+                user_input = input(f"{message}\nContinue [y/n]?\n> ").strip()
+                if user_input.lower() != "y":
+                    print("User did not confirm.")
+                    continue
+                self.move_to(azimuth=new_azimuth, elevation=new_elevation)
+            elif first_token.lower() == "set":
+                try:
+                    azimuth = float(input_tokens[1])
+                    elevation = float(input_tokens[2])
+                except Exception:
+                    print("Invalid input for SET command. Try again.")
+                    continue
+
+                user_input = input(
+                    f"About to SET azimuth={azimuth}, elevation={elevation}. Continue [y/n]?\n> "
+                ).strip()
+                if user_input.lower() != "y":
+                    print("User did not confirm.")
+                    continue
+
+                self.send_set_command(azimuth=azimuth, elevation=elevation)
                 continue
 
-            print(f"Setting position to (0, 0)")
-            self.send_set_command(azimuth=0.0, elevation=0.0)
-
-            print(f"Moving to azimuth={azimuth_delta=}, elevation={elevation_delta=}")
-            self.move_to(azimuth=azimuth_delta, elevation=elevation_delta)
-
-        position = self.send_set_command(azimuth=0.0, elevation=0.0)
-        return position
+        print("Exiting interactive centering mode.")
+        self.logger.debug("Exiting interactive centering mode.")
 
     def send_stop_command(
         self,
@@ -771,118 +856,4 @@ if __name__ == "__main__":
         logger=logger,
         timeout=1.0,
     )
-    # try:
-    #     tt = Turntable(port="COM5", logger=logger, timeout=1.0)
-
-    #     while True:
-    #         position = tt.get_position()
-    #         print(
-    #             f"{position=} {tt.time_since_last_communication()=} {tt.most_recent_communication_time=} {tt.has_been_set=}"
-    #         )
-    #         time.sleep(0.1)
-
-    #         if position:
-    #             break
-    #         # tt.move_to(azimuth=170.0, elevation=-30.0)
-
-    #         # tt.move_to(azimuth=236, elevation=0.0)
-
-    #     response = tt.send_set_command(
-    #         azimuth=0.0,
-    #         elevation=0.0,
-    #     )
-    #     print(f"{response=}")
-
-    #     # response = tt.move_to(azimuth=15.0, elevation=0.0)
-    #     # response = tt.move_to(azimuth=0.0, elevation=0.0)
-    #     # while True:
-    #     #     position = tt.get_position()
-    #     #     print(
-    #     #         f"{position=} {tt.time_since_last_communication()=} {tt.most_recent_communication_time=} {tt.has_been_set=}"
-    #     #     )
-    #     #     time.sleep(0.1)
-
-    #     for distance in [
-    #         # 0.25,
-    #         # 0.50,
-    #         # 0.75,
-    #         # 1.00,
-    #         # 1.25,
-    #         # 1.50,
-    #         # 1.75,
-    #         # 2.00,
-    #         # 2.25,
-    #         # 2.50,
-    #         # 3.00,
-    #         # 4.00,
-    #         # 5.00,
-    #         # 6.00,
-    #         # 7.00,
-    #         # 8.00,
-    #         # 9.00,
-    #         # 10.00,
-    #         15.00,
-    #         20.00,
-    #         25.00,
-    #         30.00,
-    #     ]:
-    #         tt.move_to(azimuth=0.0, elevation=0.0)
-    #         start = time.monotonic()
-    #         tt.move_to(azimuth=distance, elevation=0.0)
-    #         stop = time.monotonic()
-    #         with open("turntable_move_times.txt", "a") as f:
-    #             f.write(f"+AZIMUTH,{distance}, {stop - start}\n")
-
-    #         tt.move_to(azimuth=0.0, elevation=0.0)
-    #         start = time.monotonic()
-    #         tt.move_to(azimuth=-distance, elevation=0.0)
-    #         stop = time.monotonic()
-    #         with open("turntable_move_times.txt", "a") as f:
-    #             f.write(f"-AZIMUTH,{distance}, {stop - start}\n")
-
-    #         tt.move_to(azimuth=0.0, elevation=0.0)
-    #         start = time.monotonic()
-    #         tt.move_to(azimuth=0.0, elevation=distance)
-    #         stop = time.monotonic()
-    #         with open("turntable_move_times.txt", "a") as f:
-    #             f.write(f"+ELEVATION,{distance}, {stop - start}\n")
-
-    #         tt.move_to(azimuth=0.0, elevation=0.0)
-    #         start = time.monotonic()
-    #         tt.move_to(azimuth=0.0, elevation=-distance)
-    #         stop = time.monotonic()
-    #         with open("turntable_move_times.txt", "a") as f:
-    #             f.write(f"-ELEVATION,{distance}, {stop - start}\n")
-
-    #         tt.move_to(azimuth=0.0, elevation=0.0)
-    #         start = time.monotonic()
-    #         tt.move_to(azimuth=distance, elevation=distance)
-    #         stop = time.monotonic()
-    #         with open("turntable_move_times.txt", "a") as f:
-    #             f.write(f"+BOTH,{distance}, {stop - start}\n")
-
-    #         tt.move_to(azimuth=0.0, elevation=0.0)
-    #         start = time.monotonic()
-    #         tt.move_to(azimuth=-distance, elevation=-distance)
-    #         stop = time.monotonic()
-    #         with open("turntable_move_times.txt", "a") as f:
-    #             f.write(f"-BOTH,{distance}, {stop - start}\n")
-
-    #     # start = time.monotonic()
-    #     # for azimuth in np.arange(0.25, 20.25, 0.25):
-    #     #     tt.move_to(azimuth=azimuth, elevation=0.0)
-    #     # stop = time.monotonic()
-    #     # print(f"Took {stop - start} seconds to move 20 degrees RIGHT in 0.25 degree increments")
-
-    #     # # 1/0  # Force an exception to test emergency move command.
-
-    #     # start = time.monotonic()
-    #     # tt.move_to(azimuth=0.0, elevation=0.0)
-    #     # stop = time.monotonic()
-    #     # print(f"Took {stop - start} seconds to move 10 degrees DOWN at slew speeds")
-    # except (KeyboardInterrupt, Exception):
-    #     pass
-    # finally:
-    #     # logger.error(f"Exception: {exc}", exc_info=exc)
-    #     logger.error("Moving to emergency position")
-    #     tt.send_emergency_move_command(azimuth=0.0, elevation=0.0)
+    tt.interactively_center()
