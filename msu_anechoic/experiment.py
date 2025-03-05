@@ -1,7 +1,7 @@
 import csv
 import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 from typing import Generator
 from typing import Literal
 
@@ -170,6 +170,7 @@ class ExperimentParameters(pydantic.BaseModel):
 
 class ExperimentDatapoint(pydantic.BaseModel):
     cut_id: str | int | None = None
+    point_index: int | None = None
     timestamp: datetime.datetime | None = None
 
     commanded_coordinate: Coordinate | None = None
@@ -186,6 +187,7 @@ class ExperimentDatapoint(pydantic.BaseModel):
 
     def to_csv_dict(self) -> dict[str, Any]:
         rv = {
+            "point_index": self.point_index,
             "timestamp": self.timestamp,
             "cut_id": self.cut_id,
             # "actual_azimuth": None,
@@ -250,37 +252,48 @@ class Experiment(pydantic.BaseModel):
     model_config = pydantic.ConfigDict(extra="allow")
 
     @classmethod
-    def run_file(cls, *, path: Path) -> "Experiment":
+    def run_file(
+        cls,
+        *,
+        path: Path,
+        indexes_to_skip: Iterable[int] | None = None,
+    ) -> "Experiment":
         parameters = None
-        paramaters_path = None
+        parameters_path = None
         if path.is_file():
             try:
                 parameters = ExperimentParameters.model_validate_json(path.read_text(encoding="utf-8"))
-                paramaters_path = path
+                parameters_path = path
             except Exception:
                 pass
         else:
             for file_path in path.rglob("parameters.json"):
                 try:
                     parameters = ExperimentParameters.model_validate_json(file_path.read_text(encoding="utf-8"))
-                    paramaters_path = file_path
+                    parameters_path = file_path
                 except Exception:
                     pass
 
         if parameters is None:
             raise ValueError(f"No valid parameters.json file found in {path}")
 
-        parameters.relative_folder_path = paramaters_path.parent
+        parameters.relative_folder_path = parameters_path.parent
 
-        print(f"Loaded parameters from {paramaters_path}")
+        print(f"Loaded parameters from {parameters_path}")
 
         experiment = cls(parameters=parameters)
-        experiment.run()
+        experiment.run(
+            indexes_to_skip=indexes_to_skip,
+        )
         print(f"Experiment finished. Data saved to {parameters.raw_data_csv_path}")
 
         return experiment
 
-    def run(self) -> "Experiment":
+    def run(
+        self,
+        *,
+        indexes_to_skip: Iterable[int] | None = None,
+    ) -> "Experiment":
         from msu_ssc import ssc_log
 
         ssc_log.init(
@@ -331,9 +344,13 @@ class Experiment(pydantic.BaseModel):
         # DO THE TEST!
         test_start_time = datetime.datetime.now(datetime.timezone.utc)
         if self.parameters.grid:
-            self._run_grid_experiment()
+            self._run_grid_experiment(
+                indexes_to_skip=indexes_to_skip,
+            )
         elif self.parameters.points:
-            self._run_points_experiment()
+            self._run_points_experiment(
+                indexes_to_skip=indexes_to_skip,
+            )
 
         # TEST IS DONE
         test_end_time = datetime.datetime.now(datetime.timezone.utc)
@@ -344,9 +361,15 @@ class Experiment(pydantic.BaseModel):
         )
         return self
 
-    def _run_grid_experiment(self) -> None:
+    def _run_grid_experiment(
+        self,
+        *,
+        indexes_to_skip: Iterable[int] | None = None,
+    ) -> None:
         grid = self.parameters.grid
         assert grid is not None, "Grid should not be `None` here"
+
+        indexes_to_skip = set(indexes_to_skip) if indexes_to_skip else set()
 
         while True:
             print(
@@ -374,7 +397,11 @@ class Experiment(pydantic.BaseModel):
             point_index = 0
             for cut_index, cut in enumerate(grid.cuts()):
                 for coordinate_index, coordinate in enumerate(cut):
-                    self._run_experiment_at_point(point=coordinate, cut_id=cut_index)
+                    if point_index in indexes_to_skip:
+                        self.logger.info(f"Skipping point_index {point_index} {coordinate}")
+                        continue
+
+                    self._run_experiment_at_point(point=coordinate, cut_id=cut_index, point_index=point_index)
                     point_index += 1
                     progress.update(
                         overall_progress_task,
@@ -403,6 +430,7 @@ class Experiment(pydantic.BaseModel):
         *,
         point: Coordinate,
         cut_id: str | int | None = None,
+        point_index: int | None = None,
     ) -> None:
         self.turntable.move_to(azimuth=point.turntable_azimuth, elevation=point.turntable_elevation)
         actual_position = self.turntable.wait_for_position()
@@ -415,6 +443,7 @@ class Experiment(pydantic.BaseModel):
         data.commanded_coordinate = point
         data.timestamp = datetime.datetime.now(datetime.timezone.utc)
         data.cut_id = cut_id
+        data.point_index = point_index
 
         if self.parameters.collect_center_frequency_data:
             center_amplitude = self.spec_an.get_center_frequency_amplitude()
@@ -443,22 +472,31 @@ class Experiment(pydantic.BaseModel):
             csv_path=self.parameters.raw_data_csv_path,
         )
 
-    def _run_points_experiment(self) -> None:
-        points = self.parameters.points
-        assert points is not None, "Points should not be `None` here"
+    def _run_points_experiment(
+        self,
+        *,
+        indexes_to_skip: Iterable[int] | None = None,
+    ) -> None:
+        raise NotImplementedError("`Experiment._run_points_experiment` not implemented yet")
+        # points = self.parameters.points
+        # assert points is not None, "Points should not be `None` here"
 
-        from rich.progress import Progress
+        # indexes_to_skip = set(indexes_to_skip) if indexes_to_skip else set()
 
-        with Progress(transient=True) as progress:
-            task_id = progress.add_task(f"Collecting data ({len(points):,} points)", total=len(points))
-            for point_index, point in enumerate(points):
-                self._run_experiment_at_point(point=point, cut_id="none")
-                progress.update(
-                    task_id,
-                    completed=point_index + 1,
-                    description=f"Collecting data ({point_index + 1:,} of {len(points)} points)",
-                )
-        pass
+        # from rich.progress import Progress
+
+        # with Progress(transient=True) as progress:
+        #     task_id = progress.add_task(f"Collecting data ({len(points):,} points)", total=len(points))
+        #     for point_index, point in enumerate(points):
+        #         if point_index in indexes_to_skip:
+        #             self.logger.info(f"Skipping point_index {point_index} {point}")
+        #         self._run_experiment_at_point(point=point, cut_id="none", point_index=point_index)
+        #         progress.update(
+        #             task_id,
+        #             completed=point_index + 1,
+        #             description=f"Collecting data ({point_index + 1:,} of {len(points)} points)",
+        #         )
+        # pass
 
 
 if __name__ == "__main__":
