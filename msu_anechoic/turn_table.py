@@ -670,15 +670,35 @@ class Turntable:
             azimuth_delta = abs(current_position.azimuth - azimuth)
             elevation_delta = abs(current_position.elevation - within_regime_elevation)
             if azimuth_delta <= azimuth_margin and elevation_delta <= elevation_margin:
-                self.logger.info(f"Successfully moved to {current_position=} from {starting_position=}")
+                display_current_az = current_position.azimuth
+                display_current_el = current_position.elevation
+                display_starting_az = starting_position.azimuth
+                display_starting_el = starting_position.elevation
+                if self._current_regime is not None:
+                    try:
+                        display_current_el = self._convert_from_regime_elevation(display_current_el)
+                        display_starting_el = self._convert_from_regime_elevation(display_starting_el)
+                    except Exception:
+                        pass
+                display_current_position = AzEl(azimuth=display_current_az, elevation=display_current_el)
+                display_starting_position = AzEl(azimuth=display_starting_az, elevation=display_starting_el)
+                self.logger.info(f"Successfully moved to {display_current_position} from {display_starting_position}")
                 break
             else:
                 if self._show_move_debug:
-                    # self.logger.debug(
-                    #     f"Still moving... {current_position=} {target_position=} {starting_position=} {azimuth_delta=}, {elevation_delta=}"
-                    # )
+                    display_current_az = current_position.azimuth
+                    display_current_el = current_position.elevation
+                    display_target_az = target_position.azimuth
+                    display_target_el = target_position.elevation
+                    if self._current_regime is not None:
+                        try:
+                            display_current_el = self._convert_from_regime_elevation(display_current_el)
+                            display_target_el = self._convert_from_regime_elevation(display_target_el)
+                        except Exception:
+                            pass
+                        
                     self.logger.debug(
-                        f"TT moving. cur_az={current_position.azimuth:.1f}, cur_el={current_position.elevation:.1f}; target_az={target_position.azimuth:.1f}, target_el={target_position.elevation:.1f}"
+                        f"TT moving. cur_az={display_current_az:.2f}, cur_el={display_current_el:.2f}; target_az={display_target_az:.2f}, target_el={display_target_el:.2f}"
                     )
             time.sleep(delay)
 
