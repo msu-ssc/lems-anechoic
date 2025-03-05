@@ -145,12 +145,16 @@ class ExperimentParameters(pydantic.BaseModel):
         return self.relative_folder_path / "metadata.json"
 
     @property
+    def log_folder_path(self) -> Path:
+        return self.relative_folder_path / "logs"
+
+    @property
     def log_plaintext_path(self) -> Path:
-        return self.relative_folder_path / "logs" / "log.log"
+        return self.log_folder_path / "log.log"
 
     @property
     def log_jsonl_path(self) -> Path:
-        return self.relative_folder_path / "logs" / "log.jsonl"
+        return self.log_folder_path / "log.jsonl"
 
     @property
     def raw_data_csv_path(self) -> Path:
