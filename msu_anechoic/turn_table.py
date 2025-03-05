@@ -16,8 +16,17 @@ if TYPE_CHECKING:
     import logging
 
 
-azimuth_elevation_regex = re.compile(r"Pos\s*=\s*El:\s*(?P<elevation>[-\d\.]+)\s*,\s*Az:\s*(?P<azimuth>[-\d\.]+)")
-"""Should match a string like `"Pos= El: -0.03 , Az: -0.03\\r\\n"`"""
+# NOTE: The line in the firmware code is:
+# snprintf(sendbuffer,42,"Pos= El: %.2f , Az: %.2f \r\n",El_pos_deg,Az_pos_deg);
+#
+# Which results in a string like
+# "Pos= El: -0.03 , Az: -0.03\r\n"
+
+# More lax regex:
+# azimuth_elevation_regex = re.compile(r"Pos= El: (?P<elevation>[-\d\.]+)\s*,\s*Az:\s*(?P<azimuth>[-\d\.]+)")
+
+# Much stricter regex. This only allows exact matches.
+azimuth_elevation_regex = re.compile(r"Pos= El: (?P<elevation>-?\d{1,3}\.\d{2}) , Az: (?P<azimuth>-?\d{1,3}\.\d{2})")
 
 
 class Turntable:
