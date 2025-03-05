@@ -256,16 +256,16 @@ class Turntable:
         # )
         self.most_recent_communication_time = time.monotonic()
 
-        if self.csv_file_path:
-            with self.csv_file_path.open(mode="a", newline="") as csvfile:
-                writer = csv.DictWriter(csvfile, fieldnames=self.csv_field_names, dialect="unix")
-                writer.writerow(
-                    {
-                        "timestamp": datetime.datetime.now(tz=datetime.timezone.utc),
-                        "azimuth": parsed_data.azimuth,
-                        "elevation": parsed_data.elevation,
-                    }
-                )
+        # if self.csv_file_path:
+        #     with self.csv_file_path.open(mode="a", newline="") as csvfile:
+        #         writer = csv.DictWriter(csvfile, fieldnames=self.csv_field_names, dialect="unix")
+        #         writer.writerow(
+        #             {
+        #                 "timestamp": datetime.datetime.now(tz=datetime.timezone.utc),
+        #                 "azimuth": parsed_data.azimuth,
+        #                 "elevation": parsed_data.elevation,
+        #             }
+        #         )
         # self.logger.debug(f"Updated time to {self.most_recent_communication_time}")
 
         return parsed_data
@@ -287,24 +287,38 @@ class Turntable:
         if not reported_position:
             return None
 
+        actual_position = reported_position
         if not self._current_regime:
             self.logger.warning(f"Regime is not set. Assuming internal elevation is correct.")
-            return reported_position
+            # return reported_position
+        else:
             # raise RuntimeError("Current regime is not set. Cannot get a position without a regime.")
 
-        # Apply the regime offset to the reported elevation
-        elevation = self._convert_from_regime_elevation(reported_position.elevation)
-        modified_position = AzEl(
-            azimuth=reported_position.azimuth,
-            elevation=elevation,
-        )
+            # Apply the regime offset to the reported elevation
+            elevation = self._convert_from_regime_elevation(reported_position.elevation)
+            actual_position = AzEl(
+                azimuth=reported_position.azimuth,
+                elevation=elevation,
+            )
+
+        # Write to CSV if desired
+        if self.csv_file_path:
+            with self.csv_file_path.open(mode="a", newline="") as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames=self.csv_field_names, dialect="unix")
+                writer.writerow(
+                    {
+                        "timestamp": datetime.datetime.now(tz=datetime.timezone.utc),
+                        "azimuth": actual_position.azimuth,
+                        "elevation": actual_position.elevation,
+                    }
+                )
+
         rv = Coordinate.from_turntable(
-            azimuth=modified_position.azimuth,
-            elevation=modified_position.elevation,
+            azimuth=actual_position.azimuth,
+            elevation=actual_position.elevation,
             neutral_elevation=self.neutral_elevation,
         )
         return rv
-        # return modified_position
 
     def wait_for_position(self, delay: float = 0.05) -> Coordinate:
         """Wait for the turntable to report a position. This is a blocking operation,
