@@ -412,6 +412,7 @@ class Experiment(pydantic.BaseModel):
             elevation=actual_position.turntable_elevation,
             neutral_elevation=self.parameters.grid.neutral_elevation,
         )
+        data.commanded_coordinate = point
         data.timestamp = datetime.datetime.now(datetime.timezone.utc)
         data.cut_id = cut_id
 
