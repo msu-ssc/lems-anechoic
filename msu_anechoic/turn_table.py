@@ -370,6 +370,11 @@ class Turntable:
         Approximately -90 to +45 elevation and -175 to +175 azimuth."""
         if absolute_elevation is None:
             absolute_elevation = self._convert_from_regime_elevation(within_regime_elevation)
+
+        # Handle the absolute elevation offset
+        if self.neutral_elevation:
+            absolute_elevation += self.neutral_elevation
+            
         # Validate azimuth within bounds
         if not self.ABSOLUTE_AZIMUTH_BOUNDS[0] <= absolute_azimuth <= self.ABSOLUTE_AZIMUTH_BOUNDS[1]:
             self.logger.error(f"Azimuth {absolute_azimuth} is out of bounds {self.ABSOLUTE_AZIMUTH_BOUNDS}")
