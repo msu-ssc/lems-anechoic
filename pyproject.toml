@@ -1,6 +1,7 @@
 [project]
 name = "lems-anechoic"
-version = "0.1.0"
+# version = "0.1.0"
+dynamic = ["version"]
 description = "LEMS anechoic chamber test scripts"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -14,6 +15,16 @@ dependencies = [
     "pyvisa>=1.14.1",
     "scipy>=1.15.2",
 ]
+
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
+
+
+[tool.pdm.version]
+source = "scm"
+fallback_version = "0.0.0"
+
 
 [project.optional-dependencies]
 mayo = [

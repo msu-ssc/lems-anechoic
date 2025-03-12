@@ -42,13 +42,18 @@ There are three commands that can be sent to the device. All of them are simple 
 
 ### 1. Set command
 
-When powered off, the turntable will forget its position. And when it's turned on, it will think it's pointed at some random angle, so you have to manually tell it where it's pointed. This command will tell the turntable "The position that you are currently pointed in, consider that to be +20° azimuth and -10° elevation.": `b'CMD:SET:20.000,-10.000;'`
+When powered off, the turntable will forget its position. And when it's turned on, it will think it's pointed at some random angle, so you have to manually tell it where it's pointed, and you can ONLY ever tell it that it is at azimuth=0, elevation=0.
+
+> [!WARNING]  
+> The command will accept (and require) that you give an azimuth and elevation value, but the firmware on the STM-32 WILL IGNORE THESE VALUES and will use zeroes instead! So the Python code will reject any set command that has any non-zero value.
+
+This command over the wire looks a lot like the MOVE command. The following will tell the turntable "The position that you are currently pointed in, consider that to be +0° azimuth and +0° elevation.": `b'CMD:SET:0.000,0.000;'`
 
 Within this repo, this is handled by the method `send_set_command`. This method does a few things. It makes sure you are connected to the turntable, then it sends the set command, then it waits until it receives confirmation that the table's reported position matches the position that you just commanded to it.
 
 ```python
-# Set the turntable's current position to be +20° azimuth and -10° elevation.
-my_turntable.send_set_command(azimuth=20, elevation=-10)
+# Set the turntable's current position to be +0° azimuth and +0° elevation.
+my_turntable.send_set_command(azimuth=0, elevation=0)
 ```
 
 Alternately, you can handle this interactively by using the method `interactively_center`, which will walk you through some prompts to move the table around until you are happy with its alignment.
