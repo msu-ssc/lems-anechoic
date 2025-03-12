@@ -403,16 +403,25 @@ class Turntable:
             return True
 
     def validate_set_command(self, azimuth: float, elevation: float) -> None:
-        """Validate that the given azimuth and elevation are within the valid range for the turntable."""
-        valid_bounds = self._validate_absolute_bounds(
-            absolute_azimuth=azimuth,
-            absolute_elevation=elevation,
-        )
-        if not valid_bounds:
+        """Validate that the given azimuth and elevation are both zero. Despite the way the command
+        is structured and interpreted, the internal code within the firmware will accept any value,
+        but it will always set azimuth and elevation to zero.
+        """
+        if azimuth == 0 and elevation == 0:
+            self.logger.debug(f"Set command {azimuth=}, {elevation=} is valid.")
+            return True
+        else:
+            self.logger.warning(f"Set command {azimuth=}, {elevation=} is NOT valid. Azimuth and elevation must both be")
             return False
+        # valid_bounds = self._validate_absolute_bounds(
+        #     absolute_azimuth=azimuth,
+        #     absolute_elevation=elevation,
+        # )
+        # if not valid_bounds:
+        #     return False
 
-        self.logger.debug(f"Set command {azimuth=}, {elevation=} is valid.")
-        return True
+        # self.logger.debug(f"Set command {azimuth=}, {elevation=} is valid.")
+        # return True
 
     def _convert_to_regime_elevation(self, elevation: float) -> float:
         """Convert the given elevation to the turntable's internal conception of elevation.
@@ -497,6 +506,8 @@ class Turntable:
         reps: int = 3,
     ) -> AzEl:
         """Send a set command to the turntable.
+
+        NOTE: Azimuth and elevation both MUST be zero, or the command will be rejected.
 
         If `_set_regime` is `True`, then set the current elevation regime to the one that contains the given elevation.
         In other words, you should ALWAYS set this if you are setting the turntable to a real elevation, which users should
