@@ -173,11 +173,11 @@ class SpectrumAnalyzerHP8563E(GpibDevice):
                 response = resource.query("CF?")
             except Exception as exc:
                 if logger:
-                    logger.debug(f"Error checking {resource=}. {exc}")
+                    logger.debug(f"Error checking {resource_name=}. {exc}")
                 continue
             if response:
                 if logger:
-                    logger.info(f"Found HP 8563E spectrum analyzer at {resource=}")
+                    logger.info(f"Found HP 8563E spectrum analyzer at {resource_name=}")
                 return SpectrumAnalyzerHP8563E(
                     gpib_address=resource.resource_name,
                     logger=logger,
