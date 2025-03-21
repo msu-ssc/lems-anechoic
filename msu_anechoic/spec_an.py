@@ -85,12 +85,41 @@ class GpibDevice:
             self.logger.error(f"Error opening {self!r}. {exc}", exc_info=True)
             raise
 
-    def close(self):
-        """Close the connection to the spectrum analyzer."""
+    def close_connection(self):
+        """Close the connection to the GPIB device."""
+        
+        # This is currently a no-op, for reasons explained in the comments below.
+        # Old code with explanatory comments is kept, and might someday be restored.
+        return
         self.logger.debug(f"Closing connection to {self.gpib_address!r}")
         if self.resource:
             try:
-                self.resource.close()
+                # NOTE: Do not call `close()`!
+                # 
+                # Calling "close()" on a resource seems to mark it as unusable somewhere within VISA (not PyVisa)
+                # in a way that I (David Mayo) don't understand.
+                # 
+                # The way this manifests is that this code fails:
+                # ```
+                # rm = pyvisa.ResourceManager()
+                # resource = rm.open_resource("GPIB0::18::INSTR")
+                # resource.close()
+                # 
+                # rm = pyvisa.ResourceManager()
+                # # The above line will hang here for exactly 4 minutes. Why? No one knows. Here's a GitHub issue about it:
+                # # https://github.com/pyvisa/pyvisa/issues/197
+                # 
+                # After 4 minutes, the ResourceManager WILL open, but it will be in a weird state where it can't do anything.
+                # rm.list_resources()   # Will hang forever
+                # rm.open_resource("GPIB0::18::INSTR")  # Will hang forever and/or fail with weird error messages
+                # ```
+
+                # self.resource.close()
+
+                # TO BE DETERMINED: Is it necessary to clear the resource? Will it break things?
+                # Unknown to me (David Mayo) as of March 2025, so we're not doing it.
+                # self.resource.clear()
+
                 self.logger.info(f"Connection to {self.gpib_address!r} closed.")
             except Exception as exc:
                 self.logger.error(f"Error closing {self!r}. {exc}", exc_info=True)
@@ -114,7 +143,7 @@ class GpibDevice:
     # This is a method to make this a context manager. (with ... as ...).
     # Don't worry about this.
     def __exit__(self, exc_type, exc_value, traceback):
-        self.close()
+        self.close_connection()
 
     # This makes the object more readable when printed.
     def __repr__(self):

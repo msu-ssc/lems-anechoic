@@ -22,3 +22,17 @@ Bugfix to require `send_set_command` to be azimuth 0 and elevation 0
 #### v0.1.2 - 2025-03-20
 
 Bugfix:  `SpectrumAnalyzerHP8563E.find()` will no longer crash if no GPIB was connected.
+
+#### v0.2.0 - 2025-03-21
+
+`GpibDevice.close()` renamed to `GpibDevice.close_connection()`, and converted to a no-op. This is a breaking change bugfix.
+
+Previous versions of this method called `pyvisa.Resource.close()`, which made the device permanently
+inaccessible to the underlying running instance of VISA on the host machine (i.e., the process on the computer that actually talks to the external device).
+PyVisa does not handle this gracefully, so the user ends up being confronted with inexplicable errors and essentially a spinlock whenever attempting to use any PyVisa method after closing any resource.
+
+Critically, `GpibDevice.close()` / `GpibDevice.close_connection()` was/is called at exit time when `GpibDevice` is used as a context manager.
+This means that upon leaving the context manager code block, PyVisa will always be left in an unusable state on all versions below 0.2.0.
+(NOTE: Using the `GpibDevice` class without a context manager will work as expected with no problems on these versions, as long as the user does not manually call `GpibDevice.close()`.)
+
+RECOMMENDATION: All users SHOULD upgrade to version >= 0.2.0. Users using `GpibDevice` as a context manager MUST upgrade to version >= 0.2.0.
