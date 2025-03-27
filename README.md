@@ -36,3 +36,7 @@ This means that upon leaving the context manager code block, PyVisa will always 
 (NOTE: Using the `GpibDevice` class without a context manager will work as expected with no problems on these versions, as long as the user does not manually call `GpibDevice.close()`.)
 
 RECOMMENDATION: All users SHOULD upgrade to version >= 0.2.0. Users using `GpibDevice` as a context manager MUST upgrade to version >= 0.2.0.
+
+#### v0.2.1 - 2025-03-27
+
+BUGFIX: Modified requirements in pyproject.toml to work with traditional pip install, not just UV.
