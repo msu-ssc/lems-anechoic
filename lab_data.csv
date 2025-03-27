@@ -1,3 +1,0 @@
-"timestamp_utc","commanded_azimuth","commanded_elevation","actual_azimuth","actual_elevation","center_frequency","center_amplitude","peak_frequency","peak_amplitude","cut_id"
-"2025-03-03 15:57:19.087616+00:00","-20.0","0","-19.93","0.0","8450000538.0","-71.17","8450000536.0","-71.0","azimuth-cut"
-"2025-03-03 15:57:21.764079+00:00","-15.0","0","-15.32","0.0","8450000538.0","-70.5","8450000536.0","-70.17","azimuth-cut"

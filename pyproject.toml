@@ -1,13 +1,12 @@
 [project]
 name = "lems-anechoic"
-# version = "0.1.0"
 dynamic = ["version"]
-description = "LEMS anechoic chamber test scripts"
+description = "MSU SSC anechoic chamber test scripts"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "matplotlib>=3.10.0",
-    "msu-ssc[logging,pretty] @ git+https://github.com/msu-ssc/msu-ssc@4962699f5553a79054fed2e76c48b06b24c2b6df",
+    "msu-ssc>=1.0.0",
     "numpy>=2.2.2",
     "pandas>=2.2.3",
     "pydantic>=2.10.6",
@@ -50,14 +49,14 @@ extend-select = [
 force-single-line = true
 known-first-party = ["lems_a3", "moc_tools"]
 
+[project.urls]
+Homepage = "https://github.com/msu-ssc/lems-anechoic"
+Source = "https://github.com/msu-ssc/lems-anechoic"
+
 [tool.uv]
 dev-dependencies = [
     "pytest>=8.3.4",
 ]
-
-
-[tool.uv.sources]
-msu-ssc = { git = "https://github.com/msu-ssc/msu-ssc" }
 
 [dependency-groups]
 dev = [

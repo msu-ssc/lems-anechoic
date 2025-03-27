@@ -1,4 +1,5 @@
 version = 1
+revision = 1
 requires-python = ">=3.10"
 resolution-markers = [
     "python_full_version >= '3.12'",
@@ -245,11 +246,10 @@ wheels = [
 
 [[package]]
 name = "lems-anechoic"
-version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "matplotlib" },
-    { name = "msu-ssc", extra = ["logging", "pretty"] },
+    { name = "msu-ssc" },
     { name = "numpy" },
     { name = "pandas" },
     { name = "pydantic" },
@@ -271,7 +271,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "matplotlib", specifier = ">=3.10.0" },
-    { name = "msu-ssc", extras = ["logging", "pretty"], git = "https://github.com/msu-ssc/msu-ssc" },
+    { name = "msu-ssc", specifier = ">=1.0.0" },
     { name = "numpy", specifier = ">=2.2.2" },
     { name = "pandas", specifier = ">=2.2.3" },
     { name = "pydantic", specifier = ">=2.10.6" },
@@ -280,6 +280,7 @@ requires-dist = [
     { name = "scipy", specifier = ">=1.15.2" },
     { name = "scipy", marker = "extra == 'mayo'", specifier = ">=1.15.2" },
 ]
+provides-extras = ["mayo"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "pytest", specifier = ">=8.3.4" }]
@@ -359,15 +360,15 @@ wheels = [
 
 [[package]]
 name = "msu-ssc"
-version = "0.2.2"
-source = { git = "https://github.com/msu-ssc/msu-ssc#4962699f5553a79054fed2e76c48b06b24c2b6df" }
-
-[package.optional-dependencies]
-logging = [
+version = "1.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
     { name = "python-json-logger" },
-]
-pretty = [
     { name = "rich" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ad/75/01023e0329463e5efc50f28129ab6a76b3a604700fee39d1c157eac92759/msu_ssc-1.0.0.tar.gz", hash = "sha256:185d0efca1717853b3cbe6bdcbc4f9570c95cfdf9ebac27c606f008e461b6fea", size = 25994 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8f/b5/a758f3d631825b00ea88166d19d6245ad7c467810331a730e8e354d0dc07/msu_ssc-1.0.0-py3-none-any.whl", hash = "sha256:abcc07ea510e0323e9ee272e4c7fe03f46e5b5800316478d02edfbc86738a3e6", size = 12611 },
 ]
 
 [[package]]
@@ -712,11 +713,11 @@ wheels = [
 
 [[package]]
 name = "python-json-logger"
-version = "3.2.1"
+version = "3.3.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/e3/c4/358cd13daa1d912ef795010897a483ab2f0b41c9ea1b35235a8b2f7d15a7/python_json_logger-3.2.1.tar.gz", hash = "sha256:8eb0554ea17cb75b05d2848bc14fb02fbdbd9d6972120781b974380bfa162008", size = 16287 }
+sdist = { url = "https://files.pythonhosted.org/packages/9e/de/d3144a0bceede957f961e975f3752760fbe390d57fbe194baf709d8f1f7b/python_json_logger-3.3.0.tar.gz", hash = "sha256:12b7e74b17775e7d565129296105bbe3910842d9d0eb083fc83a6a617aa8df84", size = 16642 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/4b/72/2f30cf26664fcfa0bd8ec5ee62ec90c03bd485e4a294d92aabc76c5203a5/python_json_logger-3.2.1-py3-none-any.whl", hash = "sha256:cdc17047eb5374bd311e748b42f99d71223f3b0e186f4206cc5d52aefe85b090", size = 14924 },
+    { url = "https://files.pythonhosted.org/packages/08/20/0f2523b9e50a8052bc6a8b732dfc8568abbdc42010aef03a2d750bdab3b2/python_json_logger-3.3.0-py3-none-any.whl", hash = "sha256:dd980fae8cffb24c13caf6e158d3d61c0d6d22342f932cb6e9deedab3d35eec7", size = 15163 },
 ]
 
 [[package]]
