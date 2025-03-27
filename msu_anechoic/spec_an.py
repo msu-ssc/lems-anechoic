@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import contextlib
 import datetime
-import os
 import sys
 import time
 from pathlib import Path
@@ -10,18 +8,22 @@ from typing import TYPE_CHECKING
 from typing import Literal
 from typing import Sequence
 
-import numpy as np
 import pyvisa
-
-sys.path.append(os.path.abspath("."))  # SO STUPID!
 
 import msu_anechoic
 
 if TYPE_CHECKING:
     import logging
 
+    import numpy as np
+    from numpy.typing import NDArray
+
 
 __all__ = ["GpibDevice", "SpectrumAnalyzerHP8563E"]
+
+
+class GpibError(Exception):
+    """Some error in GPIB communication happened."""
 
 
 class GpibDevice:
@@ -56,7 +58,9 @@ class GpibDevice:
         if self.log_every_message:
             self.logger.debug(f"Querying {self.gpib_address!r} with {command=}")
         if self.resource is None:
-            raise ValueError("Connection to the spectrum analyzer is not open.")
+            message = f"Connection to {self.__class__.__name__} is not open."
+            self.logger.error(message)
+            raise GpibError(message)
         response = self.resource.query(command)
         if self.log_every_message:
             self.logger.debug(f"Response from {self.gpib_address!r} to {command=} is {response=}")
@@ -69,7 +73,9 @@ class GpibDevice:
         if self.log_every_message:
             self.logger.debug(f"Writing {command=} to {self.gpib_address!r}")
         if self.resource is None:
-            raise ValueError("Connection to the spectrum analyzer is not open.")
+            message = f"Connection to {self.__class__.__name__} is not open."
+            self.logger.error(message)
+            raise GpibError(message)
         response = self.resource.write(command)
         if self.log_every_message:
             self.logger.debug(f"{command=} written to {self.gpib_address!r} with {response=}")
@@ -87,7 +93,7 @@ class GpibDevice:
 
     def close_connection(self):
         """Close the connection to the GPIB device."""
-        
+
         # This is currently a no-op, for reasons explained in the comments below.
         # Old code with explanatory comments is kept, and might someday be restored.
         return
@@ -95,20 +101,20 @@ class GpibDevice:
         if self.resource:
             try:
                 # NOTE: Do not call `close()`!
-                # 
+                #
                 # Calling "close()" on a resource seems to mark it as unusable somewhere within VISA (not PyVisa)
                 # in a way that I (David Mayo) don't understand.
-                # 
+                #
                 # The way this manifests is that this code fails:
                 # ```
                 # rm = pyvisa.ResourceManager()
                 # resource = rm.open_resource("GPIB0::18::INSTR")
                 # resource.close()
-                # 
+                #
                 # rm = pyvisa.ResourceManager()
                 # # The above line will hang here for exactly 4 minutes. Why? No one knows. Here's a GitHub issue about it:
                 # # https://github.com/pyvisa/pyvisa/issues/197
-                # 
+                #
                 # After 4 minutes, the ResourceManager WILL open, but it will be in a weird state where it can't do anything.
                 # rm.list_resources()   # Will hang forever
                 # rm.open_resource("GPIB0::18::INSTR")  # Will hang forever and/or fail with weird error messages
@@ -132,7 +138,7 @@ class GpibDevice:
         resource_manager: pyvisa.highlevel.ResourceManager | None = None,
         open_immediately: bool = True,
         log_query_messages: bool = False,
-    ) -> "SpectrumAnalyzerHP8563E | None":
+    ) -> "GpibDevice":
         raise NotImplementedError(f"This method must be implemented in a subclass")
 
     # This is a method to make this a context manager. (with ... as ...).
@@ -169,20 +175,17 @@ class SpectrumAnalyzerHP8563E(GpibDevice):
         resource_manager: pyvisa.highlevel.ResourceManager | None = None,
         open_immediately: bool = True,
         log_query_messages: bool = False,
-    ) -> "SpectrumAnalyzerHP8563E | None":
+    ) -> "SpectrumAnalyzerHP8563E":
         """Find an HP 8563E spectrum analyzer on the GPIB bus.
 
-        Return a `SpectrumAnalyzerHP8563E` object if one is found, otherwise return None.
+        Return a `SpectrumAnalyzerHP8563E` object if one is found, otherwise raise a `GpibError`.
 
 
         Example:
         ```python
         with SpectrumAnalyzerHP8563E.find() as spectrum_analyzer:
-            if not spectrum_analyzer:
-                logger.error("No spectrum analyzer found.")
-                sys.exit(1)
             center_frequency = spectrum_analyzer.get_center_frequency()
-            print(f")
+            ...
         ```
         """
         logger = logger or msu_anechoic.create_null_logger()
@@ -216,8 +219,10 @@ class SpectrumAnalyzerHP8563E(GpibDevice):
                     log_query_messages=log_query_messages,
                 )
 
-        # nullcontext is a context manager that does nothing. It evaluates to `None` in an `as` clause.
-        return contextlib.nullcontext()
+        # If we get here, we didn't find any HP 8563E spectrum analyzers.
+        message = "No HP 8563E spectrum analyzer found."
+        logger.error(message)
+        raise GpibError(message)
 
     def move_center_to_peak(
         self,
@@ -286,15 +291,17 @@ class SpectrumAnalyzerHP8563E(GpibDevice):
         self.logger.debug(f"Setting upper frequency of {self.gpib_address!r} to {frequency=}")
         self.write(f"FB {frequency}")
 
-    def get_trace(self, trace: Literal["A", "B"] = "A") -> np.ndarray[np.float64]:
+    def get_trace(self, trace: Literal["A", "B"] = "A") -> NDArray[np.float64]:
         """Get the trace from the spectrum analyzer."""
+        import numpy as np
+
         self.logger.debug(f"Getting trace {trace} from {self.gpib_address!r}")
         response = self.query(f"TR{trace}?")
         return np.array([float(x) for x in response.split(",")])
 
     def get_trace_frequencies_and_amplitudes(
         self, trace: Literal["A", "B"] = "A"
-    ) -> tuple[np.ndarray[np.float64], np.ndarray[np.float64]]:
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
         """Get the frequencies and amplitudes of the trace from the spectrum analyzer.
 
         Response will be a tuple of Numpy arrays: `(frequencies, amplitudes)`."""
@@ -360,7 +367,7 @@ class SpectrumAnalyzerHP8563E(GpibDevice):
         """Get the reference level of the spectrum analyzer."""
         self.logger.debug(f"Getting reference level from {self.gpib_address!r}")
         return float(self.query("RL?"))
-    
+
     def set_reference_level(self, level: float) -> None:
         """Set the reference level of the spectrum analyzer."""
         self.logger.debug(f"Setting reference level of {self.gpib_address!r} to {level=}")

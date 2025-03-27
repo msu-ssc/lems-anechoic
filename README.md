@@ -44,3 +44,7 @@ BUGFIX: Modified requirements in pyproject.toml to work with traditional pip ins
 #### v0.2.2 - 2025-03-27
 
 BUGFIX: `SpectrumAnalyzerHP8563E.find` will create a null logger if not given a logger
+
+#### v0.3.0 - 2025-03-27
+
+`SpectrumAnalyzerHP8563E.find` will now raise an exception if it can't connect. This is a breaking change.
