@@ -16,6 +16,10 @@ if TYPE_CHECKING:
     import logging
 
 
+class TurntableError(Exception):
+    """Some kind of error with turntable communication."""
+
+
 # NOTE: The line in the firmware code is:
 # snprintf(sendbuffer,42,"Pos= El: %.2f , Az: %.2f \r\n",El_pos_deg,Az_pos_deg);
 #
@@ -94,10 +98,10 @@ class Turntable:
         csv_file_path: str | Path | None = None,
         show_move_debug: bool = False,
         neutral_elevation: float = 0.0,
-    ) -> "Turntable | None":
+    ) -> "Turntable":
         """Attempt to find a turntable by iterating over all available serial ports.
 
-        Return `None` if none are successful. This probably means that you are not connected to the turntable,
+        Raise `TurntableError` if none are successful. This probably means that you are not connected to the turntable,
         or that the turntable is powered off.
 
         Args:
@@ -109,7 +113,7 @@ class Turntable:
             neutral_elevation (float, optional): _description_. Defaults to 0.0.
 
         Returns:
-            Turntable | None: _description_
+            Turntable: _description_
         """
         from serial.tools.list_ports import comports
 
@@ -141,8 +145,10 @@ class Turntable:
                 logger.debug(f"Failed to connect to turntable at port {port.device}: {exc}", exc_info=exc)
                 continue
 
-        logger.error("Failed to find turntable.")
-        return None
+        # At this point, we have failed to find the turntable.
+        message = "Failed to find turntable."
+        logger.error(message)
+        raise TurntableError(message)
 
     def parse_az_el(
         self,
@@ -374,7 +380,7 @@ class Turntable:
         # Handle the absolute elevation offset
         if self.neutral_elevation:
             absolute_elevation += self.neutral_elevation
-            
+
         # Validate azimuth within bounds
         if not self.ABSOLUTE_AZIMUTH_BOUNDS[0] <= absolute_azimuth <= self.ABSOLUTE_AZIMUTH_BOUNDS[1]:
             self.logger.error(f"Azimuth {absolute_azimuth} is out of bounds {self.ABSOLUTE_AZIMUTH_BOUNDS}")
@@ -411,7 +417,9 @@ class Turntable:
             self.logger.debug(f"Set command {azimuth=}, {elevation=} is valid.")
             return True
         else:
-            self.logger.warning(f"Set command {azimuth=}, {elevation=} is NOT valid. Azimuth and elevation must both be")
+            self.logger.warning(
+                f"Set command {azimuth=}, {elevation=} is NOT valid. Azimuth and elevation must both be"
+            )
             return False
         # valid_bounds = self._validate_absolute_bounds(
         #     absolute_azimuth=azimuth,
@@ -726,7 +734,7 @@ class Turntable:
                             display_target_el = self._convert_from_regime_elevation(display_target_el)
                         except Exception:
                             pass
-                        
+
                     self.logger.debug(
                         f"TT moving. cur_az={display_current_az:.2f}, cur_el={display_current_el:.2f}; target_az={display_target_az:.2f}, target_el={display_target_el:.2f}"
                     )
@@ -753,7 +761,7 @@ class Turntable:
                 _absolute_azimuth = _current_regime_azimuth
                 _absolute_elevation = self._convert_from_regime_elevation(_current_regime_elevation)
                 _current_absolute_position = AzEl(azimuth=_absolute_azimuth, elevation=_absolute_elevation)
-            except Exception as exc:
+            except Exception:
                 # print(f"Failed to convert to absolute position: {exc}")
                 pass
             print(f"[The following numbers may or may not be correct, and they may or may not be meaningful.]")
