@@ -98,9 +98,6 @@ def _turntable_to_traditional(
     return trad_azimuth_deg, trad_elevation_deg
 
 
-
-
-
 class AzElTurntable(AzEl):
     """Azimuth and elevation in turn-table coordinates.
 
@@ -180,10 +177,6 @@ def turntable_to_traditional_numpy(turn_elevation_deg: float, turn_azimuth_deg: 
     trad_elevation_deg: float = np.degrees(trad_elevation_rad)
 
     return trad_azimuth_deg, trad_elevation_deg
-
-
-
-
 
 
 # import matplotlib.pyplot as plt
@@ -342,7 +335,7 @@ if __name__ == "__main__":
     print(f"Traditional Azimuth: {trad_azim:.2f}°")
     print(f"Traditional Elevation: {trad_elev:.2f}°")
 
-# Example usage:
+    # Example usage:
     # Traditional spherical coordinates (example values):
     trad_az = 45.0  # Traditional azimuth in degrees
     trad_el = 30.0  # Traditional elevation in degrees

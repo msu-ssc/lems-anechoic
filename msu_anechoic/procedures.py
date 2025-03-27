@@ -14,6 +14,7 @@ from msu_anechoic import turn_table
 if TYPE_CHECKING:
     pass
 
+
 def generate_grid(
     *,
     azimuth_min: float,
@@ -209,7 +210,7 @@ def user_guided_box_scan(
     print(f"         Current position: {current_position}")
 
     user_input = input("What should the center be? [START, CURRENT, STRONGEST, or <azimuth,elevation>]: ")
-    
+
     if user_input.lower().strip() == "start":
         selected_center = starting_position
     elif user_input.lower().strip() == "current":
@@ -224,7 +225,7 @@ def user_guided_box_scan(
 
     # Have to get the position just to establish communication
     _ = turntable.get_position()
-    
+
     turntable.move_to(azimuth=selected_center.azimuth, elevation=selected_center.elevation)
     user_input = input("Set this as the center? [y/n]: ")
     if user_input.lower().strip() == "y":
@@ -237,7 +238,7 @@ def user_guided_box_scan(
             function_to_maximize=function_to_maximize,
         )
     return selected_center
-    
+
     # print("Moving to the strongest signal point.")
     # turntable.move_to(azimuth=strongest_signal_point.azimuth, elevation=strongest_signal_point.elevation)
 
@@ -293,6 +294,7 @@ def user_guided_box_scan(
 
 if __name__ == "__main__":
     from msu_ssc import ssc_log
+
     ssc_log.init(level="DEBUG", jsonl_file_path="./mayo.log")
     tt = turn_table.Turntable(port="COM5", timeout=5, logger=ssc_log.logger)
     tt.interactively_center()

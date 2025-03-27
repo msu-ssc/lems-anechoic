@@ -41,7 +41,7 @@ class TurnTableElevationRegime:
         if not isinstance(other, TurnTableElevationRegime):
             return NotImplemented
         return self.center_angle == other.center_angle
-    
+
     def __str__(self) -> str:
         return f"{self.center_angle:+.0f}°±{self.allowable_offset:.0f}°"
 
@@ -78,11 +78,11 @@ def find_next_regime(
     current_regime: TurnTableElevationRegime,
 ) -> TurnTableElevationRegime:
     """Find the next elevation regime to move to along the path to the destination angle.
-    
+
     If the destination is in the current regime, the current regime is returned."""
     if destination_angle in current_regime:
         return current_regime
-    
+
     # NOTE: This assumes that the regimes are sorted in ascending order (which they are)
     # This could be written more robustly.
     current_regime_index = elevation_regimes.index(current_regime)

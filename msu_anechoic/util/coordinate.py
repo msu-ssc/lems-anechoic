@@ -165,8 +165,10 @@ class Coordinate(pydantic.BaseModel):
             method = self.__class__.__name__ + ".from_turntable"
         elif self.kind == "absolute_turntable":
             method = self.__class__.__name__ + ".from_absolute_turntable"
-        
-        return f"{method}(azimuth={self.azimuth}, elevation={self.elevation}, neutral_elevation={self.neutral_elevation})"
+
+        return (
+            f"{method}(azimuth={self.azimuth}, elevation={self.elevation}, neutral_elevation={self.neutral_elevation})"
+        )
 
     def __str__(self):
         kind_str = self.kind.replace("_", " ").capitalize()

@@ -64,7 +64,9 @@ class GridPattern:
             self._azimuth_step_size = (self.azimuth_max - self.azimuth_min) / (self.azimuth_step_count - 1)
         else:
             self._azimuth_step_size = azimuth_step_size
-            self.azimuth_step_count: int = int(np.round((self.azimuth_max - self.azimuth_min) / self._azimuth_step_size) + 1)
+            self.azimuth_step_count: int = int(
+                np.round((self.azimuth_max - self.azimuth_min) / self._azimuth_step_size) + 1
+            )
 
         # self.azimuth_step_count = azimuth_step_count
 
@@ -78,15 +80,21 @@ class GridPattern:
             self._elevation_step_size = (self.elevation_max - self.elevation_min) / (self.elevation_step_count - 1)
         else:
             self._elevation_step_size = elevation_step_size
-            self.elevation_step_count: int = int(np.round((self.elevation_max - self.elevation_min) / self._elevation_step_size) + 1)
+            self.elevation_step_count: int = int(
+                np.round((self.elevation_max - self.elevation_min) / self._elevation_step_size) + 1
+            )
 
         # self.elevation_step_count = elevation_step_count
         self.direction = direction
 
         self.points: list[AzEl] = []
         self.initial_position = initial_position
-        self.azimuth_values = [float(x) for x in np.linspace(self.azimuth_min, self.azimuth_max, self.azimuth_step_count)]
-        self.elevation_values = [float(x) for x in np.linspace(self.elevation_min, self.elevation_max, self.elevation_step_count)]
+        self.azimuth_values = [
+            float(x) for x in np.linspace(self.azimuth_min, self.azimuth_max, self.azimuth_step_count)
+        ]
+        self.elevation_values = [
+            float(x) for x in np.linspace(self.elevation_min, self.elevation_max, self.elevation_step_count)
+        ]
 
         self.start_corner = start_corner
         if self.start_corner[0] == "U":
@@ -113,60 +121,66 @@ class GridPattern:
 
     def height(self) -> float:
         return abs(self.elevation_max - self.elevation_min)
-    
+
     def width(self) -> float:
         return abs(self.azimuth_max - self.azimuth_min)
-    
+
     def elevation_step_size(self) -> float:
         return self._elevation_step_size
         # if self.elevation_step_count == 1:
         #     return 0
         # return self.height() / (self.elevation_step_count - 1)
-    
+
     def azimuth_step_size(self) -> float:
         return self._azimuth_step_size
         # if self.azimuth_step_count == 1:
         #     return 0
         # return self.width() / (self.azimuth_step_count - 1)
-    
+
     def elevation_steps(self) -> int:
         if self.direction == "HORIZONTAL":
             return self.elevation_step_count - 1
         elif self.direction == "VERTICAL":
             total_steps = self.azimuth_step_count * self.elevation_step_count
             return total_steps - self.azimuth_step_count
-        
+
     def azimuth_steps(self) -> int:
         if self.direction == "HORIZONTAL":
             total_steps = self.azimuth_step_count * self.elevation_step_count
             return total_steps - self.elevation_step_count
         elif self.direction == "VERTICAL":
             return self.azimuth_step_count - 1
-        
+
     def azimuth_step_time(self) -> float:
         return estimated_step_time(azimuth=self.azimuth_step_size(), elevation=0)
-    
+
     def elevation_step_time(self) -> float:
         return estimated_step_time(azimuth=0, elevation=self.elevation_step_size())
-    
+
     def total_azimuth_time(self) -> float:
         return self.azimuth_steps() * self.azimuth_step_time()
-    
+
     def total_elevation_time(self) -> float:
         return self.elevation_steps() * self.elevation_step_time()
-    
+
     def total_grid_time(self) -> float:
         return self.total_azimuth_time() + self.total_elevation_time()
 
     def cuts(self) -> list[list[AzEl]]:
         """Return a list of cuts, where each cut is a list of AzEl points.
-        
+
         In a horizontal grid, each cut is a row.
         In a vertical grid, each cut is a column."""
         if self.direction == "HORIZONTAL":
-            cuts = [self.points[i:i + self.azimuth_step_count] for i in range(0, len(self.points), self.azimuth_step_count)]
+            cuts = [
+                self.points[i : i + self.azimuth_step_count]
+                for i in range(0, len(self.points), self.azimuth_step_count)
+            ]
         elif self.direction == "VERTICAL":
-            cuts = [self.points[i:i + self.elevation_step_count] for i in range(0, len(self.points), self.elevation_step_count)]
+            cuts = [
+                self.points[i : i + self.elevation_step_count]
+                for i in range(0, len(self.points), self.elevation_step_count)
+            ]
         else:
             raise ValueError(f"Invalid direction: {self.direction}")
         return cuts
@@ -189,8 +203,6 @@ class GridPattern:
                 # va="center",
             )
 
-
-
         if self.initial_position:
             ax.plot(
                 [self.initial_position.azimuth, first_point.azimuth],
@@ -200,8 +212,24 @@ class GridPattern:
                 linestyle="--",
                 color="black",
             )
-        ax.scatter(first_point.azimuth, first_point.elevation, label="First Point", marker="o", color="#00ff0088", zorder=10, s=300)
-        ax.scatter(last_point.azimuth, last_point.elevation, label="Last Point", marker="o", color="#ff000088", zorder=10, s=300)
+        ax.scatter(
+            first_point.azimuth,
+            first_point.elevation,
+            label="First Point",
+            marker="o",
+            color="#00ff0088",
+            zorder=10,
+            s=300,
+        )
+        ax.scatter(
+            last_point.azimuth,
+            last_point.elevation,
+            label="Last Point",
+            marker="o",
+            color="#ff000088",
+            zorder=10,
+            s=300,
+        )
         ax.set_xlabel("Azimuth (degrees)")
         ax.set_ylabel("Elevation (degrees)")
         # ax.set_xlabel("Azimuth (degrees)")
@@ -218,7 +246,7 @@ class GridPattern:
         elevation_max: float,
         azimuth_step_count: int | None = None,
         azimuth_step_size: float | None = None,
-        elevation_step_count: float| None = None,
+        elevation_step_count: float | None = None,
         elevation_step_size: float | None = None,
         # start_corner: Literal["UL", "UR", "LL", "LR"] = "UL",
         initial_position: AzEl | None = None,
@@ -247,14 +275,15 @@ class GridPattern:
                     best_grid = grid
         return best_grid
 
+
 if __name__ == "__main__":
     fine_grid = GridPattern(
         azimuth_min=-20,
         azimuth_max=20,
         elevation_min=-20,
         elevation_max=20,
-        azimuth_step_size=.25,
-        elevation_step_size=.25,
+        azimuth_step_size=0.25,
+        elevation_step_size=0.25,
         start_corner="UL",
         # initial_position=AzEl(0, 0),
         # direction="VERTICAL",
@@ -294,7 +323,8 @@ if __name__ == "__main__":
     print("Done")
 
     import matplotlib.pyplot as plt
-    fig, ax= plt.subplots()
+
+    fig, ax = plt.subplots()
     # grid.plot(ax)
     print(f"{grid.height()=}")
     print(f"{grid.width()=}")
@@ -319,7 +349,6 @@ if __name__ == "__main__":
         for within_cut_index, point in enumerate(cut):
             print(f"{cut_index=}, {within_cut_index=}, {within_cut_index=} {point=}")
             point_index += 1
-        
 
     plt.show()
 
@@ -339,6 +368,8 @@ if __name__ == "__main__":
         grid_cuts = len(grid.cuts())
         cut_size = len(grid.cuts()[0])
         cut_time_minutes = grid.total_grid_time() / grid_cuts / 60.0
-        print(f"{step_size=:.2f}deg, {grid_minutes=:.2f} minutes, {grid_cuts=}, {cut_size=}, {cut_time_minutes=:.2f} minutes per cut")
+        print(
+            f"{step_size=:.2f}deg, {grid_minutes=:.2f} minutes, {grid_cuts=}, {cut_size=}, {cut_time_minutes=:.2f} minutes per cut"
+        )
         # print(f"{step_size=:.2f}deg, {grid_minutes=:.2f} minutes, {grid_cuts=}, {cut_size=}, {cut_time=:.2f} seconds per cut")
         # print(f"{step_size=:.2f}deg, {grid.total_grid_time() / 3600.0=:.2f} hours")
