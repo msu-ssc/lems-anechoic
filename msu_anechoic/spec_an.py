@@ -12,12 +12,13 @@ import pyvisa
 
 import msu_anechoic
 
+try:
+    import numpy as np
+except ImportError:
+    from msu_anechoic.util import _numpy as np
+
 if TYPE_CHECKING:
     import logging
-
-    import numpy as np
-    from numpy.typing import NDArray
-
 
 __all__ = ["GpibDevice", "SpectrumAnalyzerHP8563E"]
 
@@ -291,26 +292,23 @@ class SpectrumAnalyzerHP8563E(GpibDevice):
         self.logger.debug(f"Setting upper frequency of {self.gpib_address!r} to {frequency=}")
         self.write(f"FB {frequency}")
 
-    def get_trace(self, trace: Literal["A", "B"] = "A") -> NDArray[np.float64]:
+    def get_trace(self, trace: Literal["A", "B"] = "A") -> list[float]:
         """Get the trace from the spectrum analyzer."""
-        import numpy as np
-
         self.logger.debug(f"Getting trace {trace} from {self.gpib_address!r}")
         response = self.query(f"TR{trace}?")
-        return np.array([float(x) for x in response.split(",")])
+        return [float(x) for x in response.split(",")]
 
-    def get_trace_frequencies_and_amplitudes(
-        self, trace: Literal["A", "B"] = "A"
-    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    def get_trace_frequencies_and_amplitudes(self, trace: Literal["A", "B"] = "A") -> tuple[list[float], list[float]]:
         """Get the frequencies and amplitudes of the trace from the spectrum analyzer.
 
         Response will be a tuple of Numpy arrays: `(frequencies, amplitudes)`."""
-        import numpy as np
-
         self.logger.debug(f"Getting trace frequencies and amplitudes {trace} from {self.gpib_address!r}")
         amplitudes = self.get_trace(trace)
+
         # Have to manually calculate the frequencies because the spectrum analyzer doesn't provide them.
-        frequencies = np.linspace(self.get_lower_frequency(), self.get_upper_frequency(), len(amplitudes))
+        frequencies = [
+            float(x) for x in np.linspace(self.get_lower_frequency(), self.get_upper_frequency(), len(amplitudes))
+        ]
         return frequencies, amplitudes
 
     def get_marker_frequency(self) -> float:
