@@ -7,7 +7,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "matplotlib>=3.10.0",
-    "msu-ssc[logging,pretty]",
+    "msu-ssc[logging,pretty] @ git+https://github.com/msu-ssc/msu-ssc@4962699f5553a79054fed2e76c48b06b24c2b6df",
     "numpy>=2.2.2",
     "pandas>=2.2.3",
     "pydantic>=2.10.6",
