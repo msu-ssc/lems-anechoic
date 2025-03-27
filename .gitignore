@@ -1,5 +1,6 @@
 **/.vscode/
-
+**/.ruff_cache/
+**/.pytest_cache/
 logs/
 data/
 experiments/
