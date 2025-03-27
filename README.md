@@ -40,3 +40,7 @@ RECOMMENDATION: All users SHOULD upgrade to version >= 0.2.0. Users using `GpibD
 #### v0.2.1 - 2025-03-27
 
 BUGFIX: Modified requirements in pyproject.toml to work with traditional pip install, not just UV.
+
+#### v0.2.2 - 2025-03-27
+
+BUGFIX: `SpectrumAnalyzerHP8563E.find` will create a null logger if not given a logger

@@ -185,6 +185,7 @@ class SpectrumAnalyzerHP8563E(GpibDevice):
             print(f")
         ```
         """
+        logger = logger or msu_anechoic.create_null_logger()
         resource_manager = resource_manager or pyvisa.ResourceManager()
         resources = resource_manager.list_resources()
         for resource_name in resources:
