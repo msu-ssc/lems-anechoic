@@ -15,6 +15,12 @@ from msu_anechoic import create_null_logger
 if TYPE_CHECKING:
     import logging
 
+# NOTE: This is slightly greater than 0.10 (what is hardcoded into firmware) to handle the fact that the firmware
+# rounds to 2 decimal places.
+# See issue #6 for more details. https://github.com/msu-ssc/lems-anechoic/issues/6
+ALLOWABLE_DISCREPANCY_DEG = 0.11
+"""The allowable difference between the commanded and actual position along tilt or pan, in degrees."""
+
 
 class TurntableError(Exception):
     """Some kind of error with turntable communication."""
@@ -541,16 +547,16 @@ class Turntable:
                 continue
 
             # Verify that actual_position is within 0.1 degrees of set_position. If so, we're good. If not, keep waiting.
-            if abs(reported_position.azimuth - set_position.azimuth) > 0.1:
+            if abs(reported_position.azimuth - set_position.azimuth) > ALLOWABLE_DISCREPANCY_DEG:
                 if self._show_move_debug:
                     self.logger.debug(
-                        f"Waiting for reported azimuth to match set azimuth... Azimuth {reported_position.azimuth} is not within 0.1 degrees of {set_position.azimuth}"
+                        f"Waiting for reported azimuth to match set azimuth... Azimuth {reported_position.azimuth} is not within {ALLOWABLE_DISCREPANCY_DEG} degrees of {set_position.azimuth}"
                     )
                 continue
-            if abs(reported_position.elevation - set_position.elevation) > 0.1:
+            if abs(reported_position.elevation - set_position.elevation) > ALLOWABLE_DISCREPANCY_DEG:
                 if self._show_move_debug:
                     self.logger.debug(
-                        f"Waiting for reported elevation to match set elevation... Elevation {reported_position.elevation} is not within 0.1 degrees of {set_position.elevation}"
+                        f"Waiting for reported elevation to match set elevation... Elevation {reported_position.elevation} is not within {ALLOWABLE_DISCREPANCY_DEG} degrees of {set_position.elevation}"
                     )
                 continue
 
@@ -570,8 +576,8 @@ class Turntable:
         *,
         azimuth: float,
         elevation: float,
-        azimuth_margin: float = 0.1,
-        elevation_margin: float = 0.1,
+        azimuth_margin: float = ALLOWABLE_DISCREPANCY_DEG,
+        elevation_margin: float = ALLOWABLE_DISCREPANCY_DEG,
         delay: float = 0.05,
     ) -> None:
         assert self._current_regime is not None
@@ -643,8 +649,8 @@ class Turntable:
         *,
         azimuth: float,
         elevation: float,
-        azimuth_margin: float = 0.1,
-        elevation_margin: float = 0.1,
+        azimuth_margin: float = ALLOWABLE_DISCREPANCY_DEG,
+        elevation_margin: float = ALLOWABLE_DISCREPANCY_DEG,
         delay: float = 0.05,
     ) -> AzEl:
         """Move to the given azimuth and elevation. Return the final position."""
