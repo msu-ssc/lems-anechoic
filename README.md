@@ -52,3 +52,7 @@ BUGFIX: `SpectrumAnalyzerHP8563E.find` will create a null logger if not given a 
 #### v0.3.1 - 2025-03-27
 
 `Turntable.find` will now raise an exception if it can't connect. This is a breaking change.
+
+#### v0.3.2 - 2025-05-02
+
+Handle edge case where turntable stops exactly 0.1 deg from commanded position [See Issue #6](https://github.com/msu-ssc/lems-anechoic/issues/6)

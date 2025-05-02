@@ -36,6 +36,7 @@ line-length = 120
 [tool.ruff.lint]
 ignore = [
     "F541", # f-string without any placeholders
+    "E501", # line too long
 ]
 
 extend-select = [
