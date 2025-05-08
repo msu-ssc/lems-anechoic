@@ -371,6 +371,66 @@ class SpectrumAnalyzerHP8563E(GpibDevice):
         self.logger.debug(f"Setting reference level of {self.gpib_address!r} to {level=}")
         self.write(f"RL {level:0.2f}")
 
+    def get_serial_number(self) -> str:
+        """Get the serial number of the spectrum analyzer."""
+        self.logger.debug(f"Getting serial number from {self.gpib_address!r}")
+        return self.query("SER?").strip()
+    
+    def get_video_bandwidth(self) -> float:
+        """Get the video bandwidth of the spectrum analyzer."""
+        self.logger.debug(f"Getting video bandwidth from {self.gpib_address!r}")
+        return float(self.query("VB?").strip())
+    
+    def set_video_bandwidth(self, bandwidth: float) -> None:
+        """Set the video bandwidth of the spectrum analyzer."""
+        bandwidth_int = int(bandwidth)
+        self.logger.debug(f"Setting video bandwidth of {self.gpib_address!r} to {bandwidth_int=}")
+        self.write(f"VB {int(bandwidth_int)}")
+
+    def get_resolution_bandwidth(self) -> float:
+        """Get the resolution bandwidth of the spectrum analyzer."""
+        self.logger.debug(f"Getting resolution bandwidth from {self.gpib_address!r}")
+        return float(self.query("RB?").strip())
+    
+    def set_resolution_bandwidth(self, bandwidth: float) -> None:
+        """Set the resolution bandwidth of the spectrum analyzer."""
+        bandwidth_int = int(bandwidth)
+        self.logger.debug(f"Setting resolution bandwidth of {self.gpib_address!r} to {bandwidth_int=}")
+        self.write(f"RB {int(bandwidth_int)}")
+
+    def get_units(self) -> str:
+        """Get the units of the spectrum analyzer."""
+        self.logger.debug(f"Getting units from {self.gpib_address!r}")
+        return self.query("AUNITS?").strip()
+    
+    def set_units(self, units: str) -> None:
+        """Set the units of the spectrum analyzer."""
+        valid = {"dbm", "dbuv", "dbmv", "auto", "man", "v", "w", "dm"}
+        if units.lower() not in valid:
+            raise ValueError(f"Invalid units: {units}. Must be one of {valid}.")
+        self.logger.debug(f"Setting units of {self.gpib_address!r} to {units=}")
+        self.write(f"AUNITS {units}")
+
+    def enable_continuous_mode(self) -> None:
+        """Enable continuous mode."""
+        self.logger.debug(f"Enabling continuous mode on {self.gpib_address!r}")
+        self.write("CONTS")
+
+    def enable_single_sweep_mode(self) -> None:
+        """Enable single sweep mode."""
+        self.logger.debug(f"Enabling single sweep mode on {self.gpib_address!r}")
+        self.write("SNGLS")
+
+    def reset_all(self) -> None:
+        """Reset all configs to preset, same as power cycling the spec an."""
+        self.logger.debug(f"Resetting all configs on {self.gpib_address!r}")
+        self.write("IP")
+
+    def take_sweep(self) -> None:
+        """Take a full sweep."""
+        self.logger.debug(f"Taking sweep on {self.gpib_address!r}")
+        self.query("TS;DONE?")
+
     def scan_continuously(
         self,
         *,

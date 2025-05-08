@@ -59,3 +59,6 @@ Handle edge case where turntable stops exactly 0.1 deg from commanded position [
 
 #### v0.3.3 - 2025-05-07
 Add convenience 'find' function to spec_an module
+
+#### v0.3.4 - 2025-05-07
+#16 - Add severl spec-an commands
