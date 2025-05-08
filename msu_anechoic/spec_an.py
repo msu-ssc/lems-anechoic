@@ -440,6 +440,8 @@ class SpectrumAnalyzerHP8563E(GpibDevice):
             time.sleep(delay_between_observations)
 
 
+find = SpectrumAnalyzerHP8563E.find
+
 if __name__ == "__main__":
     from msu_ssc import ssc_log
 
