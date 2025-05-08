@@ -19,6 +19,7 @@ except ImportError:
 
 if TYPE_CHECKING:
     import logging
+    from msu_anechoic.experiment import SpecAnConfig
 
 __all__ = ["GpibDevice", "SpectrumAnalyzerHP8563E"]
 
@@ -225,6 +226,15 @@ class SpectrumAnalyzerHP8563E(GpibDevice):
         logger.error(message)
         raise GpibError(message)
 
+    def get_config(self) -> "SpecAnConfig":
+        """Get the config"""
+        from msu_anechoic import experiment
+        return experiment.SpecAnConfig.from_spec_an(self)
+
+    def apply_config(self, config: "SpecAnConfig") -> None:
+        """Apply the config"""
+        config.apply_to(self)
+
     def move_center_to_peak(
         self,
         center_frequency: float,
@@ -266,6 +276,19 @@ class SpectrumAnalyzerHP8563E(GpibDevice):
         """Set the span of the spectrum analyzer in Hertz."""
         self.logger.debug(f"Setting span of {self.gpib_address!r} to {span=:_}")
         self.write(f"SP {span}")
+
+    def get_gpib_timeout_ms(self) -> float | None:
+        """Get the timeout of the spectrum analyzer in milliseconds."""
+        if self.resource is None:
+            return None
+        return self.resource.timeout
+    
+    def set_gpib_timeout_ms(self, timeout: float) -> None:
+        """Set the timeout of the spectrum analyzer in milliseconds."""
+        if self.resource is None:
+            raise GpibError(f"Cannot set timeout on resource because it is not open.")
+        self.logger.debug(f"Setting timeout of {self.gpib_address!r} to {timeout=:_} ms.")
+        self.resource.timeout = timeout
 
     def get_span(self) -> float:
         """Get the span of the spectrum analyzer in Hertz."""
@@ -398,12 +421,12 @@ class SpectrumAnalyzerHP8563E(GpibDevice):
         self.logger.debug(f"Setting resolution bandwidth of {self.gpib_address!r} to {bandwidth_int=}")
         self.write(f"RB {int(bandwidth_int)}")
 
-    def get_units(self) -> str:
+    def get_amplitude_units(self) -> str:
         """Get the units of the spectrum analyzer."""
         self.logger.debug(f"Getting units from {self.gpib_address!r}")
         return self.query("AUNITS?").strip()
     
-    def set_units(self, units: str) -> None:
+    def set_amplitude_units(self, units: str) -> None:
         """Set the units of the spectrum analyzer."""
         valid = {"dbm", "dbuv", "dbmv", "auto", "man", "v", "w", "dm"}
         if units.lower() not in valid:
