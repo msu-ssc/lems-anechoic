@@ -95,10 +95,87 @@ class Grid(pydantic.BaseModel):
 
 
 class SpecAnConfig(pydantic.BaseModel):
-    initial_center_frequency: float
-    spans_when_searching: list[float]
-    reference_level: float = -10
+    initial_center_frequency: float | None = None
+    spans_when_searching: list[float] | None = None
+    reference_level: float | None = None
+    amplitude_units: str | None = None
+    resolution_bandwidth: float | None = None
+    video_bandwidth: float | None = None
+    center_frequency: float | None = None
+    minimum_frequency: float | None = None
+    maximum_frequency: float | None = None
+    span: float | None = None
+    serial_number: str | None = None
+    gpib_timeout_ms: int | None = None
 
+    def get_span(self) -> float | None:
+        """The span of the spectrum analyzer, in Hz."""
+        if self.span is not None:
+            return self.span
+        elif self.minimum_frequency is not None and self.maximum_frequency is not None:
+            return self.maximum_frequency - self.minimum_frequency
+        return None
+
+    def apply_to(self, spec_an: SpectrumAnalyzerHP8563E) -> None:
+        """Configure the spectrum analyzer with this configuration."""
+        # Do amplitude things first
+        if self.amplitude_units is not None:
+            spec_an.set_amplitude_units(self.amplitude_units)
+        if self.reference_level is not None:
+            spec_an.set_reference_level(self.reference_level)
+        
+        # Set CF to:
+        #   1. `center_frequency` if given
+        #   2. `initial_center_frequency` if given
+        #   3. Otherwise, take no action. 
+        center_frequency = None
+        if self.center_frequency is not None:
+            center_frequency = self.center_frequency
+        elif self.initial_center_frequency is not None:
+            center_frequency = self.initial_center_frequency
+        if center_frequency is not None:
+            spec_an.set_center_frequency(center_frequency)
+        
+        # Set spans
+        # If max and min are given OR span is given, use those
+        if self.get_span() is not None:
+            spec_an.set_span(self.get_span())
+        # Otherwise, if `spans_when_searching` is given, use that
+        elif self.spans_when_searching is not None and center_frequency is not None:
+            spec_an.move_center_to_peak(
+                center_frequency=center_frequency,
+                spans=self.spans_when_searching,
+            )
+        
+        if self.resolution_bandwidth is not None:
+            spec_an.set_resolution_bandwidth(self.resolution_bandwidth)
+        if self.video_bandwidth is not None:
+            spec_an.set_video_bandwidth(self.video_bandwidth)
+
+        if self.gpib_timeout_ms is not None:
+            spec_an.set_gpib_timeout_ms(self.gpib_timeout_ms)
+
+    @classmethod
+    def from_spec_an(
+        cls,
+        spec_an: SpectrumAnalyzerHP8563E,
+    ) -> "SpecAnConfig":
+        """Create a `SpecAnConfig` object by querying a `SpectrumAnalyzerHP8563E` object."""
+        spec_an.take_sweep()
+        return cls(
+            # initial_center_frequency=spec_an.get_center_frequency(),
+            # spans_when_searching=spec_an.spans_when_searching,
+            reference_level=spec_an.get_reference_level(),
+            amplitude_units=spec_an.get_amplitude_units(),
+            resolution_bandwidth=spec_an.get_resolution_bandwidth(),
+            video_bandwidth=spec_an.get_video_bandwidth(),
+            center_frequency=spec_an.get_center_frequency(),
+            minimum_frequency=spec_an.get_lower_frequency(),
+            maximum_frequency=spec_an.get_upper_frequency(),
+            serial_number=spec_an.get_serial_number(),
+            span=spec_an.get_span(),
+            gpib_timeout_ms=spec_an.get_gpib_timeout_ms(),
+        )
 
 class SigGenConfig(pydantic.BaseModel):
     center_frequency: float
