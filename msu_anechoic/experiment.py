@@ -107,6 +107,7 @@ class SpecAnConfig(pydantic.BaseModel):
     span: float | None = None
     serial_number: str | None = None
     gpib_timeout_ms: int | None = None
+    sweep_time: float | None = None
 
     def get_span(self) -> float | None:
         """The span of the spectrum analyzer, in Hz."""
@@ -151,6 +152,8 @@ class SpecAnConfig(pydantic.BaseModel):
             spec_an.set_resolution_bandwidth(self.resolution_bandwidth)
         if self.video_bandwidth is not None:
             spec_an.set_video_bandwidth(self.video_bandwidth)
+        if self.sweep_time is not None:
+            spec_an.set_sweep_time(self.sweep_time)
 
         if self.gpib_timeout_ms is not None:
             spec_an.set_gpib_timeout_ms(self.gpib_timeout_ms)
@@ -175,6 +178,7 @@ class SpecAnConfig(pydantic.BaseModel):
             serial_number=spec_an.get_serial_number(),
             span=spec_an.get_span(),
             gpib_timeout_ms=spec_an.get_gpib_timeout_ms(),
+            sweep_time=spec_an.get_sweep_time(),
         )
 
 class SigGenConfig(pydantic.BaseModel):

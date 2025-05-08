@@ -63,5 +63,8 @@ Add convenience 'find' function to spec_an module
 #### v0.3.4 - 2025-05-07
 #16 - Add several spec-an commands
 
-#### v0.3.5 - 2025-05-7
+#### v0.3.5 - 2025-05-07
 #12 - Create method to get/set spec an configs into/from an archival format
+
+#### v0.3.6 - 2025-05-08
+Add ability to set/query sweep time
