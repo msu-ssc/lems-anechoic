@@ -293,13 +293,11 @@ class SpectrumAnalyzerHP8563E(GpibDevice):
         self.logger.debug(f"Setting span of {self.gpib_address!r} to {span=:_}")
         self.write(f"SP {span}")
 
-    def get_gpib_timeout_ms(self, sweep: bool = False) -> float | None:
+    def get_gpib_timeout_ms(self) -> float | None:
         """Get the timeout of the spectrum analyzer in milliseconds."""
         if self.resource is None:
             return None
-        if sweep:
-            self.logger.debug(f"Getting timeout of {self.gpib_address!r} with sweep")
-            self.resource.query("TS;DONE?")
+
         return self.resource.timeout
     
     def set_gpib_timeout_ms(self, timeout: float) -> None:
@@ -312,7 +310,7 @@ class SpectrumAnalyzerHP8563E(GpibDevice):
     def get_span(self, sweep: bool = False) -> float:
         """Get the span of the spectrum analyzer in Hertz."""
         self.logger.debug(f"Getting span of {self.gpib_address!r}")
-        return float(self.query("SP?").strip(), sweep=sweep)
+        return float(self.query("SP?", sweep=sweep).strip())
 
     def get_lower_frequency(self, sweep: bool = False) -> float:
         """Get the lower frequency of the spectrum analyzer in Hertz."""
@@ -345,19 +343,17 @@ class SpectrumAnalyzerHP8563E(GpibDevice):
 
         Response will be a tuple of Numpy arrays: `(frequencies, amplitudes)`."""
         self.logger.debug(f"Getting trace frequencies and amplitudes {trace} from {self.gpib_address!r}")
-        amplitudes = self.get_trace(trace)
-        sweep: bool = sweep
-
+        amplitudes = self.get_trace(trace, sweep=sweep)
         # Have to manually calculate the frequencies because the spectrum analyzer doesn't provide them.
         frequencies = [
-            float(x) for x in np.linspace(self.get_lower_frequency(), self.get_upper_frequency(), len(amplitudes))
+            float(x) for x in np.linspace(self.get_lower_frequency(sweep=sweep), self.get_upper_frequency(sweep=sweep), len(amplitudes))
         ]
-        return frequencies, amplitudes, bool(sweep)
+        return frequencies, amplitudes
 
     def get_marker_frequency(self, sweep: bool = False) -> float:
         """Get the frequency of the marker in Hertz."""
         self.logger.debug(f"Getting marker frequency from {self.gpib_address!r}")
-        return float(self.query(f"MKF?"), sweep=sweep)
+        return float(self.query(f"MKF?", sweep=sweep))
 
     def set_marker_frequency(self, frequency: float):
         """Set the frequency of the marker in Hertz."""
@@ -367,7 +363,7 @@ class SpectrumAnalyzerHP8563E(GpibDevice):
     def get_marker_amplitude(self, sweep: bool = False) -> float:
         """Get the amplitude of the marker."""
         self.logger.debug(f"Getting marker amplitude from {self.gpib_address!r}")
-        return float(self.query(f"MKA?"), sweep=sweep)
+        return float(self.query(f"MKA?", sweep=sweep))
 
     def get_center_frequency_amplitude(self, sweep: bool = False) -> float:
         """Get the amplitude at the center frequency of the spectrum analyzer.
@@ -379,12 +375,12 @@ class SpectrumAnalyzerHP8563E(GpibDevice):
         self.logger.debug(f"Getting center frequency amplitude from {self.gpib_address!r}")
         center_frequency = self.get_center_frequency()
         self.set_marker_frequency(center_frequency)
-        return self.get_marker_amplitude()
+        return self.get_marker_amplitude(sweep=sweep)
 
-    def get_highest_amplitude(self) -> float:
+    def get_highest_amplitude(self, sweep: bool = False) -> float:
         """Get the highest amplitude from the trace."""
         self.logger.debug(f"Getting highest amplitude from {self.gpib_address!r}")
-        return max(self.get_trace())
+        return max(self.get_trace(sweep=sweep))
 
     def set_marker_to_highest_amplitude(self) -> None:
         """Set the marker to the highest amplitude.
@@ -393,36 +389,36 @@ class SpectrumAnalyzerHP8563E(GpibDevice):
         self.logger.debug(f"Setting marker to highest amplitude from {self.gpib_address!r}")
         self.write("MKPK")
 
-    def get_peak_frequency_and_amplitude(self) -> tuple[float, float]:
+    def get_peak_frequency_and_amplitude(self, sweep: bool = False) -> tuple[float, float]:
         """Do a peak search and get the peak frequency and amplitude.
 
         Returns `(frequency, amplitude)`."""
         self.logger.debug(f"Getting highest amplitude from {self.gpib_address!r}")
         self.set_marker_to_highest_amplitude()
         marker_frequency = self.get_marker_frequency()
-        marker_amplitude = self.get_marker_amplitude()
+        marker_amplitude = self.get_marker_amplitude(sweep=sweep)
         self.logger.debug(f"Marker at {marker_frequency=} with {marker_amplitude=}")
         return marker_frequency, marker_amplitude
 
-    def get_reference_level(self) -> float:
+    def get_reference_level(self, sweep: bool = False) -> float:
         """Get the reference level of the spectrum analyzer."""
         self.logger.debug(f"Getting reference level from {self.gpib_address!r}")
-        return float(self.query("RL?"))
+        return float(self.query("RL?", sweep=sweep))
 
     def set_reference_level(self, level: float) -> None:
         """Set the reference level of the spectrum analyzer."""
         self.logger.debug(f"Setting reference level of {self.gpib_address!r} to {level=}")
         self.write(f"RL {level:0.2f}")
 
-    def get_serial_number(self) -> str:
+    def get_serial_number(self, sweep: bool = False) -> str:
         """Get the serial number of the spectrum analyzer."""
         self.logger.debug(f"Getting serial number from {self.gpib_address!r}")
-        return self.query("SER?").strip()
+        return self.query("SER?", sweep=sweep).strip()
     
-    def get_video_bandwidth(self) -> float:
+    def get_video_bandwidth(self, sweep: bool = False) -> float:
         """Get the video bandwidth of the spectrum analyzer."""
         self.logger.debug(f"Getting video bandwidth from {self.gpib_address!r}")
-        return float(self.query("VB?").strip())
+        return float(self.query("VB?", sweep=sweep).strip())
     
     def set_video_bandwidth(self, bandwidth: float) -> None:
         """Set the video bandwidth of the spectrum analyzer."""
@@ -430,10 +426,10 @@ class SpectrumAnalyzerHP8563E(GpibDevice):
         self.logger.debug(f"Setting video bandwidth of {self.gpib_address!r} to {bandwidth_int=}")
         self.write(f"VB {int(bandwidth_int)}")
 
-    def get_resolution_bandwidth(self) -> float:
+    def get_resolution_bandwidth(self, sweep: bool = False) -> float:
         """Get the resolution bandwidth of the spectrum analyzer."""
         self.logger.debug(f"Getting resolution bandwidth from {self.gpib_address!r}")
-        return float(self.query("RB?").strip())
+        return float(self.query("RB?", sweep=sweep).strip())
     
     def set_resolution_bandwidth(self, bandwidth: float) -> None:
         """Set the resolution bandwidth of the spectrum analyzer."""
@@ -441,10 +437,10 @@ class SpectrumAnalyzerHP8563E(GpibDevice):
         self.logger.debug(f"Setting resolution bandwidth of {self.gpib_address!r} to {bandwidth_int=}")
         self.write(f"RB {int(bandwidth_int)}")
 
-    def get_amplitude_units(self) -> str:
+    def get_amplitude_units(self, sweep: bool = False) -> str:
         """Get the units of the spectrum analyzer."""
         self.logger.debug(f"Getting units from {self.gpib_address!r}")
-        return self.query("AUNITS?").strip()
+        return self.query("AUNITS?", sweep=sweep).strip()
     
     def set_amplitude_units(self, units: str) -> None:
         """Set the units of the spectrum analyzer."""
