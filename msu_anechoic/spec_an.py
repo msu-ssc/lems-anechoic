@@ -265,7 +265,7 @@ class SpectrumAnalyzerHP8563E(GpibDevice):
         self.set_marker_frequency(center_frequency)
         return center_frequency
 
-    def get_sweep_time(self, sweep: bool = False) -> float:
+    def get_sweep_time(self, *, sweep: bool = False) -> float:
         """Get the sweep time of the spectrum analyzer in seconds."""
         self.logger.debug(f"Getting sweep time from {self.gpib_address!r}")
         response = self.query("ST?", sweep=sweep)
@@ -282,7 +282,7 @@ class SpectrumAnalyzerHP8563E(GpibDevice):
         self.logger.debug(f"Setting center frequency of {self.gpib_address!r} to {frequency=}")
         self.write(f"CF {frequency}")
 
-    def get_center_frequency(self, sweep: bool = False) -> float:
+    def get_center_frequency(self, *, sweep: bool = False) -> float:
         """Get the center frequency of the spectrum analyzer in Hertz."""
         self.logger.debug(f"Getting center frequency of {self.gpib_address!r}")
         response = self.query("CF?", sweep=sweep)
