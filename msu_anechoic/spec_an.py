@@ -332,7 +332,7 @@ class SpectrumAnalyzerHP8563E(GpibDevice):
         self.logger.debug(f"Setting upper frequency of {self.gpib_address!r} to {frequency=}")
         self.write(f"FB {frequency}")
 
-    def get_trace(self, sweep: bool = False, trace: Literal["A", "B"] = "A") -> list[float]:
+    def get_trace(self, trace: Literal["A", "B"] = "A", *, sweep: bool = False) -> list[float]:
         """Get the trace from the spectrum analyzer."""
         self.logger.debug(f"Getting trace {trace} from {self.gpib_address!r}")
         response = self.query(f"TR{trace}?", sweep=sweep)
