@@ -797,6 +797,11 @@ class Turntable:
                 print(f"  You can SET the current position (azimuth FIRST):")
                 print(f"SET 123.45 -65,432")
                 print(f"")
+
+                print(f"  You can confirm the current position:")
+                print(f"CONFIRM")
+                print(f"")
+
                 print(f"  You can be DONE with this process")
                 print(f"DONE")
                 print("")
@@ -868,6 +873,9 @@ class Turntable:
                     print("User did not confirm.")
                     continue
                 self.move_to(azimuth=new_azimuth, elevation=new_elevation)
+            elif first_token.lower() == "confirm":
+                # TODO: Mitchell
+                ...
             elif first_token.lower() == "set":
                 try:
                     azimuth = float(input_tokens[1])
