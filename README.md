@@ -68,3 +68,6 @@ Add convenience 'find' function to spec_an module
 
 #### v0.3.6 - 2025-05-08
 Add ability to set/query sweep time
+
+#### v0.3.7 - 2025-06-09
+Add multiple grid functionality (issue #22)
