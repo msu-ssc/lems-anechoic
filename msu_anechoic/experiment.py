@@ -427,6 +427,16 @@ class Experiment(pydantic.BaseModel):
             user_input = input("Is signal generator configured? [y/n]: ")
             if user_input.lower() == "y":
                 break
+    
+        # Verifies polarization parameter inside the parameters.json
+        while True:
+            print(f"\nVerify the polarization:")
+            #for key, value in self.parameters.polarization_config.model_dump().items():
+            #print(f"{key}: {value}")
+            print(f"{self.parameters.polarization_config.model_dump_json(indent=4)}")
+            user_input = input("Is the polarization correct? [y/n]: ")
+            if user_input.lower() == "y":
+                break
 
         # CONNECT TO AND CONFIGURE TURNTABLE
         self.turntable = Turntable.find(
