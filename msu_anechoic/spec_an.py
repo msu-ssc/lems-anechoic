@@ -247,18 +247,17 @@ class SpectrumAnalyzerHP8563E(GpibDevice):
     ) -> float:
         """Center this spectrum analyzer on a frequency and scan for the peak amplitude, recursively narrowing the span.
 
-        `delay` is the time to wait between each command, in seconds.
+        Takes a full sweep for each span, and sets the center frequency to the frequency of the highest amplitude
+        found in that corresponding span.
 
         All frequencies are in Hertz.
 
         Return value is the final center frequency, in Hertz."""
         self.logger.debug(f"Centering to peak on {center_frequency=} with {spans=}")
-        time.sleep(delay)
         self.set_center_frequency(center_frequency)
         for span in spans:
-            time.sleep(delay)
             self.set_span(span)
-            time.sleep(delay)
+            self.take_sweep()
             self.set_marker_to_highest_amplitude()
             center_frequency = self.get_marker_frequency()
             self.set_center_frequency(center_frequency)
