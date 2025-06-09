@@ -86,6 +86,10 @@ class Turntable:
         """The most recent time that we successfully communicated with the turntable, as `time.monotonic()`."""
 
         self.has_been_set: bool = False
+        """Whether the turntable has been set during the current communication session.
+        
+        That is, has the user taken some action to indicate that the positions being output by the
+        table are actually correct."""
         self._current_regime: _regime.TurnTableElevationRegime | None = None
         """The current elevation regime of the turntable.
         
@@ -797,6 +801,11 @@ class Turntable:
                 print(f"  You can SET the current position (azimuth FIRST):")
                 print(f"SET 123.45 -65,432")
                 print(f"")
+
+                print(f"  You can confirm the current position:")
+                print(f"CONFIRM")
+                print(f"")
+
                 print(f"  You can be DONE with this process")
                 print(f"DONE")
                 print("")
@@ -868,6 +877,19 @@ class Turntable:
                     print("User did not confirm.")
                     continue
                 self.move_to(azimuth=new_azimuth, elevation=new_elevation)
+            elif first_token.lower() == "confirm":
+                fetched_positions = self._wait_for_within_regime_position()
+                user_input = input(f"Would you like to confirm the current position? [y/n]\n> ").strip()
+                if user_input.lower() != "y":
+                    print("User did not confirm.")
+                    continue
+                else:
+                    print(f"User confirmed current position and regime. Setting has_been_set to True.")
+                self.has_been_set = True
+                self._current_regime = _regime.find_best_regime(fetched_positions.elevation)
+                if self._regime_elevation_offset is None:
+                    self._regime_elevation_offset = 0.0
+                self.logger.info(f"Set current regime to {self._current_regime}")
             elif first_token.lower() == "set":
                 try:
                     azimuth = float(input_tokens[1])
@@ -925,6 +947,7 @@ class Turntable:
 
 
 if __name__ == "__main__":
+
     from msu_ssc import ssc_log
 
     ssc_log.init(level="DEBUG")
