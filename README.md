@@ -74,3 +74,6 @@ Add multiple grid functionality (issue #22)
 
 #### v0.3.8 - 2025-06-09
 Add sweep parameters to each get_* definition in spec_an.py (issue #19)
+
+#### v0.3.9 - 2025-06-09
+Add "Confirm" Option to Turntable Codebase (issue #8)
