@@ -19,6 +19,26 @@ from msu_anechoic.util.coordinate import Coordinate
 EXPERIMENTS_FOLDER_PATH = Path("./experiments")
 
 
+_MIN_TRAVEL_TIME_AZ = 1.0
+_MIN_TRAVEL_TIME_EL = 1.8
+_AVERAGE_TRAVEL_DEG_PER_SEC_AZ = 2.5
+_AVERAGE_TRAVEL_DEG_PER_SEC_EL = 1.5
+_PAUSE_TIME = 0.2
+_PAUSE_TIME_TRACE = 1.0
+
+def _estimate_time(angle: float, kind: Literal["horizontal", "vertical"], trace: bool) -> float:
+    """Estimate the time it will take to move a specific angle."""
+    if kind == "horizontal":
+        travel_time = _MIN_TRAVEL_TIME_AZ + abs(angle) / _AVERAGE_TRAVEL_DEG_PER_SEC_AZ
+    elif kind == "vertical":
+        travel_time = _MIN_TRAVEL_TIME_EL + abs(angle) / _AVERAGE_TRAVEL_DEG_PER_SEC_EL
+    else:
+        raise ValueError(f"Invalid kind: {kind}. Must be 'horizontal' or 'vertical'.")
+    pause_time = _PAUSE_TIME if trace else _PAUSE_TIME_TRACE
+    total_time = travel_time + pause_time
+    return total_time
+
+
 class CutDefinition(pydantic.BaseModel):
     """The definition of a single cut, which is a bunch of points at a fixed tilt or pan"""
 
@@ -31,6 +51,8 @@ class CutDefinition(pydantic.BaseModel):
     """On the axis that is not fixed, the step size of the cut, in degrees"""
     fixed_angle: float
     """On the axis that is fixed, the angle of the cut, in degrees"""
+    reset_before: bool | None = None
+    """Should the turntable reset before starting this cut?"""
 
     @property
     def coordinates(self) -> list[Coordinate]:
@@ -67,13 +89,13 @@ class CutDefinition(pydantic.BaseModel):
         else:
             raise ValueError(f"Invalid direction: {self.direction}. Must be 'horizontal' or 'vertical'.")
 
-    def rough_time_estimate(self, seconds_per_point: float = 5) -> float:
-        """A VERY rough estimate of how long this cut will take, based on the assumption that each point will take `seconds_per_point` seconds."""
-        return len(self.coordinates) * seconds_per_point
+    def rough_time_estimate(self, seconds_per_point: float = 5, *, trace: bool) -> float:
+        """A VERY rough estimate of how long this cut will take. Only for ballparking. Doesn't include slew time."""
+        return len(self.coordinates) * _estimate_time(self.step_size, kind=self.direction, trace=False)
 
     def __len__(self) -> int:
         """The number of points in this cut"""
-        return len(self.coordinates())
+        return len(self.coordinates)
 
 
 class Grid(pydantic.BaseModel):
@@ -535,17 +557,18 @@ class Experiment(pydantic.BaseModel):
         *,
         indexes_to_skip: Iterable[int] | None = None,
     ) -> None:
+        indexes_to_skip = list(indexes_to_skip or [])
         cuts = self.parameters.cuts
         assert cuts is not None, "Cuts should not be `None` here"
         assert len(cuts) > 0, "Cuts should not be empty here"
 
-        total_points = sum(len(cut.coordinates) for cut in cuts)
-        total_rough_time_estimate = sum(cut.rough_time_estimate() for cut in cuts)
+        total_points = sum(len(cut.coordinates) for cut in cuts.values())
+        total_rough_time_estimate = sum(cut.rough_time_estimate(trace=self.parameters.collect_trace_data) for cut in cuts.values())
 
         prompt_string = f"There are {len(cuts):,} cuts, with a total of {total_points:,} points."
 
         for cut_id, cut in cuts.items():
-            prompt_string += f"\n#{cut_id + 1}: {cut.direction} at {cut.fixed_angle}° from {cut.start_angle} to {cut.end_angle}°, step size {cut.step_size}°. {len(cut.coordinates):,} points, estimated time {cut.rough_time_estimate():,.0f} seconds."
+            prompt_string += f"\n  {cut_id}: {cut.direction} at {cut.fixed_angle}° from {cut.start_angle} to {cut.end_angle}°, step size {cut.step_size}°. {len(cut.coordinates):,} points, estimated time {cut.rough_time_estimate(trace=self.parameters.collect_trace_data):,.0f} seconds."
         prompt_string += f"\nTotal estimated time for all cuts: {total_rough_time_estimate:,.0f} seconds = {total_rough_time_estimate / 60:,.1f} minutes = {total_rough_time_estimate / 60 / 60:,.2f} hours."
 
         while True:
@@ -575,8 +598,8 @@ class Experiment(pydantic.BaseModel):
                 )
 
                 this_cut_progress_task = progress.add_task(
-                    f"Cut point 1 of {len(cuts[0])}",
-                    total=len(cuts[0]),
+                    f"Cut point 1 of ??",
+                    total=100,
                     completed=0,
                 )
 
@@ -586,13 +609,17 @@ class Experiment(pydantic.BaseModel):
                     progress.update(
                         cut_progress_task,
                         completed=cut_index + 1,
-                        description=f"Doing cut #{cut_index + 1} of {len(cuts):,} ({cut.direction.upper()} at {cut.fixed_angle})",
+                        description=f"Doing cut #{cut_index + 1} of {len(cuts):,} ({cut_id})",
                     )
                     progress.update(
                         this_cut_progress_task,
                         total=len(cut),
                         completed=0,
                     )
+
+                    if cut.reset_before:
+                        self.turntable.move_to(azimuth=0, elevation=0)
+
                     for coordinate_index, coordinate in enumerate(cut.coordinates):
                         progress.update(
                             this_cut_progress_task,
@@ -619,7 +646,7 @@ class Experiment(pydantic.BaseModel):
                         )
 
                     # Move to 0 0 at the end of each cut
-                    self.turntable.move_to(azimuth=0, elevation=0)
+                    # self.turntable.move_to(azimuth=0, elevation=0)
             print(f"FINISHED!!!")
             print(f"Data saved to {self.parameters.raw_data_csv_path}")
         except Exception as exc:
@@ -861,6 +888,9 @@ if __name__ == "__main__":
     )
     print(f"{experiment_parameters=}")
     print(experiment_parameters.model_dump_json(indent=4))
+
+    with open("params.json", "w", encoding="utf8") as file:
+        file.write(experiment_parameters.model_dump_json(indent=4))
 
     Experiment.run_file(path=Path("./experiments/mayo_experiment"))
     exit()
