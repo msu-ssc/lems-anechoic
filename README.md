@@ -104,3 +104,6 @@ Add sweep parameters to each get_* definition in spec_an.py (issue #19)
 
 ### v0.3.9 - 2025-06-09
 Add "Confirm" Option to Turntable Codebase (issue #8)
+
+### v0.3.10 - 2025-08-14
+Update documentation to include installation instructions
