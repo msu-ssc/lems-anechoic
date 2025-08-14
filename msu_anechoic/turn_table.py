@@ -946,6 +946,9 @@ class Turntable:
         self.logger.warning(f"Sent emergency move command to turntable: {command!r}")
 
 
+find = Turntable.find
+
+
 if __name__ == "__main__":
 
     from msu_ssc import ssc_log

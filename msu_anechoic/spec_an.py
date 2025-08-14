@@ -28,6 +28,10 @@ class GpibError(Exception):
     """Some error in GPIB communication happened."""
 
 
+class GpibDeviceNotFoundError(GpibError):
+    """No GPIB device was found."""
+
+
 class GpibDevice:
     """A base class for GPIB devices at the MSU Space Science Center."""
 
@@ -228,7 +232,7 @@ class SpectrumAnalyzerHP8563E(GpibDevice):
         # If we get here, we didn't find any HP 8563E spectrum analyzers.
         message = "No HP 8563E spectrum analyzer found."
         logger.error(message)
-        raise GpibError(message)
+        raise GpibDeviceNotFoundError(message)
 
     def get_config(self) -> "SpecAnConfig":
         """Get the config"""
