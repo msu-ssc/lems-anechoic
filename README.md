@@ -107,3 +107,9 @@ Add "Confirm" Option to Turntable Codebase (issue #8)
 
 ### v0.3.10 - 2025-08-14
 Update documentation to include installation instructions
+
+### v0.3.11 - 2025-08-14
+Speed up spec-an centering process
+
+### v0.3.12 - 2025-08-14
+Add validation of polarization to Experiment.run()
