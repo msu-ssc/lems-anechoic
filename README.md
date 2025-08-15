@@ -113,3 +113,7 @@ Speed up spec-an centering process
 
 ### v0.3.12 - 2025-08-14
 Add validation of polarization to Experiment.run()
+
+### v0.3.13 - 2025-08-14
+Add multiple cuts at once.
+Add sound to experiment running.

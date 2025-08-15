@@ -655,6 +655,7 @@ class Experiment(pydantic.BaseModel):
             print(f"Data saved to {self.parameters.raw_data_csv_path}")
         except Exception as exc:
             self.logger.error(f"Error during experiment: {exc}")
+            say(f"Error during experiment: {type(exc).__name__}")
             raise
         finally:
             # Reset turntable
