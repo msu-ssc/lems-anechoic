@@ -12,6 +12,7 @@ import pydantic
 from msu_ssc import path_util
 
 # from msu_anechoic import AzElTurntable
+from msu_anechoic.sound import say
 from msu_anechoic.spec_an import SpectrumAnalyzerHP8563E
 from msu_anechoic.turn_table import Turntable
 from msu_anechoic.util.coordinate import Coordinate
@@ -581,9 +582,8 @@ class Experiment(pydantic.BaseModel):
                 return
             else:
                 print("Did not understand input.")
-
+        say(f"Beginning experiment.")
         from rich.progress import Progress
-
         try:
             with Progress(transient=True) as progress:
                 overall_progress_task = progress.add_task(
@@ -605,6 +605,8 @@ class Experiment(pydantic.BaseModel):
 
                 point_index = 0
                 for cut_index, (cut_id, cut) in enumerate(cuts.items()):
+                    cut_id_text = cut_id.lower().replace("_", " ").replace("-", " ")
+                    say(f"Begin cut {cut_index + 1} of {len(cuts)}, {cut_id_text}")
                     # Update the progress tasks
                     progress.update(
                         cut_progress_task,
@@ -648,12 +650,15 @@ class Experiment(pydantic.BaseModel):
                     # Move to 0 0 at the end of each cut
                     # self.turntable.move_to(azimuth=0, elevation=0)
             print(f"FINISHED!!!")
+            say(f"Experiment finished!")
+
             print(f"Data saved to {self.parameters.raw_data_csv_path}")
         except Exception as exc:
             self.logger.error(f"Error during experiment: {exc}")
             raise
         finally:
             # Reset turntable
+            say(f"Resetting turntable to 0, 0.")
             self.turntable.move_to(azimuth=0, elevation=0)
 
     def _run_grid_experiment(
