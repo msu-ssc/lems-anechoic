@@ -117,3 +117,6 @@ Add validation of polarization to Experiment.run()
 ### v0.3.13 - 2025-08-14
 Add multiple cuts at once.
 Add sound to experiment running.
+
+### v0.3.14 - 2026-08-14
+Add move timeout

@@ -657,10 +657,13 @@ class Experiment(pydantic.BaseModel):
             self.logger.error(f"Error during experiment: {exc}")
             say(f"Error during experiment: {type(exc).__name__}")
             raise
+        except KeyboardInterrupt:
+            self.logger.warning(f"Experiment interrupted by user")
+            say(f"Experiment interrupted by user")
         finally:
             # Reset turntable
             say(f"Resetting turntable to 0, 0.")
-            self.turntable.move_to(azimuth=0, elevation=0)
+            self.turntable.move_to(azimuth=0, elevation=0, move_timeout=120)
 
     def _run_grid_experiment(
         self,

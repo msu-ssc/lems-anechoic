@@ -583,6 +583,7 @@ class Turntable:
         azimuth_margin: float = ALLOWABLE_DISCREPANCY_DEG,
         elevation_margin: float = ALLOWABLE_DISCREPANCY_DEG,
         delay: float = 0.05,
+        move_timeout: float,
     ) -> None:
         assert self._current_regime is not None
 
@@ -607,6 +608,7 @@ class Turntable:
             azimuth_margin=azimuth_margin,
             elevation_margin=elevation_margin,
             delay=delay,
+            move_timeout=move_timeout,
         )
 
         within_regime_position = self._wait_for_within_regime_position()
@@ -656,6 +658,7 @@ class Turntable:
         azimuth_margin: float = ALLOWABLE_DISCREPANCY_DEG,
         elevation_margin: float = ALLOWABLE_DISCREPANCY_DEG,
         delay: float = 0.05,
+        move_timeout: float = 120,
     ) -> AzEl:
         """Move to the given azimuth and elevation. Return the final position."""
 
@@ -673,6 +676,7 @@ class Turntable:
                 azimuth_margin=azimuth_margin,
                 elevation_margin=elevation_margin,
                 delay=delay,
+                move_timeout=move_timeout,
             )
 
         # User will have specified this in real elevation, so convert it to regime elevation.
@@ -684,6 +688,7 @@ class Turntable:
             azimuth_margin=azimuth_margin,
             elevation_margin=elevation_margin,
             delay=delay,
+            move_timeout=move_timeout,
         )
 
     def _move_to_within_regime(
@@ -694,6 +699,7 @@ class Turntable:
         azimuth_margin: float = 0.1,
         elevation_margin: float = 0.1,
         delay: float = 0.05,
+        move_timeout: float,
     ) -> AzEl:
         """"""
         if not self.validate_move_command(
@@ -709,11 +715,17 @@ class Turntable:
             self.logger.error("Failed to get current position. Will not send MOVE command.")
             return None
 
+        start_time = time.monotonic()
         self._send_move_command(azimuth, within_regime_elevation)
 
         target_position = AzEl(azimuth=azimuth, elevation=within_regime_elevation)
 
         while True:
+            elapsed_time = time.monotonic() - start_time
+            if elapsed_time > move_timeout:
+                message = f"Move command timed out after {move_timeout} seconds."
+                self.logger.error(message)
+                raise TimeoutError(message)
             current_position = self._wait_for_within_regime_position()
             azimuth_delta = abs(current_position.azimuth - azimuth)
             elevation_delta = abs(current_position.elevation - within_regime_elevation)
