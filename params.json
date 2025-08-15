@@ -1,0 +1,58 @@
+{
+    "short_description": "3x3 8.45 GHz",
+    "long_description": "Initial test of a 3x3 grid at 8.45 GHz",
+    "neutral_elevation": 0.0,
+    "relative_folder_path": "experiments\\3x3_8.45_GHz",
+    "cuts": {
+        "COARSE_AZIMUTH": {
+            "direction": "horizontal",
+            "start_angle": -10.0,
+            "end_angle": 10.0,
+            "step_size": 5.0,
+            "fixed_angle": 0.0,
+            "reset_before": null,
+            "neutral_elevation": null
+        },
+        "COARSE_ELEVATION": {
+            "direction": "vertical",
+            "start_angle": -2.0,
+            "end_angle": 2.0,
+            "step_size": 1.0,
+            "fixed_angle": 0.0,
+            "reset_before": null,
+            "neutral_elevation": null
+        }
+    },
+    "sig_gen_config": {
+        "center_frequency": 8450000000.0,
+        "power": -10.0,
+        "vernier_power": 0.0
+    },
+    "spec_an_config": {
+        "initial_center_frequency": 8450000000.0,
+        "spans_when_searching": [
+            1000000.0,
+            100000.0,
+            10000.0,
+            1000.0
+        ],
+        "reference_level": -10.0,
+        "amplitude_units": null,
+        "resolution_bandwidth": null,
+        "video_bandwidth": null,
+        "center_frequency": null,
+        "minimum_frequency": null,
+        "maximum_frequency": null,
+        "span": null,
+        "serial_number": null,
+        "gpib_timeout_ms": null,
+        "sweep_time": null
+    },
+    "polarization_config": {
+        "kind": "vertical"
+    },
+    "log_level": "DEBUG",
+    "collect_center_frequency_data": true,
+    "collect_peak_data": true,
+    "collect_trace_data": true
+}

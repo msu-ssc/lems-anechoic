@@ -55,7 +55,8 @@ class CutDefinition(pydantic.BaseModel):
     reset_before: bool | None = None
     """Should the turntable reset before starting this cut?"""
 
-    @property
+    neutral_elevation: float | None = None
+
     def coordinates(self) -> list[Coordinate]:
         """Get the coordinates of this cut, as a list of `Coordinate` objects."""
 
@@ -69,12 +70,14 @@ class CutDefinition(pydantic.BaseModel):
             step_size,
         )
 
+        if self.neutral_elevation is None:
+            raise ValueError("neutral_elevation must be set for CutDefinition")
         if self.direction == "horizontal":
             return [
                 Coordinate.from_turntable(
                     azimuth=angle,
                     elevation=self.fixed_angle,
-                    neutral_elevation=0.0,
+                    neutral_elevation=self.neutral_elevation,
                 )
                 for angle in moving_angles
             ]
@@ -83,7 +86,7 @@ class CutDefinition(pydantic.BaseModel):
                 Coordinate.from_turntable(
                     azimuth=self.fixed_angle,
                     elevation=angle,
-                    neutral_elevation=0.0,
+                    neutral_elevation=self.neutral_elevation,
                 )
                 for angle in moving_angles
             ]
@@ -92,87 +95,87 @@ class CutDefinition(pydantic.BaseModel):
 
     def rough_time_estimate(self, seconds_per_point: float = 5, *, trace: bool) -> float:
         """A VERY rough estimate of how long this cut will take. Only for ballparking. Doesn't include slew time."""
-        return len(self.coordinates) * _estimate_time(self.step_size, kind=self.direction, trace=False)
+        return len(self.coordinates()) * _estimate_time(self.step_size, kind=self.direction, trace=False)
 
     def __len__(self) -> int:
         """The number of points in this cut"""
-        return len(self.coordinates)
+        return len(self.coordinates())
 
 
-class Grid(pydantic.BaseModel):
-    min_azimuth: float
-    max_azimuth: float
-    azimuth_step_size: float
-    min_elevation: float
-    max_elevation: float
-    elevation_step_size: float
-    orientation: Literal["horizontal", "vertical"]
-    kind: Literal["turntable", "antenna"] = "turntable"
-    neutral_elevation: float = 0.0
+# class Grid(pydantic.BaseModel):
+#     min_azimuth: float
+#     max_azimuth: float
+#     azimuth_step_size: float
+#     min_elevation: float
+#     max_elevation: float
+#     elevation_step_size: float
+#     orientation: Literal["horizontal", "vertical"]
+#     kind: Literal["turntable", "antenna"] = "turntable"
+#     neutral_elevation: float = 0.0
 
-    def elevations(self) -> list[float]:
-        return list(
-            np.arange(self.min_elevation, self.max_elevation + self.elevation_step_size / 2, self.elevation_step_size)
-        )
+#     def elevations(self) -> list[float]:
+#         return list(
+#             np.arange(self.min_elevation, self.max_elevation + self.elevation_step_size / 2, self.elevation_step_size)
+#         )
 
-    def azimuths(self) -> list[float]:
-        return list(np.arange(self.min_azimuth, self.max_azimuth + self.azimuth_step_size / 2, self.azimuth_step_size))
+#     def azimuths(self) -> list[float]:
+#         return list(np.arange(self.min_azimuth, self.max_azimuth + self.azimuth_step_size / 2, self.azimuth_step_size))
 
-    def cut_count(self) -> int:
-        return len(self.cut_angles())
+#     def cut_count(self) -> int:
+#         return len(self.cut_angles())
 
-    def size_of_cut(self) -> int:
-        return len(self.cut_points(0))
+#     def size_of_cut(self) -> int:
+#         return len(self.cut_points(0))
 
-    def cut_angles(self) -> list[float]:
-        if self.orientation == "horizontal":
-            return list(self.elevations())
-        else:
-            return list(self.azimuths())
+#     def cut_angles(self) -> list[float]:
+#         if self.orientation == "horizontal":
+#             return list(self.elevations())
+#         else:
+#             return list(self.azimuths())
 
-    def cut_points(self, cut_angle: float, should_reverse: bool = False) -> list[float]:
-        within_cut_angles = self.azimuths() if self.orientation == "horizontal" else self.elevations()
-        if should_reverse:
-            within_cut_angles = reversed(within_cut_angles)
+#     def cut_points(self, cut_angle: float, should_reverse: bool = False) -> list[float]:
+#         within_cut_angles = self.azimuths() if self.orientation == "horizontal" else self.elevations()
+#         if should_reverse:
+#             within_cut_angles = reversed(within_cut_angles)
 
-        points = []
+#         points = []
 
-        for within_cut_angle in within_cut_angles:
-            if self.orientation == "horizontal":
-                points.append(
-                    Coordinate.from_turntable(
-                        azimuth=within_cut_angle,
-                        elevation=cut_angle,
-                        neutral_elevation=self.neutral_elevation,
-                    )
-                )
-            else:
-                points.append(
-                    Coordinate.from_turntable(
-                        azimuth=cut_angle,
-                        elevation=within_cut_angle,
-                        neutral_elevation=self.neutral_elevation,
-                    )
-                )
-        return points
+#         for within_cut_angle in within_cut_angles:
+#             if self.orientation == "horizontal":
+#                 points.append(
+#                     Coordinate.from_turntable(
+#                         azimuth=within_cut_angle,
+#                         elevation=cut_angle,
+#                         neutral_elevation=self.neutral_elevation,
+#                     )
+#                 )
+#             else:
+#                 points.append(
+#                     Coordinate.from_turntable(
+#                         azimuth=cut_angle,
+#                         elevation=within_cut_angle,
+#                         neutral_elevation=self.neutral_elevation,
+#                     )
+#                 )
+#         return points
 
-    def cuts(self) -> Generator[list[Coordinate], None, None]:
-        should_reverse = False
-        for cut_angle in self.cut_angles():
-            yield list(self.cut_points(cut_angle, should_reverse=should_reverse))
-            should_reverse = not should_reverse
+#     def cuts(self) -> Generator[list[Coordinate], None, None]:
+#         should_reverse = False
+#         for cut_angle in self.cut_angles():
+#             yield list(self.cut_points(cut_angle, should_reverse=should_reverse))
+#             should_reverse = not should_reverse
 
-    def __len__(self) -> int:
-        return len(self.cut_angles()) * len(self.cut_points(0))
+#     def __len__(self) -> int:
+#         return len(self.cut_angles()) * len(self.cut_points(0))
 
-    def __iter__(self) -> Generator[Coordinate, None, None]:
-        for cut in self.cuts():
-            for point in cut:
-                yield point
+#     def __iter__(self) -> Generator[Coordinate, None, None]:
+#         for cut in self.cuts():
+#             for point in cut:
+#                 yield point
 
-    def rough_time_estimate(self, seconds_per_point: float = 5) -> float:
-        """A VERY rough estimate of how long this grid will take, based on the assumption that each point will take `seconds_per_point` seconds."""
-        return len(self) * seconds_per_point
+#     def rough_time_estimate(self, seconds_per_point: float = 5) -> float:
+#         """A VERY rough estimate of how long this grid will take, based on the assumption that each point will take `seconds_per_point` seconds."""
+#         return len(self) * seconds_per_point
 
 
 class SpecAnConfig(pydantic.BaseModel):
@@ -276,8 +279,8 @@ class PolarizationConfig(pydantic.BaseModel):
 class ExperimentParameters(pydantic.BaseModel):
     short_description: str = "default"
     long_description: str = "default"
+    neutral_elevation: float = 0.0
     relative_folder_path: Path | None = None
-    grid: Grid | None | dict[str, Grid] = None
     cuts: dict[str, CutDefinition] | None = None
     sig_gen_config: SigGenConfig | None = None
     spec_an_config: SpecAnConfig | None = None
@@ -530,15 +533,7 @@ class Experiment(pydantic.BaseModel):
 
         # DO THE TEST!
         test_start_time = datetime.datetime.now(datetime.timezone.utc)
-        if self.parameters.grid:
-            self._run_grid_experiment(
-                indexes_to_skip=indexes_to_skip,
-            )
-        # elif self.parameters.points:
-        #     self._run_points_experiment(
-        #         indexes_to_skip=indexes_to_skip,
-        #     )
-        elif self.parameters.cuts:
+        if self.parameters.cuts:
             self._run_cuts_experiment(
                 indexes_to_skip=indexes_to_skip,
             )
@@ -563,13 +558,19 @@ class Experiment(pydantic.BaseModel):
         assert cuts is not None, "Cuts should not be `None` here"
         assert len(cuts) > 0, "Cuts should not be empty here"
 
-        total_points = sum(len(cut.coordinates) for cut in cuts.values())
+        # HACK: Have to manually set the neutral elevation, since it's not
+        # part of the cut parameters
+        for cut in cuts.values():
+            cut.neutral_elevation = self.parameters.neutral_elevation
+            print(f"Set neutral elevation to {cut.neutral_elevation}")
+
+        total_points = sum(len(cut.coordinates()) for cut in cuts.values())
         total_rough_time_estimate = sum(cut.rough_time_estimate(trace=self.parameters.collect_trace_data) for cut in cuts.values())
 
         prompt_string = f"There are {len(cuts):,} cuts, with a total of {total_points:,} points."
 
         for cut_id, cut in cuts.items():
-            prompt_string += f"\n  {cut_id}: {cut.direction} at {cut.fixed_angle}° from {cut.start_angle} to {cut.end_angle}°, step size {cut.step_size}°. {len(cut.coordinates):,} points, estimated time {cut.rough_time_estimate(trace=self.parameters.collect_trace_data):,.0f} seconds."
+            prompt_string += f"\n  {cut_id}: {cut.direction} at {cut.fixed_angle}° from {cut.start_angle} to {cut.end_angle}°, step size {cut.step_size}°. {len(cut.coordinates()):,} points, estimated time {cut.rough_time_estimate(trace=self.parameters.collect_trace_data):,.0f} seconds."
         prompt_string += f"\nTotal estimated time for all cuts: {total_rough_time_estimate:,.0f} seconds = {total_rough_time_estimate / 60:,.1f} minutes = {total_rough_time_estimate / 60 / 60:,.2f} hours."
 
         while True:
@@ -607,6 +608,7 @@ class Experiment(pydantic.BaseModel):
                 for cut_index, (cut_id, cut) in enumerate(cuts.items()):
                     cut_id_text = cut_id.lower().replace("_", " ").replace("-", " ")
                     say(f"Begin cut {cut_index + 1} of {len(cuts)}, {cut_id_text}")
+
                     # Update the progress tasks
                     progress.update(
                         cut_progress_task,
@@ -622,7 +624,7 @@ class Experiment(pydantic.BaseModel):
                     if cut.reset_before:
                         self.turntable.move_to(azimuth=0, elevation=0)
 
-                    for coordinate_index, coordinate in enumerate(cut.coordinates):
+                    for coordinate_index, coordinate in enumerate(cut.coordinates()):
                         progress.update(
                             this_cut_progress_task,
                             completed=coordinate_index,
@@ -644,7 +646,7 @@ class Experiment(pydantic.BaseModel):
                             point=coordinate,
                             cut_id=cut_id,
                             point_index=point_index,
-                            neutral_elevation=0,
+                            neutral_elevation=self.parameters.neutral_elevation,
                         )
 
                     # Move to 0 0 at the end of each cut
@@ -665,107 +667,107 @@ class Experiment(pydantic.BaseModel):
             say(f"Resetting turntable to 0, 0.")
             self.turntable.move_to(azimuth=0, elevation=0, move_timeout=120)
 
-    def _run_grid_experiment(
-        self,
-        *,
-        indexes_to_skip: Iterable[int] | None = None,
-    ) -> None:
-        raise ValueError("Using the `grid` parameter is no longer supported. Use `cuts` instead.")
-        grid = self.parameters.grid
-        assert grid is not None, "Grid should not be `None` here"
+    # def _run_grid_experiment(
+    #     self,
+    #     *,
+    #     indexes_to_skip: Iterable[int] | None = None,
+    # ) -> None:
+    #     raise ValueError("Using the `grid` parameter is no longer supported. Use `cuts` instead.")
+    #     grid = self.parameters.grid
+    #     assert grid is not None, "Grid should not be `None` here"
 
-        if isinstance(grid, dict):
-            grid_dict = grid
-        else:
-            grid_dict = {"grid": grid}
+    #     if isinstance(grid, dict):
+    #         grid_dict = grid
+    #     else:
+    #         grid_dict = {"grid": grid}
 
-        indexes_to_skip = set(indexes_to_skip) if indexes_to_skip else set()
+    #     indexes_to_skip = set(indexes_to_skip) if indexes_to_skip else set()
 
-        # Find total points in all grids
-        total_points = 0
-        for grid_value in grid_dict.values():
-            total_points += len(grid_value)
+    #     # Find total points in all grids
+    #     total_points = 0
+    #     for grid_value in grid_dict.values():
+    #         total_points += len(grid_value)
 
-        total_rough_time_estimate = 0
-        for grid_value in grid_dict.values():
-            total_rough_time_estimate += grid_value.rough_time_estimate()
+    #     total_rough_time_estimate = 0
+    #     for grid_value in grid_dict.values():
+    #         total_rough_time_estimate += grid_value.rough_time_estimate()
 
-        while True:
-            print(
-                f"This grid has {total_points:,} points and will take approximately {total_rough_time_estimate:,.0f} seconds to complete."
-            )
-            user_input = input("Do you want to continue? [y/n]: ")
-            if user_input.lower() == "y":
-                break
-            elif user_input.lower() == "n":
-                print("Aborting experiment.")
-                return
-            else:
-                print("Did not understand input.")
+    #     while True:
+    #         print(
+    #             f"This grid has {total_points:,} points and will take approximately {total_rough_time_estimate:,.0f} seconds to complete."
+    #         )
+    #         user_input = input("Do you want to continue? [y/n]: ")
+    #         if user_input.lower() == "y":
+    #             break
+    #         elif user_input.lower() == "n":
+    #             print("Aborting experiment.")
+    #             return
+    #         else:
+    #             print("Did not understand input.")
 
-        from rich.progress import Progress
+    #     from rich.progress import Progress
 
-        with Progress(transient=True) as progress:
-            overall_progress_task = progress.add_task(
-                f"Overall progress point 1 of ({total_points:,} points)",
-                total=total_points,
-            )
-            cut_progress_task = progress.add_task(f"Doing cut #1 of {len(grid_dict):,}", total=len(grid_dict))
+    #     with Progress(transient=True) as progress:
+    #         overall_progress_task = progress.add_task(
+    #             f"Overall progress point 1 of ({total_points:,} points)",
+    #             total=total_points,
+    #         )
+    #         cut_progress_task = progress.add_task(f"Doing cut #1 of {len(grid_dict):,}", total=len(grid_dict))
 
-            this_cut_progress_task = progress.add_task(
-                # f"Doing point #1 of {grid.size_of_cut()} within cut", total=grid.size_of_cut()
-                f"TBD",
-                # total=grid.size_of_cut()
-                total=100,
-            )
-            point_index = 0
-            for grid_index, (grid_name, grid) in enumerate(grid_dict.items()):
-                progress.update(
-                    cut_progress_task,
-                    completed=1,
-                    description=f"Doing cut #{grid_index + 1} of {len(grid_dict):,} ({grid_name})",
-                )
-                progress.update(
-                    this_cut_progress_task,
-                    total=grid.size_of_cut(),
-                    completed=0,
-                )
-                for cut_index, cut in enumerate(grid.cuts()):
-                    for coordinate_index, coordinate in enumerate(cut):
-                        if point_index in indexes_to_skip:
-                            self.logger.info(f"Skipping point_index {point_index} {coordinate}")
+    #         this_cut_progress_task = progress.add_task(
+    #             # f"Doing point #1 of {grid.size_of_cut()} within cut", total=grid.size_of_cut()
+    #             f"TBD",
+    #             # total=grid.size_of_cut()
+    #             total=100,
+    #         )
+    #         point_index = 0
+    #         for grid_index, (grid_name, grid) in enumerate(grid_dict.items()):
+    #             progress.update(
+    #                 cut_progress_task,
+    #                 completed=1,
+    #                 description=f"Doing cut #{grid_index + 1} of {len(grid_dict):,} ({grid_name})",
+    #             )
+    #             progress.update(
+    #                 this_cut_progress_task,
+    #                 total=grid.size_of_cut(),
+    #                 completed=0,
+    #             )
+    #             for cut_index, cut in enumerate(grid.cuts()):
+    #                 for coordinate_index, coordinate in enumerate(cut):
+    #                     if point_index in indexes_to_skip:
+    #                         self.logger.info(f"Skipping point_index {point_index} {coordinate}")
 
-                            continue
-                        self._run_experiment_at_point(
-                            point=coordinate,
-                            cut_id=grid_name,
-                            point_index=point_index,
-                            neutral_elevation=grid.neutral_elevation,
-                        )
-                        point_index += 1
-                        progress.update(
-                            overall_progress_task,
-                            completed=point_index,
-                            description=f"Overall progress point #{point_index} of {total_points:,} points",
-                        )
-                        progress.update(
-                            this_cut_progress_task,
-                            completed=coordinate_index,
-                            description=f"Doing point #{coordinate_index + 1} of {grid.size_of_cut()} within cut",
-                        )
+    #                         continue
+    #                     self._run_experiment_at_point(
+    #                         point=coordinate,
+    #                         cut_id=grid_name,
+    #                         point_index=point_index,
+    #                         neutral_elevation=grid.neutral_elevation,
+    #                     )
+    #                     point_index += 1
+    #                     progress.update(
+    #                         overall_progress_task,
+    #                         completed=point_index,
+    #                         description=f"Overall progress point #{point_index} of {total_points:,} points",
+    #                     )
+    #                     progress.update(
+    #                         this_cut_progress_task,
+    #                         completed=coordinate_index,
+    #                         description=f"Doing point #{coordinate_index + 1} of {grid.size_of_cut()} within cut",
+    #                     )
 
-                # Move to 0 0
-                # We have not ever tested or verified beginning a cut anywhere other than the origin.
-                # Specifically we're not sure across elevation regime boundaries
-                # For example moving from az = 80, el = 0 to az = 0, el = - 90, would include diagonal travel across elevation regime boundaries.
-                # This should work, but we have not tested it.
-                self.turntable.move_to(azimuth=0, elevation=0)
+    #             # Move to 0 0
+    #             # We have not ever tested or verified beginning a cut anywhere other than the origin.
+    #             # Specifically we're not sure across elevation regime boundaries
+    #             # For example moving from az = 80, el = 0 to az = 0, el = - 90, would include diagonal travel across elevation regime boundaries.
+    #             # This should work, but we have not tested it.
+    #             self.turntable.move_to(azimuth=0, elevation=0)
 
-            # EXPERIMENT DONE!
-            # Reset turntable
-            self.turntable.move_to(azimuth=0, elevation=0)
-            print(f"FINISHED!!!")
-            print(f"Data saved to {self.parameters.raw_data_csv_path}")
+    #         # EXPERIMENT DONE!
+    #         # Reset turntable
+    #         self.turntable.move_to(azimuth=0, elevation=0)
+    #         print(f"FINISHED!!!")
+    #         print(f"Data saved to {self.parameters.raw_data_csv_path}")
 
     def _run_experiment_at_point(
         self,
@@ -779,10 +781,10 @@ class Experiment(pydantic.BaseModel):
         actual_position = self.turntable.wait_for_position()
         data = ExperimentDatapoint()
         if neutral_elevation is None:
-            neutral_elevation = neutral_elevation = self.parameters.grid.neutral_elevation
+            neutral_elevation = self.parameters.neutral_elevation
         data.actual_coordinate = Coordinate.from_turntable(
-            azimuth=actual_position.turntable_azimuth,
-            elevation=actual_position.turntable_elevation,
+            azimuth=actual_position.pan,
+            elevation=actual_position.tilt,
             neutral_elevation=neutral_elevation,
         )
         data.commanded_coordinate = point
