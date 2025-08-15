@@ -1,8 +1,9 @@
 import csv
 import datetime
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 from typing import Generator
+from typing import Iterable
 from typing import Literal
 
 import numpy as np
@@ -10,12 +11,92 @@ import pandas as pd
 import pydantic
 from msu_ssc import path_util
 
-from msu_anechoic import AzElTurntable
+# from msu_anechoic import AzElTurntable
+from msu_anechoic.sound import say
 from msu_anechoic.spec_an import SpectrumAnalyzerHP8563E
 from msu_anechoic.turn_table import Turntable
 from msu_anechoic.util.coordinate import Coordinate
 
 EXPERIMENTS_FOLDER_PATH = Path("./experiments")
+
+
+_MIN_TRAVEL_TIME_AZ = 1.0
+_MIN_TRAVEL_TIME_EL = 1.8
+_AVERAGE_TRAVEL_DEG_PER_SEC_AZ = 2.5
+_AVERAGE_TRAVEL_DEG_PER_SEC_EL = 1.5
+_PAUSE_TIME = 0.2
+_PAUSE_TIME_TRACE = 1.0
+
+def _estimate_time(angle: float, kind: Literal["horizontal", "vertical"], trace: bool) -> float:
+    """Estimate the time it will take to move a specific angle."""
+    if kind == "horizontal":
+        travel_time = _MIN_TRAVEL_TIME_AZ + abs(angle) / _AVERAGE_TRAVEL_DEG_PER_SEC_AZ
+    elif kind == "vertical":
+        travel_time = _MIN_TRAVEL_TIME_EL + abs(angle) / _AVERAGE_TRAVEL_DEG_PER_SEC_EL
+    else:
+        raise ValueError(f"Invalid kind: {kind}. Must be 'horizontal' or 'vertical'.")
+    pause_time = _PAUSE_TIME if trace else _PAUSE_TIME_TRACE
+    total_time = travel_time + pause_time
+    return total_time
+
+
+class CutDefinition(pydantic.BaseModel):
+    """The definition of a single cut, which is a bunch of points at a fixed tilt or pan"""
+
+    direction: Literal["horizontal", "vertical"]
+    start_angle: float
+    """On the axis that is not fixed, the starting angle of the cut, in degrees"""
+    end_angle: float
+    """On the axis that is not fixed, the ending angle of the cut, in degrees"""
+    step_size: float
+    """On the axis that is not fixed, the step size of the cut, in degrees"""
+    fixed_angle: float
+    """On the axis that is fixed, the angle of the cut, in degrees"""
+    reset_before: bool | None = None
+    """Should the turntable reset before starting this cut?"""
+
+    @property
+    def coordinates(self) -> list[Coordinate]:
+        """Get the coordinates of this cut, as a list of `Coordinate` objects."""
+
+        # Reverse the step size if the start angle is greater than the end angle
+        step_size = self.step_size
+        if self.start_angle > self.end_angle:
+            step_size = -step_size
+        moving_angles = np.arange(
+            self.start_angle,
+            self.end_angle + step_size / 2,
+            step_size,
+        )
+
+        if self.direction == "horizontal":
+            return [
+                Coordinate.from_turntable(
+                    azimuth=angle,
+                    elevation=self.fixed_angle,
+                    neutral_elevation=0.0,
+                )
+                for angle in moving_angles
+            ]
+        elif self.direction == "vertical":
+            return [
+                Coordinate.from_turntable(
+                    azimuth=self.fixed_angle,
+                    elevation=angle,
+                    neutral_elevation=0.0,
+                )
+                for angle in moving_angles
+            ]
+        else:
+            raise ValueError(f"Invalid direction: {self.direction}. Must be 'horizontal' or 'vertical'.")
+
+    def rough_time_estimate(self, seconds_per_point: float = 5, *, trace: bool) -> float:
+        """A VERY rough estimate of how long this cut will take. Only for ballparking. Doesn't include slew time."""
+        return len(self.coordinates) * _estimate_time(self.step_size, kind=self.direction, trace=False)
+
+    def __len__(self) -> int:
+        """The number of points in this cut"""
+        return len(self.coordinates)
 
 
 class Grid(pydantic.BaseModel):
@@ -124,11 +205,11 @@ class SpecAnConfig(pydantic.BaseModel):
             spec_an.set_amplitude_units(self.amplitude_units)
         if self.reference_level is not None:
             spec_an.set_reference_level(self.reference_level)
-        
+
         # Set CF to:
         #   1. `center_frequency` if given
         #   2. `initial_center_frequency` if given
-        #   3. Otherwise, take no action. 
+        #   3. Otherwise, take no action.
         center_frequency = None
         if self.center_frequency is not None:
             center_frequency = self.center_frequency
@@ -136,7 +217,7 @@ class SpecAnConfig(pydantic.BaseModel):
             center_frequency = self.initial_center_frequency
         if center_frequency is not None:
             spec_an.set_center_frequency(center_frequency)
-        
+
         # Set spans
         # If max and min are given OR span is given, use those
         if self.get_span() is not None:
@@ -147,7 +228,7 @@ class SpecAnConfig(pydantic.BaseModel):
                 center_frequency=center_frequency,
                 spans=self.spans_when_searching,
             )
-        
+
         if self.resolution_bandwidth is not None:
             spec_an.set_resolution_bandwidth(self.resolution_bandwidth)
         if self.video_bandwidth is not None:
@@ -181,6 +262,7 @@ class SpecAnConfig(pydantic.BaseModel):
             sweep_time=spec_an.get_sweep_time(),
         )
 
+
 class SigGenConfig(pydantic.BaseModel):
     center_frequency: float
     power: float
@@ -195,11 +277,12 @@ class ExperimentParameters(pydantic.BaseModel):
     short_description: str = "default"
     long_description: str = "default"
     relative_folder_path: Path | None = None
-    grid: Grid | None  | dict[ str , Grid] = None 
+    grid: Grid | None | dict[str, Grid] = None
+    cuts: dict[str, CutDefinition] | None = None
     sig_gen_config: SigGenConfig | None = None
     spec_an_config: SpecAnConfig | None = None
     polarization_config: PolarizationConfig | None = None
-    points: list[AzElTurntable] | None = None
+    # points: list[AzElTurntable] | None = None
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "DEBUG"
 
     collect_center_frequency_data: bool = True
@@ -211,10 +294,10 @@ class ExperimentParameters(pydantic.BaseModel):
         if self.relative_folder_path is None:
             self.relative_folder_path = path_util.clean_path(EXPERIMENTS_FOLDER_PATH / self.short_description)
 
-        if self.grid is not None and self.points is not None:
-            raise ValueError("Cannot have both `grid` and `points`")
-        elif self.grid is None and self.points is None:
-            raise ValueError("Must have either `grid` or `points`")
+        # if self.grid is not None and self.points is not None:
+        #     raise ValueError("Cannot have both `grid` and `points`")
+        # elif self.grid is None and self.points is None:
+        #     raise ValueError("Must have either `grid` or `points`")
         return self
 
     # @property
@@ -427,14 +510,6 @@ class Experiment(pydantic.BaseModel):
             user_input = input("Is signal generator configured? [y/n]: ")
             if user_input.lower() == "y":
                 break
-    
-        # Verifies polarization parameter inside the parameters.json
-        while True:
-            print(f"\nVerify the polarization:")
-            print(f"{self.parameters.polarization_config.model_dump_json(indent=4)}")
-            user_input = input("Is the polarization correct? [y/n]: ")
-            if user_input.lower() == "y":
-                break
 
         # CONNECT TO AND CONFIGURE TURNTABLE
         self.turntable = Turntable.find(
@@ -459,10 +534,15 @@ class Experiment(pydantic.BaseModel):
             self._run_grid_experiment(
                 indexes_to_skip=indexes_to_skip,
             )
-        elif self.parameters.points:
-            self._run_points_experiment(
+        # elif self.parameters.points:
+        #     self._run_points_experiment(
+        #         indexes_to_skip=indexes_to_skip,
+        #     )
+        elif self.parameters.cuts:
+            self._run_cuts_experiment(
                 indexes_to_skip=indexes_to_skip,
             )
+            pass
 
         # TEST IS DONE
         test_end_time = datetime.datetime.now(datetime.timezone.utc)
@@ -473,21 +553,131 @@ class Experiment(pydantic.BaseModel):
         )
         return self
 
+    def _run_cuts_experiment(
+        self,
+        *,
+        indexes_to_skip: Iterable[int] | None = None,
+    ) -> None:
+        indexes_to_skip = list(indexes_to_skip or [])
+        cuts = self.parameters.cuts
+        assert cuts is not None, "Cuts should not be `None` here"
+        assert len(cuts) > 0, "Cuts should not be empty here"
+
+        total_points = sum(len(cut.coordinates) for cut in cuts.values())
+        total_rough_time_estimate = sum(cut.rough_time_estimate(trace=self.parameters.collect_trace_data) for cut in cuts.values())
+
+        prompt_string = f"There are {len(cuts):,} cuts, with a total of {total_points:,} points."
+
+        for cut_id, cut in cuts.items():
+            prompt_string += f"\n  {cut_id}: {cut.direction} at {cut.fixed_angle}° from {cut.start_angle} to {cut.end_angle}°, step size {cut.step_size}°. {len(cut.coordinates):,} points, estimated time {cut.rough_time_estimate(trace=self.parameters.collect_trace_data):,.0f} seconds."
+        prompt_string += f"\nTotal estimated time for all cuts: {total_rough_time_estimate:,.0f} seconds = {total_rough_time_estimate / 60:,.1f} minutes = {total_rough_time_estimate / 60 / 60:,.2f} hours."
+
+        while True:
+            print(prompt_string)
+            user_input = input("Do you want to continue? [y/n]: ")
+            if user_input.lower() == "y":
+                break
+            elif user_input.lower() == "n":
+                print("Aborting experiment.")
+                return
+            else:
+                print("Did not understand input.")
+        say(f"Beginning experiment.")
+        from rich.progress import Progress
+        try:
+            with Progress(transient=True) as progress:
+                overall_progress_task = progress.add_task(
+                    f"Overall point 1 of {total_points:,}",
+                    total=total_points,
+                    completed=0,
+                )
+                cut_progress_task = progress.add_task(
+                    f"Cut 1 of {len(cuts):,}",
+                    total=len(cuts),
+                    completed=0,
+                )
+
+                this_cut_progress_task = progress.add_task(
+                    f"Cut point 1 of ??",
+                    total=100,
+                    completed=0,
+                )
+
+                point_index = 0
+                for cut_index, (cut_id, cut) in enumerate(cuts.items()):
+                    cut_id_text = cut_id.lower().replace("_", " ").replace("-", " ")
+                    say(f"Begin cut {cut_index + 1} of {len(cuts)}, {cut_id_text}")
+                    # Update the progress tasks
+                    progress.update(
+                        cut_progress_task,
+                        completed=cut_index + 1,
+                        description=f"Doing cut #{cut_index + 1} of {len(cuts):,} ({cut_id})",
+                    )
+                    progress.update(
+                        this_cut_progress_task,
+                        total=len(cut),
+                        completed=0,
+                    )
+
+                    if cut.reset_before:
+                        self.turntable.move_to(azimuth=0, elevation=0)
+
+                    for coordinate_index, coordinate in enumerate(cut.coordinates):
+                        progress.update(
+                            this_cut_progress_task,
+                            completed=coordinate_index,
+                            description=f"Doing point #{coordinate_index + 1} of {len(cut)} within cut",
+                        )
+                        point_index += 1
+                        progress.update(
+                            overall_progress_task,
+                            completed=point_index,
+                            description=f"Overall progress point #{point_index} of {total_points:,} points",
+                        )
+
+                        if point_index in indexes_to_skip:
+                            self.logger.info(f"Skipping point_index {point_index} {coordinate}")
+                            continue
+
+                        # Actually do the danged experiment
+                        self._run_experiment_at_point(
+                            point=coordinate,
+                            cut_id=cut_id,
+                            point_index=point_index,
+                            neutral_elevation=0,
+                        )
+
+                    # Move to 0 0 at the end of each cut
+                    # self.turntable.move_to(azimuth=0, elevation=0)
+            print(f"FINISHED!!!")
+            say(f"Experiment finished!")
+
+            print(f"Data saved to {self.parameters.raw_data_csv_path}")
+        except Exception as exc:
+            self.logger.error(f"Error during experiment: {exc}")
+            say(f"Error during experiment: {type(exc).__name__}")
+            raise
+        finally:
+            # Reset turntable
+            say(f"Resetting turntable to 0, 0.")
+            self.turntable.move_to(azimuth=0, elevation=0)
+
     def _run_grid_experiment(
         self,
         *,
         indexes_to_skip: Iterable[int] | None = None,
     ) -> None:
+        raise ValueError("Using the `grid` parameter is no longer supported. Use `cuts` instead.")
         grid = self.parameters.grid
         assert grid is not None, "Grid should not be `None` here"
 
         if isinstance(grid, dict):
             grid_dict = grid
-        else: 
+        else:
             grid_dict = {"grid": grid}
 
         indexes_to_skip = set(indexes_to_skip) if indexes_to_skip else set()
-        
+
         # Find total points in all grids
         total_points = 0
         for grid_value in grid_dict.values():
@@ -523,7 +713,7 @@ class Experiment(pydantic.BaseModel):
                 # f"Doing point #1 of {grid.size_of_cut()} within cut", total=grid.size_of_cut()
                 f"TBD",
                 # total=grid.size_of_cut()
-                total=100
+                total=100,
             )
             point_index = 0
             for grid_index, (grid_name, grid) in enumerate(grid_dict.items()):
@@ -541,12 +731,12 @@ class Experiment(pydantic.BaseModel):
                     for coordinate_index, coordinate in enumerate(cut):
                         if point_index in indexes_to_skip:
                             self.logger.info(f"Skipping point_index {point_index} {coordinate}")
-                    
+
                             continue
                         self._run_experiment_at_point(
                             point=coordinate,
                             cut_id=grid_name,
-                            point_index=point_index, 
+                            point_index=point_index,
                             neutral_elevation=grid.neutral_elevation,
                         )
                         point_index += 1
@@ -560,16 +750,13 @@ class Experiment(pydantic.BaseModel):
                             completed=coordinate_index,
                             description=f"Doing point #{coordinate_index + 1} of {grid.size_of_cut()} within cut",
                         )
-                
-            
+
                 # Move to 0 0
-                # We have not ever tested or verified beginning a cut anywhere other than the origin. 
+                # We have not ever tested or verified beginning a cut anywhere other than the origin.
                 # Specifically we're not sure across elevation regime boundaries
                 # For example moving from az = 80, el = 0 to az = 0, el = - 90, would include diagonal travel across elevation regime boundaries.
                 # This should work, but we have not tested it.
                 self.turntable.move_to(azimuth=0, elevation=0)
-
-
 
             # EXPERIMENT DONE!
             # Reset turntable
@@ -589,7 +776,7 @@ class Experiment(pydantic.BaseModel):
         actual_position = self.turntable.wait_for_position()
         data = ExperimentDatapoint()
         if neutral_elevation is None:
-            neutral_elevation = neutral_elevation=self.parameters.grid.neutral_elevation
+            neutral_elevation = neutral_elevation = self.parameters.grid.neutral_elevation
         data.actual_coordinate = Coordinate.from_turntable(
             azimuth=actual_position.turntable_azimuth,
             elevation=actual_position.turntable_elevation,
@@ -667,28 +854,37 @@ if __name__ == "__main__":
     )
     sig_gen_config = SigGenConfig(center_frequency=8_450_000_000, power=-10, vernier_power=0)
     polarization_config = PolarizationConfig(kind="vertical")
+    cuts = {
+        "COARSE_AZIMUTH": CutDefinition(
+            direction="horizontal", fixed_angle=0, start_angle=-10, end_angle=10, step_size=5
+        ),
+        "COARSE_ELEVATION": CutDefinition(
+            direction="vertical", fixed_angle=0, start_angle=-2, end_angle=2, step_size=1
+        ),
+    }
     # points = {
     #     0: AzElTurntable(azimuth=-5, elevation=5),
     #     1: AzElTurntable(azimuth=5, elevation=5),
     #     # 2: AzElTurntable(azimuth=-5, elevation=-5),
     #     # 3: AzElTurntable(azimuth=5, elevation=-5),
     # }
-    grid = Grid(
-        min_azimuth=-10,
-        max_azimuth=10,
-        azimuth_step_size=10,
-        min_elevation=-2,
-        max_elevation=2,
-        elevation_step_size=2,
-        orientation="horizontal",
-    )
+    # grid = Grid(
+    #     min_azimuth=-10,
+    #     max_azimuth=10,
+    #     azimuth_step_size=10,
+    #     min_elevation=-2,
+    #     max_elevation=2,
+    #     elevation_step_size=2,
+    #     orientation="horizontal",
+    # )
     experiment_parameters = ExperimentParameters(
         short_description="3x3 8.45 GHz",
         long_description="Initial test of a 3x3 grid at 8.45 GHz",
         spec_an_config=spec_an_config,
         sig_gen_config=sig_gen_config,
         # points=points,
-        grid=grid,
+        # grid=grid,
+        cuts=cuts,
         polarization_config=polarization_config,
         # folder=Path("./experiments/mayo01"),
         # az_el_cls="AzElSpherical",
@@ -698,6 +894,9 @@ if __name__ == "__main__":
     )
     print(f"{experiment_parameters=}")
     print(experiment_parameters.model_dump_json(indent=4))
+
+    with open("params.json", "w", encoding="utf8") as file:
+        file.write(experiment_parameters.model_dump_json(indent=4))
 
     Experiment.run_file(path=Path("./experiments/mayo_experiment"))
     exit()

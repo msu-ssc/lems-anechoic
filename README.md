@@ -23,7 +23,7 @@ You must be on a Windows computer that you have administrative rights to.
 The spec-an is controlled via GPIB, which requires a bunch of drivers that you need to install manually.
 - Install [NI-Visa](bin/ni-visa_23.5_online.exe).
 - Reboot computer.
-- Install Keysight Instrument Control Bundle. A current link is [here](https://www.keysight.com/us/en/lib/software-detail/computer-software/keysight-instrument-control-bundle-download-1184883.html), but it might expire. You can Google for the current link.
+- Install Keysight Instrument Control Bundle. A current link is [here](https://www.keysight.com/us/en/lib/software-detail/computer-software/keysight-instrument-control-bundle-download-1184883.html), but it might expire. You can Google for the current link. Specifically, install the "IO Libraries Suite" with the GUI.
 - Reboot computer.
 - Run the program "Keysight Connection Expert" to confirm that you can see any attached GPIB device.
 
@@ -113,3 +113,7 @@ Speed up spec-an centering process
 
 ### v0.3.12 - 2025-08-14
 Add validation of polarization to Experiment.run()
+
+### v0.3.13 - 2025-08-14
+Add multiple cuts at once.
+Add sound to experiment running.

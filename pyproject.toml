@@ -5,6 +5,7 @@ description = "MSU SSC anechoic chamber test scripts"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "comtypes>=1.4.11",
     "matplotlib>=3.10.0",
     "msu-ssc>=1.0.0",
     "numpy>=2.2.2",
