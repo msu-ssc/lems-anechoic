@@ -54,10 +54,18 @@ class CutDefinition(pydantic.BaseModel):
     """On the axis that is fixed, the angle of the cut, in degrees"""
     reset_before: bool | None = None
     """Should the turntable reset before starting this cut?"""
+    neutral_elevation: float | None = None
+    """The neutral elevation angle for this cut, in degrees.
+    
+    If `None` (the default), it will be necessary to set the elevation angle before calculating the cut coordinates."""
 
     @property
     def coordinates(self) -> list[Coordinate]:
         """Get the coordinates of this cut, as a list of `Coordinate` objects."""
+
+        if self.neutral_elevation is None:
+            message = f"Cannot get coordinates until neutral_elevation is set"
+            raise ValueError(message)
 
         # Reverse the step size if the start angle is greater than the end angle
         step_size = self.step_size
@@ -74,7 +82,7 @@ class CutDefinition(pydantic.BaseModel):
                 Coordinate.from_turntable(
                     azimuth=angle,
                     elevation=self.fixed_angle,
-                    neutral_elevation=0.0,
+                    neutral_elevation=self.neutral_elevation,
                 )
                 for angle in moving_angles
             ]
@@ -83,7 +91,7 @@ class CutDefinition(pydantic.BaseModel):
                 Coordinate.from_turntable(
                     azimuth=self.fixed_angle,
                     elevation=angle,
-                    neutral_elevation=0.0,
+                    neutral_elevation=self.neutral_elevation,
                 )
                 for angle in moving_angles
             ]
@@ -285,6 +293,8 @@ class ExperimentParameters(pydantic.BaseModel):
     # points: list[AzElTurntable] | None = None
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "DEBUG"
 
+    neutral_elevation: float | None = None
+
     collect_center_frequency_data: bool = True
     collect_peak_data: bool = True
     collect_trace_data: bool = False
@@ -370,15 +380,20 @@ class ExperimentDatapoint(pydantic.BaseModel):
         }
 
         if self.commanded_coordinate is not None:
-            rv["commanded_azimuth"] = self.commanded_coordinate.turntable_azimuth
-            rv["commanded_elevation"] = self.commanded_coordinate.turntable_elevation
+            rv["commanded_azimuth"] = self.commanded_coordinate.antenna_azimuth
+            rv["commanded_elevation"] = self.commanded_coordinate.antenna_elevation
+            rv["commanded_pan"] = self.commanded_coordinate.absolute_turntable_azimuth
+            rv["commanded_tilt"] = self.commanded_coordinate.absolute_turntable_elevation
         if self.actual_coordinate is not None:
-            rv["actual_azimuth"] = self.actual_coordinate.turntable_azimuth
-            rv["actual_elevation"] = self.actual_coordinate.turntable_elevation
+            rv["actual_azimuth"] = self.actual_coordinate.antenna_azimuth
+            rv["actual_elevation"] = self.actual_coordinate.antenna_elevation
+            rv["actual_pan"] = self.actual_coordinate.absolute_turntable_azimuth
+            rv["actual_tilt"] = self.actual_coordinate.absolute_turntable_elevation
         if self.trace_data:
             rv["trace_data"] = ";".join(str(x) for x in self.trace_data)
             rv["trace_lower_bound"] = self.trace_lower_bound
             rv["trace_upper_bound"] = self.trace_upper_bound
+        
 
         rv = {k: v for k, v in rv.items() if v is not None}
 
@@ -563,13 +578,17 @@ class Experiment(pydantic.BaseModel):
         assert cuts is not None, "Cuts should not be `None` here"
         assert len(cuts) > 0, "Cuts should not be empty here"
 
+        for cut in cuts.values():
+            if cut.neutral_elevation is None:
+                cut.neutral_elevation = self.parameters.neutral_elevation
+
         total_points = sum(len(cut.coordinates) for cut in cuts.values())
         total_rough_time_estimate = sum(cut.rough_time_estimate(trace=self.parameters.collect_trace_data) for cut in cuts.values())
 
         prompt_string = f"There are {len(cuts):,} cuts, with a total of {total_points:,} points."
 
         for cut_id, cut in cuts.items():
-            prompt_string += f"\n  {cut_id}: {cut.direction} at {cut.fixed_angle}° from {cut.start_angle} to {cut.end_angle}°, step size {cut.step_size}°. {len(cut.coordinates):,} points, estimated time {cut.rough_time_estimate(trace=self.parameters.collect_trace_data):,.0f} seconds."
+            prompt_string += f"\n  {cut_id}: {cut.direction} at {cut.fixed_angle}° from {cut.start_angle}° to {cut.end_angle}°, step size {cut.step_size}°. {len(cut.coordinates):,} points, estimated time {cut.rough_time_estimate(trace=self.parameters.collect_trace_data):,.0f} seconds."
         prompt_string += f"\nTotal estimated time for all cuts: {total_rough_time_estimate:,.0f} seconds = {total_rough_time_estimate / 60:,.1f} minutes = {total_rough_time_estimate / 60 / 60:,.2f} hours."
 
         while True:
@@ -644,7 +663,7 @@ class Experiment(pydantic.BaseModel):
                             point=coordinate,
                             cut_id=cut_id,
                             point_index=point_index,
-                            neutral_elevation=0,
+                            neutral_elevation=self.parameters.neutral_elevation,
                         )
 
                     # Move to 0 0 at the end of each cut
@@ -775,14 +794,19 @@ class Experiment(pydantic.BaseModel):
         point_index: int | None = None,
         neutral_elevation: float | None = None,
     ) -> None:
-        self.turntable.move_to(azimuth=point.turntable_azimuth, elevation=point.turntable_elevation)
+        self.turntable.move_to(azimuth=point.absolute_turntable_azimuth, elevation=point.absolute_turntable_elevation)
         actual_position = self.turntable.wait_for_position()
         data = ExperimentDatapoint()
         if neutral_elevation is None:
-            neutral_elevation = neutral_elevation = self.parameters.grid.neutral_elevation
-        data.actual_coordinate = Coordinate.from_turntable(
-            azimuth=actual_position.turntable_azimuth,
-            elevation=actual_position.turntable_elevation,
+            neutral_elevation = self.parameters.neutral_elevation
+        if neutral_elevation is None:
+            raise ValueError("Neutral elevation is not set.")
+        # data.actual_coordinate = Coordinate.from_turntable(
+        data.actual_coordinate = Coordinate.from_absolute_turntable(
+            # azimuth=actual_position.turntable_azimuth,
+            azimuth=actual_position.absolute_turntable_azimuth,
+            # elevation=actual_position.turntable_elevation,
+            elevation=actual_position.absolute_turntable_elevation,
             neutral_elevation=neutral_elevation,
         )
         data.commanded_coordinate = point
