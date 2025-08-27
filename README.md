@@ -120,3 +120,6 @@ Add sound to experiment running.
 
 ### v0.3.14 - 2026-08-14
 Add move timeout
+
+### v0.4.0 - 2025-08-27
+Version to be used for LEMS-A3 flight unit testing
