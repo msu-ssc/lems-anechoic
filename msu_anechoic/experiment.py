@@ -522,9 +522,12 @@ class Experiment(pydantic.BaseModel):
 
         # CONNECT TO AND CONFIGURE SIGNAL GENERATOR
         while True:
-            print(f"Configure the signal generator manually:")
+            print(f"Configure the signal generator and polarization manually.")
+            print(f"Signal generator settings:")
             print(f"{self.parameters.sig_gen_config.model_dump_json(indent=4)}")
-            user_input = input("Is signal generator configured? [y/n]: ")
+            print(f"Polarization settings:")
+            print(f"{self.parameters.polarization_config.model_dump_json(indent=4)}")
+            user_input = input("Are signal generator and polarization configured? [y/n]: ")
             if user_input.lower() == "y":
                 break
 
