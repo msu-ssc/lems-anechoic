@@ -122,7 +122,4 @@ Add sound to experiment running.
 Add move timeout
 
 ### v0.4.0 - 2025-08-27
-Release for flight unit testing
-
-### v0.4.1 - 2025-08-28
-Apply entire config to spec an when running an experiment, not just some of it
+Version to be used for LEMS-A3 flight unit testing
