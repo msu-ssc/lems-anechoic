@@ -512,11 +512,13 @@ class Experiment(pydantic.BaseModel):
         if not self.spec_an:
             raise ValueError("No spectrum analyzer found")
 
-        self.spec_an.set_reference_level(self.parameters.spec_an_config.reference_level)
-        self.actual_center_frequency = self.spec_an.move_center_to_peak(
-            center_frequency=self.parameters.spec_an_config.initial_center_frequency,
-            spans=self.parameters.spec_an_config.spans_when_searching,
-        )
+        if self.parameters.spec_an_config:
+            self.spec_an.apply_config(self.parameters.spec_an_config)
+        # self.spec_an.set_reference_level(self.parameters.spec_an_config.reference_level)
+        # self.actual_center_frequency = self.spec_an.move_center_to_peak(
+        #     center_frequency=self.parameters.spec_an_config.initial_center_frequency,
+        #     spans=self.parameters.spec_an_config.spans_when_searching,
+        # )
 
         # CONNECT TO AND CONFIGURE SIGNAL GENERATOR
         while True:
