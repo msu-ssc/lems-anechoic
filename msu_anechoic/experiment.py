@@ -495,6 +495,8 @@ class Experiment(pydantic.BaseModel):
         self,
         *,
         indexes_to_skip: Iterable[int] | None = None,
+        existing_data: pd.DataFrame | None = None,
+        override_csv: bool = True,
     ) -> "Experiment":
         from msu_ssc import ssc_log
 
@@ -546,7 +548,10 @@ class Experiment(pydantic.BaseModel):
 
         # Delete the CSV, if it exists
         if self.parameters.raw_data_csv_path.exists():
-            self.parameters.raw_data_csv_path.unlink()
+            if override_csv:
+                self.parameters.raw_data_csv_path.unlink()
+            else:
+                raise FileExistsError(f"CSV file {self.parameters.raw_data_csv_path} already exists")
 
         # DO THE TEST!
         test_start_time = datetime.datetime.now(datetime.timezone.utc)
@@ -561,6 +566,7 @@ class Experiment(pydantic.BaseModel):
         elif self.parameters.cuts:
             self._run_cuts_experiment(
                 indexes_to_skip=indexes_to_skip,
+                existing_data=existing_data,
             )
             pass
 
@@ -577,6 +583,7 @@ class Experiment(pydantic.BaseModel):
         self,
         *,
         indexes_to_skip: Iterable[int] | None = None,
+        existing_data: pd.DataFrame | None = None,
     ) -> None:
         indexes_to_skip = list(indexes_to_skip or [])
         cuts = self.parameters.cuts
