@@ -132,3 +132,6 @@ Prompt user to verify polarization when running experiments
 
 ### v0.4.3 - 2025-08-28
 Widen azimuth margin
+
+### v0.4.4 - 2025-08-28
+BUGFIX: Widen azimuth margin correctly

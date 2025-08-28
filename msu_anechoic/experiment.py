@@ -27,6 +27,7 @@ _AVERAGE_TRAVEL_DEG_PER_SEC_EL = 1.5
 _PAUSE_TIME = 0.2
 _PAUSE_TIME_TRACE = 1.0
 
+
 def _estimate_time(angle: float, kind: Literal["horizontal", "vertical"], trace: bool) -> float:
     """Estimate the time it will take to move a specific angle."""
     if kind == "horizontal":
@@ -393,7 +394,6 @@ class ExperimentDatapoint(pydantic.BaseModel):
             rv["trace_data"] = ";".join(str(x) for x in self.trace_data)
             rv["trace_lower_bound"] = self.trace_lower_bound
             rv["trace_upper_bound"] = self.trace_upper_bound
-        
 
         rv = {k: v for k, v in rv.items() if v is not None}
 
@@ -588,7 +588,9 @@ class Experiment(pydantic.BaseModel):
                 cut.neutral_elevation = self.parameters.neutral_elevation
 
         total_points = sum(len(cut.coordinates) for cut in cuts.values())
-        total_rough_time_estimate = sum(cut.rough_time_estimate(trace=self.parameters.collect_trace_data) for cut in cuts.values())
+        total_rough_time_estimate = sum(
+            cut.rough_time_estimate(trace=self.parameters.collect_trace_data) for cut in cuts.values()
+        )
 
         prompt_string = f"There are {len(cuts):,} cuts, with a total of {total_points:,} points."
 
@@ -608,6 +610,7 @@ class Experiment(pydantic.BaseModel):
                 print("Did not understand input.")
         say(f"Beginning experiment.")
         from rich.progress import Progress
+
         try:
             with Progress(transient=True) as progress:
                 overall_progress_task = progress.add_task(
@@ -644,7 +647,7 @@ class Experiment(pydantic.BaseModel):
                     )
 
                     if cut.reset_before:
-                        self.turntable.move_to(azimuth=0, elevation=0, azimuth_margin=0.2)
+                        self.turntable.move_to(azimuth=0, elevation=0)
 
                     for coordinate_index, coordinate in enumerate(cut.coordinates):
                         progress.update(
@@ -799,7 +802,11 @@ class Experiment(pydantic.BaseModel):
         point_index: int | None = None,
         neutral_elevation: float | None = None,
     ) -> None:
-        self.turntable.move_to(azimuth=point.absolute_turntable_azimuth, elevation=point.absolute_turntable_elevation)
+        self.turntable.move_to(
+            azimuth=point.absolute_turntable_azimuth,
+            elevation=point.absolute_turntable_elevation,
+            azimuth_margin=0.2,
+        )
         actual_position = self.turntable.wait_for_position()
         data = ExperimentDatapoint()
         if neutral_elevation is None:
