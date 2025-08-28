@@ -644,7 +644,7 @@ class Experiment(pydantic.BaseModel):
                     )
 
                     if cut.reset_before:
-                        self.turntable.move_to(azimuth=0, elevation=0)
+                        self.turntable.move_to(azimuth=0, elevation=0, azimuth_margin=0.2)
 
                     for coordinate_index, coordinate in enumerate(cut.coordinates):
                         progress.update(
