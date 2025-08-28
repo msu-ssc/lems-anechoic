@@ -676,6 +676,14 @@ class Experiment(pydantic.BaseModel):
                             self.logger.info(f"Skipping point_index {point_index} {coordinate}")
                             continue
 
+                        if existing_data is not None:
+                            cut_ids = existing_data["cut_id"].to_numpy()
+                            point_indexes = existing_data["point_index"].to_numpy()
+                            tuples = list(zip(cut_ids, point_indexes))
+                            if (cut_id, point_index) in tuples:
+                                self.logger.info(f"Skipping existing point {point_index} for cut {cut_id}")
+                                continue
+
                         # Actually do the danged experiment
                         self._run_experiment_at_point(
                             point=coordinate,
