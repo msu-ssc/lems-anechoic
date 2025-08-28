@@ -138,3 +138,6 @@ BUGFIX: Widen azimuth margin correctly
 
 ### v0.4.5 - 2025-08-28
 Make invalid set command raise an error
+
+### v0.4.6 - 2025-08028
+Make moving to a new elevation regime always go to pan angle 0

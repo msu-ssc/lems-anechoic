@@ -580,13 +580,13 @@ class Turntable:
     def _move_to_next_regime(
         self,
         *,
-        azimuth: float,
         elevation: float,
         azimuth_margin: float = ALLOWABLE_DISCREPANCY_DEG,
         elevation_margin: float = ALLOWABLE_DISCREPANCY_DEG,
         delay: float = 0.05,
         move_timeout: float,
     ) -> None:
+        azimuth = 0.0
         assert self._current_regime is not None
 
         next_regime = _regime.find_next_regime(
@@ -673,7 +673,6 @@ class Turntable:
                 f"Current regime {self._current_regime} does not contain elevation {elevation}. Moving regimes."
             )
             self._move_to_next_regime(
-                azimuth=azimuth,
                 elevation=elevation,
                 azimuth_margin=azimuth_margin,
                 elevation_margin=elevation_margin,
