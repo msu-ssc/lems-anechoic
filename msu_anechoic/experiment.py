@@ -496,7 +496,8 @@ class Experiment(pydantic.BaseModel):
         *,
         indexes_to_skip: Iterable[int] | None = None,
         existing_data: pd.DataFrame | None = None,
-        override_csv: bool = True,
+        overwrite_csv: bool = False,
+        append_csv: bool = False,
     ) -> "Experiment":
         from msu_ssc import ssc_log
 
@@ -548,10 +549,12 @@ class Experiment(pydantic.BaseModel):
 
         # Delete the CSV, if it exists
         if self.parameters.raw_data_csv_path.exists():
-            if override_csv:
+            if overwrite_csv:
                 self.parameters.raw_data_csv_path.unlink()
+            elif append_csv:
+                pass
             else:
-                raise FileExistsError(f"CSV file {self.parameters.raw_data_csv_path} already exists")
+                raise FileExistsError(f"CSV file {self.parameters.raw_data_csv_path} already exists, and neither append_csv nor overwrite_csv were given")
 
         # DO THE TEST!
         test_start_time = datetime.datetime.now(datetime.timezone.utc)
