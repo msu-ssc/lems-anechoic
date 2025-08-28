@@ -533,7 +533,9 @@ class Turntable:
         """
 
         if not self.validate_set_command(azimuth, elevation):
-            self.logger.error(f"Set command {azimuth=}, {elevation=} is invalid and WILL NOT BE SENT!")
+            message = f"Set command {azimuth=}, {elevation=} is invalid and WILL NOT BE SENT!"
+            self.logger.error(message)
+            raise RuntimeError(message)
             return
 
         command = f"CMD:SET:{azimuth:.3f},{elevation:.3f};".encode(encoding="ascii")

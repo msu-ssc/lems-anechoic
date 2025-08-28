@@ -135,3 +135,6 @@ Widen azimuth margin
 
 ### v0.4.4 - 2025-08-28
 BUGFIX: Widen azimuth margin correctly
+
+### v0.4.5 - 2025-08-28
+Make invalid set command raise an error
