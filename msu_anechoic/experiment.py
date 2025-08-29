@@ -334,6 +334,13 @@ class ExperimentParameters(pydantic.BaseModel):
     @property
     def raw_data_csv_path(self) -> Path:
         return self.relative_folder_path / "raw_data" / "data.csv"
+    
+    @property
+    def spec_an_config_path(self) -> Path:
+        return self.relative_folder_path / "spec_an_configs"
+    
+
+    
 
     def run(self) -> "Experiment":
         """Run this experiment."""
@@ -523,6 +530,14 @@ class Experiment(pydantic.BaseModel):
         #     spans=self.parameters.spec_an_config.spans_when_searching,
         # )
 
+        # SAVE BEGINNING SPEC AN CONFIG TO A JSON FILE
+        spec_an_config_before = self.spec_an.get_config()
+        spec_an_config_before_path = self.parameters.spec_an_config_path / "before.json"
+        spec_an_config_before_path.parent.mkdir(parents=True, exist_ok=True)
+        spec_an_config_before_json_str = spec_an_config_before.model_dump_json(indent = 4)
+        self.logger.info(f"Saving spec_an config before experiment to {spec_an_config_before_path}")
+        spec_an_config_before_path.write_text(spec_an_config_before_json_str, encoding="utf-8")
+
         # CONNECT TO AND CONFIGURE SIGNAL GENERATOR
         while True:
             print(f"Configure the signal generator and polarization manually.")
@@ -576,6 +591,14 @@ class Experiment(pydantic.BaseModel):
         # TEST IS DONE
         test_end_time = datetime.datetime.now(datetime.timezone.utc)
         duration = test_end_time - test_start_time
+        
+        # SAVE END SPEC AN CONFIG TO A JSON FILE
+        spec_an_config_after = self.spec_an.get_config()
+        spec_an_config_after_path = self.parameters.spec_an_config_path / "after.json"
+        spec_an_config_after_path.parent.mkdir(parents=True, exist_ok=True)
+        spec_an_config_after_json_str = spec_an_config_after.model_dump_json(indent = 4)
+        self.logger.info(f"Saving spec_an config after experiment to {spec_an_config_after_path}")
+        spec_an_config_after_path.write_text(spec_an_config_after_json_str, encoding="utf-8")
 
         print(
             f"Test started at {test_start_time} and ended at {test_end_time}. Total duration: {duration.total_seconds():,.0f} seconds = {duration.total_seconds() / 60:,.1f} minutes = {duration.total_seconds() / 60 / 60:,.2f} hours"
