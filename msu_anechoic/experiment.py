@@ -29,16 +29,38 @@ _PAUSE_TIME_TRACE = 1.0
 
 
 def _estimate_time(angle: float, kind: Literal["horizontal", "vertical"], trace: bool) -> float:
-    """Estimate the time it will take to move a specific angle."""
+    """Estimate the time it will take to move a specific angle.
+
+    Assumes turntable starting from rest and coming to rest at the end of the move.
+
+    A square root  function is used for small angles to account for acceleration and deceleration.
+    A linear function is used for larger angles.
+    Uses empirically-derived parameters. See https://github.com/msu-ssc/lems-anechoic/issues/35
+
+    If `trace=True`, adds 1.0 seconds to account for trace collection time.
+    """
+
+    def power(value, a, b, c) -> float:
+        return a + b * (value**c)
+
+    def linear(value, a, b) -> float:
+        return a * value + b
+
+    trace_time = _PAUSE_TIME_TRACE if trace else 0.0
+
+    abs_angle = abs(angle)
     if kind == "horizontal":
-        travel_time = _MIN_TRAVEL_TIME_AZ + abs(angle) / _AVERAGE_TRAVEL_DEG_PER_SEC_AZ
+        if abs_angle < 2:
+            return power(abs_angle, 0.5713, 1.0117, 0.5) + trace_time
+        else:
+            return linear(abs_angle, 0.3940, 1.2141) + trace_time
     elif kind == "vertical":
-        travel_time = _MIN_TRAVEL_TIME_EL + abs(angle) / _AVERAGE_TRAVEL_DEG_PER_SEC_EL
+        if abs_angle < 2:
+            return power(abs_angle, -0.1949, 2.8896, 0.5) + trace_time
+        else:
+            return linear(abs_angle, 0.9038, 2.0841) + trace_time
     else:
         raise ValueError(f"Invalid kind: {kind}. Must be 'horizontal' or 'vertical'.")
-    pause_time = _PAUSE_TIME if trace else _PAUSE_TIME_TRACE
-    total_time = travel_time + pause_time
-    return total_time
 
 
 class CutDefinition(pydantic.BaseModel):
@@ -554,7 +576,9 @@ class Experiment(pydantic.BaseModel):
             elif append_csv:
                 pass
             else:
-                raise FileExistsError(f"CSV file {self.parameters.raw_data_csv_path} already exists, and neither append_csv nor overwrite_csv were given")
+                raise FileExistsError(
+                    f"CSV file {self.parameters.raw_data_csv_path} already exists, and neither append_csv nor overwrite_csv were given"
+                )
 
         # DO THE TEST!
         test_start_time = datetime.datetime.now(datetime.timezone.utc)
