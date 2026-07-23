@@ -1,0 +1,38 @@
+<section id="grid-preview" class="preview-section" aria-live="polite">
+    {% if error %}
+        <div class="validation-message" role="alert">
+            <span aria-hidden="true">!</span>
+            <div>
+                <strong>Check the grid definition</strong>
+                <p>{{ error }}</p>
+            </div>
+        </div>
+    {% else %}
+        <div class="preview-heading">
+            <h2>Grid preview</h2>
+            <div class="grid-summary">
+                <span><strong>{{ "{:,}".format(grid.points | length) }}</strong> points</span>
+                <span><strong>{{ grid.row_count }}</strong> rows</span>
+                <span><strong>{{ grid.column_count }}</strong> columns</span>
+                <span><i class="start-key"></i> start</span>
+                <span><i class="end-key"></i> end</span>
+            </div>
+        </div>
+
+        <div class="plot-grid">
+            <article class="plot-card">
+                <div class="plot" data-plot-source="az-el-figure"></div>
+                <script id="az-el-figure" type="application/json">{{ az_el_figure_json | safe }}</script>
+            </article>
+            <article class="plot-card">
+                <div class="plot" data-plot-source="pan-tilt-figure"></div>
+                <script id="pan-tilt-figure" type="application/json">{{ pan_tilt_figure_json | safe }}</script>
+            </article>
+        </div>
+
+        <p class="path-note">
+            Traversal starts at the top-left corner in the selected input system. Rows alternate
+            left-to-right and right-to-left.
+        </p>
+    {% endif %}
+</section>

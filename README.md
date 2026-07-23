@@ -36,6 +36,22 @@ The spec-an is controlled via GPIB, which requires a bunch of drivers that you n
 
 Run `uv run test-connection.py` to verify connection.
 
+## Web interface
+
+Run the local development server:
+
+```powershell
+uv run python -m msu_anechoic.web
+```
+
+Then open <http://127.0.0.1:8000/grid-designer>.
+
+The grid designer is independent of the legacy experiment and coordinate
+classes. It generates an inclusive rectangular grid in either
+azimuth/elevation or pan/tilt coordinates, converts it to the other view, and
+always traverses from the top-left corner in a horizontal-first serpentine
+pattern.
+
 ## Changelog
 
 ### v0.1.0 - Before March 2025
