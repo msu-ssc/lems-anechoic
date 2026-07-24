@@ -68,5 +68,6 @@ dev-dependencies = [
 [dependency-groups]
 dev = [
     "httpx>=0.28",
+    "playwright>=1.61.0",
     "pytest>=8.3.4",
 ]
