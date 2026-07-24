@@ -52,7 +52,7 @@ def _az_el_unit_vector(azimuth: float, elevation: float) -> tuple[float, float, 
     horizontal_radius = math.cos(elevation_radians)
     return (
         horizontal_radius * math.cos(azimuth_radians),
-        horizontal_radius * math.sin(azimuth_radians),
+        -horizontal_radius * math.sin(azimuth_radians),
         math.sin(elevation_radians),
     )
 
@@ -464,14 +464,17 @@ def _three_dimensional_figure(grid: DesignedGrid) -> dict:
             "showlegend": False,
             "scene": {
                 "bgcolor": "#d1e0ff",
-                "aspectmode": "data",
+                "aspectmode": "manual",
+                "aspectratio": {"x": 4.45, "y": 2.4, "z": 2.4},
                 "camera": {
-                    "eye": {"x": 1.45, "y": 1.6, "z": 1.05},
+                    "eye": {"x": -1.35, "y": -1.65, "z": 1.05},
                     "projection": {"type": "orthographic"},
                 },
                 "xaxis": {
                     "title": {"text": "X", "font": {"size": 16}},
                     "range": [-1.2, 3.25],
+                    "showticklabels": False,
+                    "ticks": "",
                     "gridcolor": "#8fa6d2",
                     "zerolinecolor": "#5f79ad",
                     "tickfont": {"size": 14},
@@ -479,6 +482,8 @@ def _three_dimensional_figure(grid: DesignedGrid) -> dict:
                 "yaxis": {
                     "title": {"text": "Y", "font": {"size": 16}},
                     "range": [-1.2, 1.2],
+                    "showticklabels": False,
+                    "ticks": "",
                     "gridcolor": "#8fa6d2",
                     "zerolinecolor": "#5f79ad",
                     "tickfont": {"size": 14},
@@ -486,6 +491,8 @@ def _three_dimensional_figure(grid: DesignedGrid) -> dict:
                 "zaxis": {
                     "title": {"text": "Z", "font": {"size": 16}},
                     "range": [-1.2, 1.2],
+                    "showticklabels": False,
+                    "ticks": "",
                     "gridcolor": "#8fa6d2",
                     "zerolinecolor": "#5f79ad",
                     "tickfont": {"size": 14},

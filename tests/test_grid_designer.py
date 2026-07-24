@@ -51,13 +51,17 @@ def test_grid_starts_top_left_and_traverses_horizontal_serpentine():
     ("azimuth", "elevation", "expected"),
     [
         (0, 0, (1, 0, 0)),
-        (90, 0, (0, 1, 0)),
-        (-90, 0, (0, -1, 0)),
+        (90, 0, (0, -1, 0)),
+        (-90, 0, (0, 1, 0)),
         (0, 90, (0, 0, 1)),
         (0, -90, (0, 0, -1)),
     ],
 )
-def test_az_el_unit_vector_uses_positive_x_as_boresight(azimuth, elevation, expected):
+def test_az_el_unit_vector_uses_positive_x_boresight_reflected_across_xz_plane(
+    azimuth,
+    elevation,
+    expected,
+):
     assert _az_el_unit_vector(azimuth, elevation) == pytest.approx(expected, abs=1e-12)
 
 
@@ -95,6 +99,15 @@ def test_three_dimensional_figure_contains_requested_geometry_and_az_el_grid():
     assert traces_by_role["boresight"]["y"] == [0.0, 0.0]
     assert traces_by_role["boresight"]["z"] == [0.0, 0.0]
     assert traces_by_role["boresight"]["line"]["color"] == "#005eb8"
+    assert figure["layout"]["scene"]["aspectmode"] == "manual"
+    assert figure["layout"]["scene"]["aspectratio"] == {
+        "x": pytest.approx(4.45),
+        "y": pytest.approx(2.4),
+        "z": pytest.approx(2.4),
+    }
+    for axis_name in ("xaxis", "yaxis", "zaxis"):
+        assert figure["layout"]["scene"][axis_name]["showticklabels"] is False
+        assert figure["layout"]["scene"][axis_name]["ticks"] == ""
 
     path = traces_by_role["grid-path"]
     expected = [
