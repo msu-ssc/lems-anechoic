@@ -1,10 +1,14 @@
 :root {
     color-scheme: light;
-    --background: #f3f5f9;
-    --surface: #ffffff;
-    --surface-muted: #f7f8fb;
-    --border: #ccd3df;
-    --border-dark: #aab4c3;
+    /*
+     * Light surfaces are low-opacity tints of primary MSU blue over white.
+     * The percentages increase with visual depth.
+     */
+    --background: #f2f5fa;
+    --surface: #fcfcfe;
+    --surface-muted: #edf1f8;
+    --border: #c7d2eb;
+    --border-dark: #99add9;
     --text: #343434;
     --text-muted: #5d6673;
     --accent: #0033a0;
@@ -13,20 +17,20 @@
     --accent-ink: #ffffff;
     --brand-yellow: #ffcf00;
     --header: #0033a0;
-    --header-border: #002779;
+    --header-border: #0033a0;
     --header-text: #ffffff;
     --header-muted: #dce5f8;
     --header-divider: #6684c6;
     --input: #ffffff;
-    --menu-hover: #edf2fb;
+    --menu-hover: #e6ecf7;
     --warning: #b45309;
     --warning-surface: #fff1df;
-    --plot-paper: #ffffff;
-    --plot-background: #f7f9fc;
+    --plot-paper: #fcfcfe;
+    --plot-background: #f2f5fa;
     --plot-text: #343434;
-    --plot-grid: #dce2ec;
-    --plot-zero: #9aa8bc;
-    --plot-line: #6d87ad;
+    --plot-grid: #d3dced;
+    --plot-zero: #91a3c3;
+    --plot-line: #6f89b7;
     --plot-start: #0033a0;
     --plot-end: #c49300;
     font-family: "Segoe UI", Arial, sans-serif;
@@ -36,32 +40,36 @@
 
 :root[data-color-mode="dark"] {
     color-scheme: dark;
-    --background: #101621;
-    --surface: #182230;
-    --surface-muted: #202c3d;
-    --border: #39485e;
-    --border-dark: #52637c;
-    --text: #e8ebf0;
-    --text-muted: #aab4c2;
+    /*
+     * Dark surfaces are primary MSU blue (#0033a0) multiplied by black:
+     * background 25%, muted surface 35%, surface 45%, input 72%.
+     */
+    --background: #002678;
+    --surface: #001c58;
+    --surface-muted: #002168;
+    --border: #31528a;
+    --border-dark: #5470a3;
+    --text: #eef3ff;
+    --text-muted: #b6c4de;
     --accent: #79a7ff;
     --accent-dark: #9bbdff;
     --accent-secondary: #63aee8;
     --accent-ink: #0c1b34;
-    --header: #071b43;
-    --header-border: #284a88;
+    --header: #0033a0;
+    --header-border: #0033a0;
     --header-text: #ffffff;
     --header-muted: #c3d2ed;
-    --header-divider: #536f9f;
-    --input: #101824;
-    --menu-hover: #26354a;
+    --header-divider: #6684c6;
+    --input: #000e2d;
+    --menu-hover: #002168;
     --warning: #ffb36b;
     --warning-surface: #392518;
-    --plot-paper: #182230;
-    --plot-background: #101722;
-    --plot-text: #e8ebf0;
-    --plot-grid: #2c3b52;
-    --plot-zero: #60718b;
-    --plot-line: #6482b4;
+    --plot-paper: #001c58;
+    --plot-background: #002168;
+    --plot-text: #eef3ff;
+    --plot-grid: #274b83;
+    --plot-zero: #6680ad;
+    --plot-line: #83a1d1;
     --plot-start: #79a7ff;
     --plot-end: #ffcf00;
 }

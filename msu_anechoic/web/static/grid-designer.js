@@ -41,12 +41,12 @@ function plotColors() {
     const styles = window.getComputedStyle(document.documentElement);
     const value = (name, fallback) => styles.getPropertyValue(name).trim() || fallback;
     return {
-        paper: value("--plot-paper", "#ffffff"),
-        background: value("--plot-background", "#f7f9fc"),
+        paper: value("--plot-paper", "#fcfcfe"),
+        background: value("--plot-background", "#f2f5fa"),
         text: value("--plot-text", "#343434"),
-        grid: value("--plot-grid", "#dce2ec"),
-        zero: value("--plot-zero", "#9aa8bc"),
-        line: value("--plot-line", "#6d87ad"),
+        grid: value("--plot-grid", "#d3dced"),
+        zero: value("--plot-zero", "#91a3c3"),
+        line: value("--plot-line", "#6f89b7"),
         start: value("--plot-start", "#0033a0"),
         end: value("--plot-end", "#c49300"),
     };
