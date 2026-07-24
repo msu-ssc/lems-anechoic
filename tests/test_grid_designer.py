@@ -1,4 +1,6 @@
+import importlib
 import math
+import re
 
 import pytest
 from fastapi.testclient import TestClient
@@ -10,7 +12,9 @@ from msu_anechoic.web.app import _estimate_grid_travel_time
 from msu_anechoic.web.app import _figure
 from msu_anechoic.web.app import _flat_topped_lower_hemisphere_mesh
 from msu_anechoic.web.app import _format_duration
+from msu_anechoic.web.app import _grid_with_order
 from msu_anechoic.web.app import _interpolated_route_coordinates
+from msu_anechoic.web.app import _optimize_grid_route
 from msu_anechoic.web.app import _quantization_error_figure
 from msu_anechoic.web.app import _spherical_patch_mesh
 from msu_anechoic.web.app import _three_dimensional_figure
@@ -49,12 +53,7 @@ def test_cosine_corrected_azimuth_spacing_scales_each_elevation_row():
         cosine_correct_azimuth_spacing=True,
     )
     azimuths_by_elevation = {
-        elevation: [
-            point.azimuth
-            for point in grid.points
-            if point.elevation == elevation
-        ]
-        for elevation in (0, 60)
+        elevation: [point.azimuth for point in grid.points if point.elevation == elevation] for elevation in (0, 60)
     }
 
     assert sorted(azimuths_by_elevation[0]) == pytest.approx([0, 10, 20, 30, 40])
@@ -80,11 +79,7 @@ def test_staggering_offsets_every_other_elevation_row_by_half_a_step():
         stagger_alternate_elevation_rows=True,
     )
     azimuths_by_elevation = {
-        elevation: sorted(
-            point.azimuth
-            for point in grid.points
-            if point.elevation == elevation
-        )
+        elevation: sorted(point.azimuth for point in grid.points if point.elevation == elevation)
         for elevation in (0, 10, 20)
     }
 
@@ -122,10 +117,7 @@ def test_equal_area_pan_spacing_has_constant_spherical_strip_area():
         equal_area_pan_spacing=True,
     )
     pans = sorted(point.pan for point in grid.points)
-    equal_area_coordinates = [
-        _equal_area_pan_coordinate(pan)
-        for pan in pans
-    ]
+    equal_area_coordinates = [_equal_area_pan_coordinate(pan) for pan in pans]
     intervals = [
         right - left
         for left, right in zip(
@@ -137,10 +129,7 @@ def test_equal_area_pan_spacing_has_constant_spherical_strip_area():
     assert pans[0] == 0
     assert pans[1] == pytest.approx(10)
     assert all(interval == pytest.approx(intervals[0]) for interval in intervals)
-    assert all(
-        right - left < next_right - right
-        for left, right, next_right in zip(pans, pans[1:], pans[2:])
-    )
+    assert all(right - left < next_right - right for left, right, next_right in zip(pans, pans[1:], pans[2:]))
 
 
 def test_equal_area_pan_rows_do_not_append_a_short_final_interval():
@@ -164,17 +153,8 @@ def test_equal_area_staggering_offsets_alternate_tilt_rows_by_half_an_area_step(
         equal_area_pan_spacing=True,
         stagger_alternate_tilt_rows=True,
     )
-    pans_by_tilt = {
-        tilt: sorted(
-            point.pan
-            for point in grid.points
-            if point.tilt == tilt
-        )
-        for tilt in (0, 10, 20)
-    }
-    half_step_pan = math.degrees(
-        math.asin(math.sin(math.radians(10)) / 2)
-    )
+    pans_by_tilt = {tilt: sorted(point.pan for point in grid.points if point.tilt == tilt) for tilt in (0, 10, 20)}
+    half_step_pan = math.degrees(math.asin(math.sin(math.radians(10)) / 2))
 
     assert pans_by_tilt[20][0] == 0
     assert pans_by_tilt[10][0] == pytest.approx(half_step_pan)
@@ -188,10 +168,7 @@ def test_equal_area_pan_singularities_collapse_to_one_centered_tilt_point():
         vertical=AxisDefinition(-10, 10, 10),
         equal_area_pan_spacing=True,
     )
-    points_by_pan = {
-        pan: [point for point in grid.points if point.pan == pan]
-        for pan in (-90, 0, 90)
-    }
+    points_by_pan = {pan: [point for point in grid.points if point.pan == pan] for pan in (-90, 0, 90)}
 
     assert len(grid.points) == 5
     assert len(points_by_pan[-90]) == 1
@@ -208,11 +185,14 @@ def test_quantization_rounds_to_nearest_origin_plus_integer_step():
     assert quantize_angle(20.298, definition, label="Pan") == pytest.approx(20.1)
     assert quantize_angle(20.35, definition, label="Pan") == pytest.approx(20.6)
     assert quantize_angle(-0.15, definition, label="Pan") == pytest.approx(-0.4)
-    assert quantize_angle(
-        20.298,
-        QuantizationDefinition(enabled=False, origin=0.1, step=0.5),
-        label="Pan",
-    ) == 20.298
+    assert (
+        quantize_angle(
+            20.298,
+            QuantizationDefinition(enabled=False, origin=0.1, step=0.5),
+            label="Pan",
+        )
+        == 20.298
+    )
 
 
 def test_grid_retains_ideal_and_quantized_coordinates():
@@ -430,7 +410,9 @@ def test_turntable_mesh_is_a_flat_topped_lower_hemisphere():
     assert min(z) == pytest.approx(-0.5)
     assert max(z) == pytest.approx(0.0, abs=1e-12)
     assert all(value <= 1e-12 for value in z)
-    assert max(math.sqrt(x_value**2 + y_value**2 + z_value**2) for x_value, y_value, z_value in zip(x, y, z)) == pytest.approx(0.5)
+    assert max(
+        math.sqrt(x_value**2 + y_value**2 + z_value**2) for x_value, y_value, z_value in zip(x, y, z)
+    ) == pytest.approx(0.5)
     assert len(i) == len(j) == len(k)
     assert len(i) > 0
 
@@ -542,9 +524,7 @@ def test_long_pan_tilt_routes_are_interpolated_in_pan_and_tilt():
     midpoint_azimuth, midpoint_elevation = pan_tilt_to_az_el(40, 30)
 
     assert len(route) == 51
-    assert route[25] == pytest.approx(
-        _az_el_unit_vector(midpoint_azimuth, midpoint_elevation)
-    )
+    assert route[25] == pytest.approx(_az_el_unit_vector(midpoint_azimuth, midpoint_elevation))
     assert all(math.dist(point, (0.0, 0.0, 0.0)) == pytest.approx(1.0) for point in route)
 
 
@@ -614,6 +594,25 @@ def test_grid_travel_time_includes_both_origin_legs(monkeypatch):
     ]
 
 
+def test_two_opt_improves_an_inefficient_pan_tilt_route():
+    grid = design_grid(
+        input_system="pan_tilt",
+        horizontal=AxisDefinition(10, 40, 10),
+        vertical=AxisDefinition(0, 0, 1),
+    )
+    inefficient_grid = _grid_with_order(grid, (0, 2, 1, 3))
+    original_seconds = _estimate_grid_travel_time(inefficient_grid)
+
+    optimized_order, optimized_seconds = _optimize_grid_route(
+        inefficient_grid,
+        max_seconds=0.05,
+        random_seed=1,
+    )
+
+    assert sorted(optimized_order) == [0, 1, 2, 3]
+    assert optimized_seconds < original_seconds
+
+
 @pytest.mark.parametrize(
     ("seconds", "expected"),
     [
@@ -669,10 +668,7 @@ def test_three_dimensional_figure_contains_requested_geometry_and_az_el_grid():
         assert figure["layout"]["scene"][axis_name]["ticks"] == ""
 
     points = traces_by_role["grid-points"]
-    expected = [
-        _az_el_unit_vector(point.azimuth, point.elevation)
-        for point in grid.points
-    ]
+    expected = [_az_el_unit_vector(point.azimuth, point.elevation) for point in grid.points]
     assert list(zip(points["x"], points["y"], points["z"])) == pytest.approx(expected)
     assert points["mode"] == "markers"
 
@@ -755,9 +751,7 @@ def test_grid_designer_page_loads():
         '<section class="quantization-section"',
         1,
     )[1].split("</section>", 1)[0]
-    assert quantization_markup.index('name="quantize_pan"') < quantization_markup.index(
-        'name="quantize_tilt"'
-    )
+    assert quantization_markup.index('name="quantize_pan"') < quantization_markup.index('name="quantize_tilt"')
     assert "<legend" not in quantization_markup
     tilt_control = response.text.split('name="quantize_tilt"', 1)[1].split(">", 1)[0]
     pan_control = response.text.split('name="quantize_pan"', 1)[1].split(">", 1)[0]
@@ -851,14 +845,8 @@ def test_two_dimensional_views_include_non_ranging_inaccessible_masks():
     assert '"xaxis.range": xRange' in script.text
     assert '"yaxis.range": yRange' in script.text
     assert azimuth_elevation_figure["layout"]["meta"]["coordinate_system"] == "az_el"
-    assert (
-        azimuth_elevation_figure["layout"]["meta"]["maximum_turntable_tilt"]
-        == MAX_TURNTABLE_TILT
-    )
-    assert (
-        azimuth_elevation_figure["layout"]["meta"]["inaccessible_regions"]
-        is INACCESSIBLE_AZ_EL_REGIONS
-    )
+    assert azimuth_elevation_figure["layout"]["meta"]["maximum_turntable_tilt"] == MAX_TURNTABLE_TILT
+    assert azimuth_elevation_figure["layout"]["meta"]["inaccessible_regions"] is INACCESSIBLE_AZ_EL_REGIONS
     assert pan_tilt_figure["layout"]["meta"] == {
         "coordinate_system": "pan_tilt",
         "maximum_turntable_tilt": MAX_TURNTABLE_TILT,
@@ -1021,6 +1009,11 @@ def test_pan_tilt_preview_contains_three_plot_payloads():
     assert response.text.count("Show line segments") == 3
     assert "<h2" in response.text
     assert "Grid info" in response.text
+    assert "Path optimization" in response.text
+    assert 'name="optimization_max_time"' in response.text
+    assert 'value="1.0"' in response.text
+    assert 'hx-get="/grid-designer/optimize"' in response.text
+    assert '<th scope="row">Original path</th>' in response.text
     assert 'class="grid-info-card"' in response.text
     assert "Estimated travel time" in response.text
     assert 'class="grid-info-table"' in response.text
@@ -1030,10 +1023,7 @@ def test_pan_tilt_preview_contains_three_plot_payloads():
     assert ">Columns</th>" not in response.text
     assert '<th scope="row">Grid 1</th>' in response.text
     assert "seconds" in response.text
-    assert (
-        'data-plot-visibility-controls="three-dimensional-figure"'
-        in response.text
-    )
+    assert 'data-plot-visibility-controls="three-dimensional-figure"' in response.text
     assert "data-rotation-toggle" in response.text
     assert "data-rotation-speed" in response.text
     assert "data-rotation-speed-output" in response.text
@@ -1091,5 +1081,72 @@ def test_preview_combines_repeated_simple_grid_parameters():
     assert '<th scope="row">Combined grid</th>' in response.text
     assert '<th scope="row">Sparse</th>' in response.text
     assert '<th scope="row">Dense</th>' in response.text
-    assert response.text.count('<th scope="row">') == 3
     assert response.text.count('class="grid-info-subgrid"') == 2
+
+
+def test_optimization_endpoint_records_and_loads_previous_paths(monkeypatch):
+    starting_orders = []
+
+    def fake_optimize(grid, *, starting_order, max_seconds, random_seed):
+        assert max_seconds == 0.01
+        assert random_seed is not None
+        starting_orders.append(starting_order)
+        return (
+            tuple(reversed(starting_order)),
+            _estimate_grid_travel_time(grid) - len(starting_orders),
+        )
+
+    app_module = importlib.import_module("msu_anechoic.web.app")
+    monkeypatch.setattr(app_module, "_optimize_grid_route", fake_optimize)
+    params = {
+        "input_system": "pan_tilt",
+        "pan_min": -10,
+        "pan_max": 10,
+        "pan_step": 10,
+        "tilt_min": 0,
+        "tilt_max": 0,
+        "tilt_step": 1,
+        "optimization_max_time": 0.01,
+    }
+    client = TestClient(app)
+
+    optimized = client.get("/grid-designer/optimize", params=params)
+
+    assert optimized.status_code == 200
+    assert '<th scope="row">Original path</th>' in optimized.text
+    assert '<th scope="row">Optimized path #1</th>' in optimized.text
+    assert len(re.findall(r">\s*Load\s*</button>", optimized.text)) == 1
+    assert '<th scope="row">Grid 1</th>' not in optimized.text
+    session_match = re.search(
+        r'name="optimization_session_id"\s+value="([^"]+)"',
+        optimized.text,
+    )
+    assert session_match
+
+    loaded = client.get(
+        "/grid-designer/optimization/load",
+        params={
+            **params,
+            "optimization_session_id": session_match.group(1),
+            "optimization_path": 0,
+        },
+    )
+
+    assert loaded.status_code == 200
+    assert "Loaded Original path." in loaded.text
+    assert '<th scope="row">Original path</th>' in loaded.text
+    assert '<th scope="row">Optimized path #1</th>' in loaded.text
+
+    continued = client.get(
+        "/grid-designer/optimize",
+        params={
+            **params,
+            "optimization_session_id": session_match.group(1),
+        },
+    )
+
+    assert continued.status_code == 200
+    assert starting_orders[1] == tuple(reversed(starting_orders[0]))
+    assert '<th scope="row">Original path</th>' in continued.text
+    assert '<th scope="row">Optimized path #1</th>' in continued.text
+    assert '<th scope="row">Optimized path #2</th>' in continued.text

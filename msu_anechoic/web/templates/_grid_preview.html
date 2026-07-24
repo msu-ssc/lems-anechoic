@@ -38,6 +38,96 @@
             </article>
         </section>
 
+        <section class="path-optimization-section" aria-labelledby="path-optimization-heading">
+            <article class="path-optimization-card">
+                <div class="path-optimization-heading">
+                    <div>
+                        <h2 id="path-optimization-heading">Path optimization</h2>
+                        <p>Optimize the origin-to-grid-to-origin route in pan/tilt space.</p>
+                    </div>
+                    <form id="path-optimization-form" class="path-optimization-form">
+                        <input
+                            type="hidden"
+                            name="optimization_session_id"
+                            value="{{ optimization_session_id }}"
+                        >
+                        <label>
+                            Max time
+                            <span class="number-input optimization-time-input">
+                                <input
+                                    type="number"
+                                    name="optimization_max_time"
+                                    value="{{ optimization_max_time_seconds }}"
+                                    min="0.01"
+                                    max="60"
+                                    step="any"
+                                    required
+                                >
+                                <b>s</b>
+                            </span>
+                        </label>
+                        <button
+                            type="button"
+                            class="primary-button"
+                            hx-get="/grid-designer/optimize"
+                            hx-include="#grid-form, #path-optimization-form"
+                            hx-target="#grid-preview"
+                            hx-swap="outerHTML"
+                            hx-indicator="#optimization-indicator"
+                            hx-disabled-elt="this"
+                        >
+                            Calculate
+                        </button>
+                        <span id="optimization-indicator" class="htmx-indicator">
+                            Calculating…
+                        </span>
+                    </form>
+                </div>
+
+                {% if optimization_status %}
+                    <p class="optimization-status" role="status">{{ optimization_status }}</p>
+                {% endif %}
+
+                <div class="optimization-history-table-wrap">
+                    <table class="optimization-history-table">
+                        <thead>
+                            <tr>
+                                <th scope="col">Path</th>
+                                <th scope="col">Estimated travel time</th>
+                                <th scope="col"><span class="visually-hidden">Action</span></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for path in optimization_paths %}
+                                <tr{% if path.is_active %} class="active-optimization-path"{% endif %}>
+                                    <th scope="row">{{ path.name }}</th>
+                                    <td title="{{ '%.1f' | format(path.estimated_travel_time_seconds) }} seconds">
+                                        {{ path.estimated_travel_time_label }}
+                                    </td>
+                                    <td>
+                                        <button
+                                            type="button"
+                                            class="text-button"
+                                            hx-get="/grid-designer/optimization/load"
+                                            hx-include="#grid-form, #path-optimization-form"
+                                            hx-vals='{"optimization_path": {{ path.index }}}'
+                                            hx-target="#grid-preview"
+                                            hx-swap="outerHTML"
+                                            hx-indicator="#optimization-indicator"
+                                            hx-disabled-elt="this"
+                                            {% if path.is_active or not optimization_session_id %}disabled{% endif %}
+                                        >
+                                            {% if path.is_active %}Loaded{% else %}Load{% endif %}
+                                        </button>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </article>
+        </section>
+
         <div class="preview-heading">
             <h2>Grid preview</h2>
             <div class="grid-summary">

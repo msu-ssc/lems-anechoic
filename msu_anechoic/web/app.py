@@ -2,8 +2,16 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
+import random
+import secrets
+import threading
+import time
+from collections import OrderedDict
+from dataclasses import dataclass
+from dataclasses import replace
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -64,6 +72,10 @@ DEFAULTS = {
 
 ROUTE_INTERPOLATION_THRESHOLD_DEGREES = 10.0
 ROUTE_MAX_STEP_DEGREES = 2.0
+DEFAULT_OPTIMIZATION_TIME_SECONDS = 1.0
+MAX_OPTIMIZATION_TIME_SECONDS = 60.0
+MAX_OPTIMIZATION_SESSIONS = 32
+MAX_OPTIMIZATION_HISTORY = 50
 
 
 def _precompute_inaccessible_az_el_regions() -> tuple[dict, ...]:
@@ -77,12 +89,7 @@ def _precompute_inaccessible_az_el_regions() -> tuple[dict, ...]:
     ):
         azimuths = tuple(range(azimuth_start, azimuth_end + 1))
         elevations = tuple(
-            math.degrees(
-                math.atan(
-                    tilt_tangent * math.cos(math.radians(azimuth))
-                )
-            )
-            for azimuth in azimuths
+            math.degrees(math.atan(tilt_tangent * math.cos(math.radians(azimuth)))) for azimuth in azimuths
         )
         regions.append(
             {
@@ -116,37 +123,297 @@ def _shortest_angular_delta(start: float, end: float) -> float:
     return delta
 
 
+def _estimate_move_travel_time(
+    start: tuple[float, float],
+    end: tuple[float, float],
+) -> float:
+    """Estimate one simultaneous pan/tilt move."""
+    pan_delta = abs(_shortest_angular_delta(start[0], end[0]))
+    tilt_delta = abs(end[1] - start[1])
+    horizontal_seconds = (
+        experiment._estimate_time(
+            pan_delta,
+            kind="horizontal",
+            trace=False,
+        )
+        if pan_delta > 1e-12
+        else 0.0
+    )
+    vertical_seconds = (
+        experiment._estimate_time(
+            tilt_delta,
+            kind="vertical",
+            trace=False,
+        )
+        if tilt_delta > 1e-12
+        else 0.0
+    )
+    return max(0.0, horizontal_seconds, vertical_seconds)
+
+
+def _ordered_grid_travel_time(
+    points: tuple[GridPoint, ...],
+    order: tuple[int, ...],
+) -> float:
+    """Estimate origin-to-route-to-origin travel for a point permutation."""
+    total_seconds = 0.0
+    previous = (0.0, 0.0)
+    for point_index in order:
+        point = points[point_index]
+        current = (point.pan, point.tilt)
+        total_seconds += _estimate_move_travel_time(previous, current)
+        previous = current
+    total_seconds += _estimate_move_travel_time(previous, (0.0, 0.0))
+    return total_seconds
+
+
 def _estimate_grid_travel_time(grid: DesignedGrid) -> float:
     """Estimate a complete origin-to-grid-to-origin excursion."""
-    total_seconds = 0.0
-    route = (
-        (0.0, 0.0),
-        *((point.pan, point.tilt) for point in grid.points),
-        (0.0, 0.0),
+    return _ordered_grid_travel_time(
+        grid.points,
+        tuple(range(len(grid.points))),
     )
-    for start, end in zip(route, route[1:]):
-        pan_delta = abs(_shortest_angular_delta(start[0], end[0]))
-        tilt_delta = abs(end[1] - start[1])
-        horizontal_seconds = (
-            experiment._estimate_time(
-                pan_delta,
-                kind="horizontal",
-                trace=False,
-            )
-            if pan_delta > 1e-12
-            else 0.0
+
+
+def _two_opt_delta(
+    points: tuple[GridPoint, ...],
+    order: list[int],
+    start_index: int,
+    end_index: int,
+) -> float:
+    """Return the travel-time change from reversing one route segment."""
+    before = (
+        (0.0, 0.0)
+        if start_index == 0
+        else (
+            points[order[start_index - 1]].pan,
+            points[order[start_index - 1]].tilt,
         )
-        vertical_seconds = (
-            experiment._estimate_time(
-                tilt_delta,
-                kind="vertical",
-                trace=False,
-            )
-            if tilt_delta > 1e-12
-            else 0.0
+    )
+    first = (
+        points[order[start_index]].pan,
+        points[order[start_index]].tilt,
+    )
+    last = (
+        points[order[end_index]].pan,
+        points[order[end_index]].tilt,
+    )
+    after = (
+        (0.0, 0.0)
+        if end_index == len(order) - 1
+        else (
+            points[order[end_index + 1]].pan,
+            points[order[end_index + 1]].tilt,
         )
-        total_seconds += max(0.0, horizontal_seconds, vertical_seconds)
-    return total_seconds
+    )
+    old_seconds = _estimate_move_travel_time(before, first) + _estimate_move_travel_time(last, after)
+    new_seconds = _estimate_move_travel_time(before, last) + _estimate_move_travel_time(first, after)
+    return new_seconds - old_seconds
+
+
+def _optimize_grid_route(
+    grid: DesignedGrid,
+    *,
+    starting_order: tuple[int, ...] | None = None,
+    max_seconds: float = DEFAULT_OPTIMIZATION_TIME_SECONDS,
+    random_seed: int | None = None,
+) -> tuple[tuple[int, ...], float]:
+    """Improve a route with bounded 2-opt search and randomized 3-opt kicks."""
+    point_count = len(grid.points)
+    if starting_order is None:
+        starting_order = tuple(range(point_count))
+    if tuple(sorted(starting_order)) != tuple(range(point_count)):
+        raise ValueError("The starting route must contain every grid point exactly once.")
+    if not math.isfinite(max_seconds) or max_seconds <= 0.0:
+        raise ValueError("Optimization time must be greater than zero.")
+
+    deadline = time.perf_counter() + max_seconds
+    randomizer = random.Random(random_seed)
+    best_order = list(starting_order)
+    best_seconds = _ordered_grid_travel_time(grid.points, tuple(best_order))
+    working_order = list(best_order)
+    working_seconds = best_seconds
+    if point_count < 2:
+        return tuple(best_order), best_seconds
+
+    exhaustive_search = point_count <= 250
+    while time.perf_counter() < deadline:
+        best_delta = -1e-9
+        best_move: tuple[int, int] | None = None
+
+        if exhaustive_search:
+            pairs = (
+                (start_index, end_index)
+                for start_index in range(point_count - 1)
+                for end_index in range(start_index + 1, point_count)
+            )
+        else:
+            pairs = (tuple(sorted(randomizer.sample(range(point_count), 2))) for _ in range(5_000))
+
+        for pair_index, (start_index, end_index) in enumerate(pairs):
+            if pair_index % 128 == 0 and time.perf_counter() >= deadline:
+                break
+            delta = _two_opt_delta(
+                grid.points,
+                working_order,
+                start_index,
+                end_index,
+            )
+            if delta < best_delta:
+                best_delta = delta
+                best_move = (start_index, end_index)
+
+        if best_move is not None:
+            start_index, end_index = best_move
+            working_order[start_index : end_index + 1] = reversed(working_order[start_index : end_index + 1])
+            working_seconds += best_delta
+            if working_seconds < best_seconds - 1e-9:
+                best_order = list(working_order)
+                best_seconds = working_seconds
+            continue
+
+        if point_count < 6:
+            break
+
+        # Swap two adjacent route segments. This changes three connecting
+        # edges and moves the next 2-opt pass into a different local basin.
+        first_cut, second_cut, third_cut = sorted(randomizer.sample(range(1, point_count), 3))
+        working_order = (
+            best_order[:first_cut]
+            + best_order[second_cut:third_cut]
+            + best_order[first_cut:second_cut]
+            + best_order[third_cut:]
+        )
+        working_seconds = _ordered_grid_travel_time(
+            grid.points,
+            tuple(working_order),
+        )
+
+    # Recalculate to avoid reporting accumulated floating-point delta error.
+    best_result = tuple(best_order)
+    return best_result, _ordered_grid_travel_time(grid.points, best_result)
+
+
+def _grid_with_order(
+    grid: DesignedGrid,
+    order: tuple[int, ...],
+) -> DesignedGrid:
+    """Return a grid whose traversal follows the supplied point permutation."""
+    return replace(
+        grid,
+        points=tuple(
+            replace(
+                grid.points[point_index],
+                traversal_index=traversal_index,
+            )
+            for traversal_index, point_index in enumerate(order, start=1)
+        ),
+    )
+
+
+@dataclass(frozen=True)
+class _OptimizationPath:
+    name: str
+    order: tuple[int, ...]
+    estimated_seconds: float
+
+
+@dataclass
+class _OptimizationSession:
+    fingerprint: str
+    paths: list[_OptimizationPath]
+    active_path_index: int = 0
+    next_optimization_number: int = 1
+
+
+_optimization_sessions: OrderedDict[str, _OptimizationSession] = OrderedDict()
+_optimization_sessions_lock = threading.Lock()
+
+
+def _grid_fingerprint(grid: DesignedGrid) -> str:
+    """Identify the generated point set and its original traversal order."""
+    digest = hashlib.sha256(grid.input_system.encode("ascii"))
+    for point in grid.points:
+        digest.update(
+            (f"|{point.pan:.15g},{point.tilt:.15g},{point.ideal_pan:.15g},{point.ideal_tilt:.15g}").encode("ascii")
+        )
+    return digest.hexdigest()
+
+
+def _new_optimization_session(grid: DesignedGrid) -> tuple[str, _OptimizationSession]:
+    session_id = secrets.token_urlsafe(18)
+    original_order = tuple(range(len(grid.points)))
+    session = _OptimizationSession(
+        fingerprint=_grid_fingerprint(grid),
+        paths=[
+            _OptimizationPath(
+                name="Original path",
+                order=original_order,
+                estimated_seconds=_ordered_grid_travel_time(
+                    grid.points,
+                    original_order,
+                ),
+            )
+        ],
+    )
+    with _optimization_sessions_lock:
+        _optimization_sessions[session_id] = session
+        _optimization_sessions.move_to_end(session_id)
+        while len(_optimization_sessions) > MAX_OPTIMIZATION_SESSIONS:
+            _optimization_sessions.popitem(last=False)
+    return session_id, session
+
+
+def _get_optimization_session(
+    session_id: str,
+    grid: DesignedGrid,
+) -> _OptimizationSession | None:
+    if not session_id:
+        return None
+    with _optimization_sessions_lock:
+        session = _optimization_sessions.get(session_id)
+        if session is None or session.fingerprint != _grid_fingerprint(grid):
+            return None
+        _optimization_sessions.move_to_end(session_id)
+        return session
+
+
+def _optimization_context(
+    grid: DesignedGrid,
+    *,
+    session_id: str = "",
+    session: _OptimizationSession | None = None,
+    max_time_seconds: float = DEFAULT_OPTIMIZATION_TIME_SECONDS,
+    status: str | None = None,
+) -> dict:
+    if session is None:
+        paths = [
+            _OptimizationPath(
+                name="Original path",
+                order=tuple(range(len(grid.points))),
+                estimated_seconds=_estimate_grid_travel_time(grid),
+            )
+        ]
+        active_path_index = 0
+    else:
+        paths = session.paths
+        active_path_index = session.active_path_index
+
+    return {
+        "optimization_session_id": session_id,
+        "optimization_max_time_seconds": max_time_seconds,
+        "optimization_status": status,
+        "optimization_paths": [
+            {
+                "index": index,
+                "name": path.name,
+                "estimated_travel_time_seconds": path.estimated_seconds,
+                "estimated_travel_time_label": _format_duration(path.estimated_seconds),
+                "is_active": index == active_path_index,
+            }
+            for index, path in enumerate(paths)
+        ],
+    }
 
 
 def _format_duration(seconds: float) -> str:
@@ -557,11 +824,7 @@ def _figure(
             "meta": {
                 "coordinate_system": coordinate_system,
                 "maximum_turntable_tilt": MAX_TURNTABLE_TILT,
-                **(
-                    {"inaccessible_regions": INACCESSIBLE_AZ_EL_REGIONS}
-                    if coordinate_system == "az_el"
-                    else {}
-                ),
+                **({"inaccessible_regions": INACCESSIBLE_AZ_EL_REGIONS} if coordinate_system == "az_el" else {}),
             },
             "xaxis": {
                 "title": {"text": x_title, "font": {"size": 16}},
@@ -603,25 +866,13 @@ def _quantization_error_figure(
     coordinate_system: Literal["az_el", "pan_tilt"],
 ) -> dict:
     if coordinate_system == "az_el":
-        x = [
-            _angular_error(point.azimuth, point.ideal_azimuth)
-            for point in grid.points
-        ]
-        y = [
-            point.elevation - point.ideal_elevation
-            for point in grid.points
-        ]
+        x = [_angular_error(point.azimuth, point.ideal_azimuth) for point in grid.points]
+        y = [point.elevation - point.ideal_elevation for point in grid.points]
         x_title = "Azimuth error (°)"
         y_title = "Elevation error (°)"
     else:
-        x = [
-            _angular_error(point.pan, point.ideal_pan)
-            for point in grid.points
-        ]
-        y = [
-            point.tilt - point.ideal_tilt
-            for point in grid.points
-        ]
+        x = [_angular_error(point.pan, point.ideal_pan) for point in grid.points]
+        y = [point.tilt - point.ideal_tilt for point in grid.points]
         x_title = "Pan error (°)"
         y_title = "Tilt error (°)"
 
@@ -637,23 +888,25 @@ def _quantization_error_figure(
         for point in grid.points
     ]
     return {
-        "data": [{
-            "type": "scatter",
-            "mode": "markers",
-            "x": x,
-            "y": y,
-            "customdata": point_numbers,
-            "text": hover_text,
-            "hovertemplate": "%{text}<extra></extra>",
-            "marker": {
-                "color": point_numbers,
-                "colorscale": [[0, "#0033a0"], [1, "#c49300"]],
-                "size": 9,
-                "line": {"color": "#ffffff", "width": 1},
-            },
-            "name": "Quantization error",
-            "meta": {"role": "quantization-error"},
-        }],
+        "data": [
+            {
+                "type": "scatter",
+                "mode": "markers",
+                "x": x,
+                "y": y,
+                "customdata": point_numbers,
+                "text": hover_text,
+                "hovertemplate": "%{text}<extra></extra>",
+                "marker": {
+                    "color": point_numbers,
+                    "colorscale": [[0, "#0033a0"], [1, "#c49300"]],
+                    "size": 9,
+                    "line": {"color": "#ffffff", "width": 1},
+                },
+                "name": "Quantization error",
+                "meta": {"role": "quantization-error"},
+            }
+        ],
         "layout": {
             "paper_bgcolor": "#e6eeff",
             "plot_bgcolor": "#d1e0ff",
@@ -693,10 +946,7 @@ def _quantization_error_figure(
 
 
 def _three_dimensional_figure(grid: DesignedGrid) -> dict:
-    coordinates = [
-        _az_el_unit_vector(point.azimuth, point.elevation)
-        for point in grid.points
-    ]
+    coordinates = [_az_el_unit_vector(point.azimuth, point.elevation) for point in grid.points]
     x = [coordinate[0] for coordinate in coordinates]
     y = [coordinate[1] for coordinate in coordinates]
     z = [coordinate[2] for coordinate in coordinates]
@@ -900,15 +1150,15 @@ def _preview_context(
     grid: DesignedGrid,
     *,
     grid_info_rows: list[dict] | None = None,
+    optimization_context: dict | None = None,
 ) -> dict:
     estimated_travel_time_seconds = _estimate_grid_travel_time(grid)
     return {
         "grid": grid,
         "grid_info_rows": grid_info_rows or [_grid_info_row("Grid 1", grid)],
+        **(optimization_context or _optimization_context(grid)),
         "estimated_travel_time_seconds": estimated_travel_time_seconds,
-        "estimated_travel_time_label": _format_duration(
-            estimated_travel_time_seconds
-        ),
+        "estimated_travel_time_label": _format_duration(estimated_travel_time_seconds),
         "az_el_figure_json": json.dumps(_figure(grid, coordinate_system="az_el"), allow_nan=False),
         "pan_tilt_figure_json": json.dumps(_figure(grid, coordinate_system="pan_tilt"), allow_nan=False),
         "three_dimensional_figure_json": json.dumps(_three_dimensional_figure(grid), allow_nan=False),
@@ -1011,12 +1261,8 @@ def _simple_grid_definition(
                 values["elevation_step"],
             ),
             name=str(values["grid_name"]),
-            cosine_correct_azimuth_spacing=bool(
-                values["cosine_correct_azimuth_spacing"]
-            ),
-            stagger_alternate_elevation_rows=bool(
-                values["stagger_alternate_elevation_rows"]
-            ),
+            cosine_correct_azimuth_spacing=bool(values["cosine_correct_azimuth_spacing"]),
+            stagger_alternate_elevation_rows=bool(values["stagger_alternate_elevation_rows"]),
         )
     return SimpleGridDefinition(
         horizontal=AxisDefinition(
@@ -1031,9 +1277,7 @@ def _simple_grid_definition(
         ),
         name=str(values["grid_name"]),
         equal_area_pan_spacing=bool(values["equal_area_pan_spacing"]),
-        stagger_alternate_tilt_rows=bool(
-            values["stagger_alternate_tilt_rows"]
-        ),
+        stagger_alternate_tilt_rows=bool(values["stagger_alternate_tilt_rows"]),
     )
 
 
@@ -1070,26 +1314,20 @@ def _parse_simple_grids(
             "tilt_step",
         )
     )
-    raw_values = {
-        name: request.query_params.getlist(name)
-        for name in names
-    }
+    raw_values = {name: request.query_params.getlist(name) for name in names}
     grid_count = max((len(values) for values in raw_values.values()), default=0) or 1
     raw_grid_names = request.query_params.getlist("grid_name")
     if raw_grid_names and len(raw_grid_names) != grid_count:
-        raise GridValidationError(
-            "Every simple grid must have one name."
-        )
+        raise GridValidationError("Every simple grid must have one name.")
     for name, values in raw_values.items():
         if not values:
             raw_values[name] = [str(DEFAULTS[name])] * grid_count
     if any(len(values) != grid_count for values in raw_values.values()):
-        raise GridValidationError(
-            "Every simple grid must have a complete set of axis parameters."
-        )
+        raise GridValidationError("Every simple grid must have a complete set of axis parameters.")
 
     grids = []
     for index in range(grid_count):
+
         def field_label(name: str) -> str:
             label = (
                 name.replace("_min", " minimum")
@@ -1119,14 +1357,94 @@ def _parse_simple_grids(
                 "stagger_alternate_tilt_rows",
             )
         )
-        values.update(
-            {
-                option: request.query_params.get(f"{option}_{index}") == "true"
-                for option in options
-            }
-        )
+        values.update({option: request.query_params.get(f"{option}_{index}") == "true" for option in options})
         grids.append(_simple_grid_definition(input_system, values))
     return tuple(grids)
+
+
+def _requested_grid(
+    request: Request,
+    *,
+    include_info_rows: bool = True,
+) -> tuple[DesignedGrid, list[dict]]:
+    input_system = request.query_params.get("input_system", "az_el")
+    if input_system not in ("az_el", "pan_tilt"):
+        raise GridValidationError("Select either azimuth/elevation or pan/tilt input.")
+    grids = _parse_simple_grids(request, input_system)
+    tilt_origin = _parse_number(
+        request.query_params.get(
+            "tilt_quantization_origin",
+            str(DEFAULTS["tilt_quantization_origin"]),
+        ),
+        label="tilt quantization origin",
+    )
+    tilt_step = _parse_number(
+        request.query_params.get(
+            "tilt_quantization_step",
+            str(DEFAULTS["tilt_quantization_step"]),
+        ),
+        label="tilt quantization step size",
+    )
+    pan_origin = _parse_number(
+        request.query_params.get(
+            "pan_quantization_origin",
+            str(DEFAULTS["pan_quantization_origin"]),
+        ),
+        label="pan quantization origin",
+    )
+    pan_step = _parse_number(
+        request.query_params.get(
+            "pan_quantization_step",
+            str(DEFAULTS["pan_quantization_step"]),
+        ),
+        label="pan quantization step size",
+    )
+    quantize_tilt = request.query_params.get("quantize_tilt") == "true"
+    quantize_pan = request.query_params.get("quantize_pan") == "true"
+    reject_inaccessible = request.query_params.get("reject_inaccessible") == "true"
+    grid = _build_grid(
+        input_system=input_system,
+        grids=grids,
+        quantize_tilt=quantize_tilt,
+        tilt_quantization_origin=tilt_origin,
+        tilt_quantization_step=tilt_step,
+        quantize_pan=quantize_pan,
+        pan_quantization_origin=pan_origin,
+        pan_quantization_step=pan_step,
+        reject_inaccessible=reject_inaccessible,
+    )
+    grid_info_rows = (
+        _build_grid_info_rows(
+            combined_grid=grid,
+            input_system=input_system,
+            grids=grids,
+            quantize_tilt=quantize_tilt,
+            tilt_quantization_origin=tilt_origin,
+            tilt_quantization_step=tilt_step,
+            quantize_pan=quantize_pan,
+            pan_quantization_origin=pan_origin,
+            pan_quantization_step=pan_step,
+            reject_inaccessible=reject_inaccessible,
+        )
+        if include_info_rows
+        else []
+    )
+    return grid, grid_info_rows
+
+
+def _parse_optimization_time(request: Request) -> float:
+    max_seconds = _parse_number(
+        request.query_params.get(
+            "optimization_max_time",
+            str(DEFAULT_OPTIMIZATION_TIME_SECONDS),
+        ),
+        label="maximum optimization time",
+    )
+    if max_seconds <= 0.0:
+        raise GridValidationError("Maximum optimization time must be greater than zero.")
+    if max_seconds > MAX_OPTIMIZATION_TIME_SECONDS:
+        raise GridValidationError("Maximum optimization time cannot exceed 60 seconds.")
+    return max_seconds
 
 
 @app.get("/", include_in_schema=False)
@@ -1177,59 +1495,124 @@ def grid_designer(request: Request) -> HTMLResponse:
 
 
 @app.get("/grid-designer/preview", response_class=HTMLResponse)
-def grid_designer_preview(
-    request: Request,
-    input_system: Literal["az_el", "pan_tilt"] = "az_el",
-    quantize_tilt: bool = False,
-    tilt_quantization_origin: str = str(DEFAULTS["tilt_quantization_origin"]),
-    tilt_quantization_step: str = str(DEFAULTS["tilt_quantization_step"]),
-    quantize_pan: bool = False,
-    pan_quantization_origin: str = str(DEFAULTS["pan_quantization_origin"]),
-    pan_quantization_step: str = str(DEFAULTS["pan_quantization_step"]),
-    reject_inaccessible: bool = False,
-) -> HTMLResponse:
+def grid_designer_preview(request: Request) -> HTMLResponse:
     try:
-        grids = _parse_simple_grids(request, input_system)
-        tilt_origin = _parse_number(
-            tilt_quantization_origin,
-            label="tilt quantization origin",
-        )
-        tilt_step = _parse_number(
-            tilt_quantization_step,
-            label="tilt quantization step size",
-        )
-        pan_origin = _parse_number(
-            pan_quantization_origin,
-            label="pan quantization origin",
-        )
-        pan_step = _parse_number(
-            pan_quantization_step,
-            label="pan quantization step size",
-        )
-        grid = _build_grid(
-            input_system=input_system,
-            grids=grids,
-            quantize_tilt=quantize_tilt,
-            tilt_quantization_origin=tilt_origin,
-            tilt_quantization_step=tilt_step,
-            quantize_pan=quantize_pan,
-            pan_quantization_origin=pan_origin,
-            pan_quantization_step=pan_step,
-            reject_inaccessible=reject_inaccessible,
-        )
-        grid_info_rows = _build_grid_info_rows(
-            combined_grid=grid,
-            input_system=input_system,
-            grids=grids,
-            quantize_tilt=quantize_tilt,
-            tilt_quantization_origin=tilt_origin,
-            tilt_quantization_step=tilt_step,
-            quantize_pan=quantize_pan,
-            pan_quantization_origin=pan_origin,
-            pan_quantization_step=pan_step,
-            reject_inaccessible=reject_inaccessible,
-        )
+        grid, grid_info_rows = _requested_grid(request)
         context = _preview_context(grid, grid_info_rows=grid_info_rows)
+    except GridValidationError as exc:
+        context = {"grid": None, "error": str(exc)}
+
+    return templates.TemplateResponse(
+        request=request,
+        name="_grid_preview.html",
+        context=context,
+    )
+
+
+@app.get("/grid-designer/optimize", response_class=HTMLResponse)
+def optimize_grid_path(request: Request) -> HTMLResponse:
+    try:
+        grid, _ = _requested_grid(request, include_info_rows=False)
+        max_seconds = _parse_optimization_time(request)
+        requested_session_id = request.query_params.get(
+            "optimization_session_id",
+            "",
+        )
+        session = _get_optimization_session(requested_session_id, grid)
+        if session is None:
+            session_id, session = _new_optimization_session(grid)
+        else:
+            session_id = requested_session_id
+
+        starting_path = session.paths[-1]
+        optimized_order, optimized_seconds = _optimize_grid_route(
+            grid,
+            starting_order=starting_path.order,
+            max_seconds=max_seconds,
+            random_seed=secrets.randbits(64),
+        )
+
+        if optimized_seconds < starting_path.estimated_seconds - 1e-6:
+            path = _OptimizationPath(
+                name=(f"Optimized path #{session.next_optimization_number}"),
+                order=optimized_order,
+                estimated_seconds=optimized_seconds,
+            )
+            with _optimization_sessions_lock:
+                session.next_optimization_number += 1
+                session.paths.append(path)
+                if len(session.paths) > MAX_OPTIMIZATION_HISTORY:
+                    session.paths = [
+                        session.paths[0],
+                        *session.paths[-(MAX_OPTIMIZATION_HISTORY - 1) :],
+                    ]
+                session.active_path_index = len(session.paths) - 1
+            improvement = starting_path.estimated_seconds - optimized_seconds
+            status = f"Found a path {_format_duration(improvement)} faster than the previous best."
+        else:
+            with _optimization_sessions_lock:
+                session.active_path_index = len(session.paths) - 1
+            path = session.paths[session.active_path_index]
+            status = f"No faster path found in {max_seconds:g} seconds."
+
+        optimized_grid = _grid_with_order(grid, path.order)
+        context = _preview_context(
+            optimized_grid,
+            grid_info_rows=[_grid_info_row(path.name, optimized_grid)],
+            optimization_context=_optimization_context(
+                optimized_grid,
+                session_id=session_id,
+                session=session,
+                max_time_seconds=max_seconds,
+                status=status,
+            ),
+        )
+    except (GridValidationError, ValueError) as exc:
+        context = {"grid": None, "error": str(exc)}
+
+    return templates.TemplateResponse(
+        request=request,
+        name="_grid_preview.html",
+        context=context,
+    )
+
+
+@app.get("/grid-designer/optimization/load", response_class=HTMLResponse)
+def load_optimized_grid_path(request: Request) -> HTMLResponse:
+    try:
+        grid, _ = _requested_grid(request, include_info_rows=False)
+        max_seconds = _parse_optimization_time(request)
+        session_id = request.query_params.get(
+            "optimization_session_id",
+            "",
+        )
+        session = _get_optimization_session(session_id, grid)
+        if session is None:
+            raise GridValidationError(
+                "This optimization history has expired or no longer matches the grid. Calculate a new path."
+            )
+        try:
+            path_index = int(request.query_params.get("optimization_path", ""))
+            path = session.paths[path_index]
+        except (ValueError, IndexError) as exc:
+            raise GridValidationError("Select a valid optimized path to load.") from exc
+        if path_index < 0:
+            raise GridValidationError("Select a valid optimized path to load.")
+
+        with _optimization_sessions_lock:
+            session.active_path_index = path_index
+        loaded_grid = _grid_with_order(grid, path.order)
+        context = _preview_context(
+            loaded_grid,
+            grid_info_rows=[_grid_info_row(path.name, loaded_grid)],
+            optimization_context=_optimization_context(
+                loaded_grid,
+                session_id=session_id,
+                session=session,
+                max_time_seconds=max_seconds,
+                status=f"Loaded {path.name}.",
+            ),
+        )
     except GridValidationError as exc:
         context = {"grid": None, "error": str(exc)}
 
