@@ -9,6 +9,7 @@ from msu_anechoic import experiment
 from msu_anechoic.web.app import INACCESSIBLE_AZ_EL_REGIONS
 from msu_anechoic.web.app import _az_el_unit_vector
 from msu_anechoic.web.app import _estimate_grid_travel_time
+from msu_anechoic.web.app import _estimate_move_travel_time
 from msu_anechoic.web.app import _figure
 from msu_anechoic.web.app import _flat_topped_lower_hemisphere_mesh
 from msu_anechoic.web.app import _format_duration
@@ -484,7 +485,7 @@ def test_spherical_screen_caps_azimuth_at_one_revolution():
     assert len(i) == len(j) == len(k) == azimuth_segments * elevation_segments * 2
 
 
-def test_long_az_el_routes_are_interpolated_in_azimuth_and_elevation():
+def test_az_el_grid_routes_are_interpolated_in_pan_and_tilt():
     grid = design_combined_grid(
         input_system="az_el",
         grids=(
@@ -500,9 +501,21 @@ def test_long_az_el_routes_are_interpolated_in_azimuth_and_elevation():
     )
 
     route = _interpolated_route_coordinates(grid)
+    start, end = grid.points
+    pan_delta = end.pan - start.pan
+    tilt_delta = end.tilt - start.tilt
+    subdivision_count = math.ceil(math.hypot(pan_delta, tilt_delta))
+    midpoint_step = subdivision_count // 2
+    midpoint_fraction = midpoint_step / subdivision_count
+    midpoint_pan = start.pan + pan_delta * midpoint_fraction
+    midpoint_tilt = start.tilt + tilt_delta * midpoint_fraction
+    midpoint_azimuth, midpoint_elevation = pan_tilt_to_az_el(
+        midpoint_pan,
+        midpoint_tilt,
+    )
 
-    assert len(route) == 51
-    assert route[25] == pytest.approx(_az_el_unit_vector(40, 30))
+    assert len(route) == subdivision_count + 1
+    assert route[midpoint_step] == pytest.approx(_az_el_unit_vector(midpoint_azimuth, midpoint_elevation))
     assert all(math.dist(point, (0.0, 0.0, 0.0)) == pytest.approx(1.0) for point in route)
 
 
@@ -524,22 +537,22 @@ def test_long_pan_tilt_routes_are_interpolated_in_pan_and_tilt():
     route = _interpolated_route_coordinates(grid)
     midpoint_azimuth, midpoint_elevation = pan_tilt_to_az_el(40, 30)
 
-    assert len(route) == 51
-    assert route[25] == pytest.approx(_az_el_unit_vector(midpoint_azimuth, midpoint_elevation))
+    assert len(route) == 101
+    assert route[50] == pytest.approx(_az_el_unit_vector(midpoint_azimuth, midpoint_elevation))
     assert all(math.dist(point, (0.0, 0.0, 0.0)) == pytest.approx(1.0) for point in route)
 
 
-def test_native_coordinate_routes_leave_ten_degree_segments_unsubdivided():
+def test_sub_degree_routes_remain_straight_cartesian_segments():
     grid = design_combined_grid(
-        input_system="az_el",
+        input_system="pan_tilt",
         grids=(
             SimpleGridDefinition(
                 horizontal=AxisDefinition(0, 0, 1),
                 vertical=AxisDefinition(0, 0, 1),
             ),
             SimpleGridDefinition(
-                horizontal=AxisDefinition(6, 6, 1),
-                vertical=AxisDefinition(8, 8, 1),
+                horizontal=AxisDefinition(0.5, 0.5, 1),
+                vertical=AxisDefinition(0.5, 0.5, 1),
             ),
         ),
     )
@@ -547,6 +560,32 @@ def test_native_coordinate_routes_leave_ten_degree_segments_unsubdivided():
     route = _interpolated_route_coordinates(grid)
 
     assert len(route) == 2
+
+
+def test_pan_route_uses_long_bounded_move_between_positive_and_negative_limits():
+    grid = design_grid(
+        input_system="pan_tilt",
+        horizontal=AxisDefinition(-160, 160, 320),
+        vertical=AxisDefinition(0, 0, 1),
+    )
+
+    route = _interpolated_route_coordinates(grid)
+
+    assert len(route) == 321
+    assert route[160] == pytest.approx(_az_el_unit_vector(0, 0))
+
+
+def test_move_time_does_not_wrap_across_pan_limits(monkeypatch):
+    calls = []
+
+    def fake_estimate_time(angle, *, kind, trace):
+        calls.append((angle, kind, trace))
+        return angle
+
+    monkeypatch.setattr(experiment, "_estimate_time", fake_estimate_time)
+
+    assert _estimate_move_travel_time((160, 0), (-160, 0)) == 320
+    assert calls == [(320, "horizontal", False)]
 
 
 def test_grid_travel_time_sums_simultaneous_axis_move_estimates(monkeypatch):
@@ -633,14 +672,14 @@ def test_optimizer_removes_large_pole_crossing_moves_from_spherical_grid():
     )
     maximum_axis_move = max(
         max(
-            abs((end[0] - start[0] + 180.0) % 360.0 - 180.0),
+            abs(end[0] - start[0]),
             abs(end[1] - start[1]),
         )
         for start, end in zip(route, route[1:])
     )
 
     assert optimized_seconds < original_seconds * 0.5
-    assert maximum_axis_move < 90.0
+    assert maximum_axis_move < 120.0
 
 
 def test_optimizer_neighbors_match_tilt_branches_across_pan_pole():
@@ -658,6 +697,22 @@ def test_optimizer_neighbors_match_tilt_branches_across_pan_pole():
 
     assert neighbor.pan == -91
     assert neighbor.tilt == -80
+
+
+def test_optimizer_neighbors_do_not_wrap_across_pan_limits():
+    grid = design_grid(
+        input_system="pan_tilt",
+        horizontal=AxisDefinition(-179, 179, 279),
+        vertical=AxisDefinition(0, 0, 1),
+    )
+    neighbors, _ = _pan_tilt_candidate_neighbors(
+        grid.points,
+        neighbor_count=1,
+    )
+    point_index = next(index for index, point in enumerate(grid.points) if point.pan == 179)
+    neighbor = grid.points[neighbors[point_index][0]]
+
+    assert neighbor.pan == 100
 
 
 @pytest.mark.parametrize(

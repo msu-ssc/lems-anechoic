@@ -72,8 +72,8 @@ DEFAULTS = {
     "reject_inaccessible": False,
 }
 
-ROUTE_INTERPOLATION_THRESHOLD_DEGREES = 10.0
-ROUTE_MAX_STEP_DEGREES = 2.0
+ROUTE_INTERPOLATION_THRESHOLD_DEGREES = 1.0
+ROUTE_MAX_STEP_DEGREES = 1.0
 DEFAULT_OPTIMIZATION_TIME_SECONDS = 1.0
 MAX_OPTIMIZATION_TIME_SECONDS = 60.0
 MAX_OPTIMIZATION_SESSIONS = 32
@@ -121,19 +121,12 @@ def _az_el_unit_vector(azimuth: float, elevation: float) -> tuple[float, float, 
     )
 
 
-def _shortest_angular_delta(start: float, end: float) -> float:
-    delta = (end - start + 180.0) % 360.0 - 180.0
-    if delta == -180.0 and end - start > 0.0:
-        return 180.0
-    return delta
-
-
 def _estimate_move_travel_time(
     start: tuple[float, float],
     end: tuple[float, float],
 ) -> float:
     """Estimate one simultaneous pan/tilt move."""
-    pan_delta = abs(_shortest_angular_delta(start[0], end[0]))
+    pan_delta = abs(end[0] - start[0])
     tilt_delta = abs(end[1] - start[1])
     horizontal_seconds = (
         experiment._estimate_time(
@@ -270,10 +263,10 @@ def _pan_tilt_candidate_neighbors(
     *,
     neighbor_count: int = OPTIMIZATION_NEIGHBOR_COUNT,
 ) -> tuple[tuple[tuple[int, ...], ...], tuple[int, ...]]:
-    """Find local mechanical neighbors, including the ±180° pan wrap.
+    """Find local neighbors on the turntable's bounded pan/tilt axes.
 
-    Keeping candidate edges local in both pan and tilt prevents a route that
-    crosses either ±90° pan pole from jumping to a distant tilt branch.
+    Pan is intentionally not periodic: the mechanism must travel through zero
+    to move from a large positive pan to a large negative pan.
     """
     point_count = len(points)
     if point_count == 0:
@@ -289,19 +282,11 @@ def _pan_tilt_candidate_neighbors(
         ],
         dtype=float,
     )
-    pan_period = 360.0 * PAN_TRAVEL_TIME_SCALE
-    replicated_coordinates = np.concatenate(
-        (
-            coordinates + (-pan_period, 0.0),
-            coordinates,
-            coordinates + (pan_period, 0.0),
-        )
-    )
-    replicated_indexes = np.tile(np.arange(point_count), 3)
-    tree = cKDTree(replicated_coordinates)
+    point_indexes = np.arange(point_count)
+    tree = cKDTree(coordinates)
     query_count = min(
-        len(replicated_indexes),
-        neighbor_count * 3 + 1,
+        point_count,
+        neighbor_count + 1,
     )
     _, neighbor_indexes = tree.query(
         coordinates,
@@ -313,7 +298,7 @@ def _pan_tilt_candidate_neighbors(
         seen = {point_index}
         neighbors = []
         for raw_neighbor in np.atleast_1d(raw_neighbors):
-            neighbor = int(replicated_indexes[int(raw_neighbor)])
+            neighbor = int(point_indexes[int(raw_neighbor)])
             if neighbor in seen:
                 continue
             seen.add(neighbor)
@@ -323,8 +308,8 @@ def _pan_tilt_candidate_neighbors(
         candidate_neighbors.append(tuple(neighbors))
 
     origin_query_count = min(
-        len(replicated_indexes),
-        neighbor_count * 3,
+        point_count,
+        neighbor_count,
     )
     _, raw_origin_neighbors = tree.query(
         np.array((0.0, 0.0)),
@@ -333,7 +318,7 @@ def _pan_tilt_candidate_neighbors(
     seen = set()
     origin_neighbors = []
     for raw_neighbor in np.atleast_1d(raw_origin_neighbors):
-        neighbor = int(replicated_indexes[int(raw_neighbor)])
+        neighbor = int(point_indexes[int(raw_neighbor)])
         if neighbor in seen:
             continue
         seen.add(neighbor)
@@ -837,33 +822,19 @@ def _format_duration(seconds: float) -> str:
 def _interpolated_route_coordinates(
     grid: DesignedGrid,
 ) -> list[tuple[float, float, float]]:
-    """Interpolate long route segments in the grid's specified coordinates."""
+    """Render the turntable's bounded, linear pan/tilt motion."""
     if not grid.points:
         return []
 
-    def specified_coordinates(point: GridPoint) -> tuple[float, float]:
-        if grid.input_system == "az_el":
-            return point.azimuth, point.elevation
-        return point.pan, point.tilt
-
-    def unit_vector(horizontal: float, vertical: float) -> tuple[float, float, float]:
-        if grid.input_system == "az_el":
-            azimuth, elevation = horizontal, vertical
-        else:
-            azimuth, elevation = pan_tilt_to_az_el(horizontal, vertical)
+    def unit_vector(pan: float, tilt: float) -> tuple[float, float, float]:
+        azimuth, elevation = pan_tilt_to_az_el(pan, tilt)
         return _az_el_unit_vector(azimuth, elevation)
 
-    first_horizontal, first_vertical = specified_coordinates(grid.points[0])
-    route = [unit_vector(first_horizontal, first_vertical)]
+    route = [unit_vector(grid.points[0].pan, grid.points[0].tilt)]
     for start, end in zip(grid.points, grid.points[1:]):
-        start_horizontal, start_vertical = specified_coordinates(start)
-        end_horizontal, end_vertical = specified_coordinates(end)
-        horizontal_delta = _shortest_angular_delta(
-            start_horizontal,
-            end_horizontal,
-        )
-        vertical_delta = end_vertical - start_vertical
-        coordinate_distance = math.hypot(horizontal_delta, vertical_delta)
+        pan_delta = end.pan - start.pan
+        tilt_delta = end.tilt - start.tilt
+        coordinate_distance = math.hypot(pan_delta, tilt_delta)
         subdivision_count = (
             math.ceil(coordinate_distance / ROUTE_MAX_STEP_DEGREES)
             if coordinate_distance > ROUTE_INTERPOLATION_THRESHOLD_DEGREES + 1e-9
@@ -873,8 +844,8 @@ def _interpolated_route_coordinates(
             fraction = step / subdivision_count
             route.append(
                 unit_vector(
-                    start_horizontal + horizontal_delta * fraction,
-                    start_vertical + vertical_delta * fraction,
+                    start.pan + pan_delta * fraction,
+                    start.tilt + tilt_delta * fraction,
                 )
             )
     return route
