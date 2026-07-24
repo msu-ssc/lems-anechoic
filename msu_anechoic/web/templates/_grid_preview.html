@@ -29,6 +29,24 @@
                 <script id="pan-tilt-figure" type="application/json">{{ pan_tilt_figure_json | safe }}</script>
             </article>
             <article class="plot-card plot-card--3d">
+                <header class="plot-card-heading">
+                    <h3>3D pointing geometry</h3>
+                    <div class="rotation-controls" aria-label="3D view rotation controls">
+                        <button type="button" data-rotation-toggle>Play</button>
+                        <label>
+                            <span>Rotation speed</span>
+                            <input
+                                type="range"
+                                min="0.25"
+                                max="10"
+                                step="0.25"
+                                value="1"
+                                data-rotation-speed
+                            >
+                            <output data-rotation-speed-output>1×</output>
+                        </label>
+                    </div>
+                </header>
                 <div class="plot plot--3d" data-plot-source="three-dimensional-figure"></div>
                 <script id="three-dimensional-figure" type="application/json">{{ three_dimensional_figure_json | safe }}</script>
             </article>

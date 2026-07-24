@@ -520,19 +520,13 @@ def _three_dimensional_figure(grid: DesignedGrid) -> dict:
     return {
         "data": data,
         "layout": {
-            "title": {
-                "text": "3D pointing geometry",
-                "x": 0.02,
-                "xanchor": "left",
-                "font": {"size": 20},
-            },
             "paper_bgcolor": "#e6eeff",
             "font": {
                 "family": "Aptos, Segoe UI, Arial, sans-serif",
                 "color": "#000000",
                 "size": 14,
             },
-            "margin": {"l": 20, "r": 20, "t": 58, "b": 20},
+            "margin": {"l": 20, "r": 20, "t": 20, "b": 20},
             "showlegend": False,
             "scene": {
                 "bgcolor": "#d1e0ff",

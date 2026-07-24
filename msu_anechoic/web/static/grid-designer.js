@@ -1,6 +1,33 @@
 const CAMERA_ROTATION_PERIOD_MS = 60_000;
 const CAMERA_UPDATE_INTERVAL_MS = 50;
 const rotatingPlots = new WeakMap();
+const cameraRotationSettings = {
+    paused: true,
+    speed: 1,
+};
+
+function formatRotationSpeed(speed) {
+    return `${speed.toFixed(2).replace(/\.?0+$/, "")}×`;
+}
+
+function syncRotationControls(root = document) {
+    root.querySelectorAll("[data-rotation-toggle]").forEach((button) => {
+        button.textContent = cameraRotationSettings.paused ? "Play" : "Pause";
+        button.setAttribute(
+            "aria-label",
+            cameraRotationSettings.paused
+                ? "Play 3D view rotation"
+                : "Pause 3D view rotation",
+        );
+    });
+    root.querySelectorAll("[data-rotation-speed]").forEach((slider) => {
+        slider.value = String(cameraRotationSettings.speed);
+    });
+    root.querySelectorAll("[data-rotation-speed-output]").forEach((output) => {
+        output.value = formatRotationSpeed(cameraRotationSettings.speed);
+        output.textContent = output.value;
+    });
+}
 
 function cameraEyeFromRelayout(eventData) {
     if (eventData["scene.camera"]?.eye) {
@@ -26,12 +53,10 @@ function updateRotationFromEye(state, eye) {
 function startCameraRotation(plotElement, initialEye) {
     if (rotatingPlots.has(plotElement)) return;
 
-    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
     const state = {
         angle: 0,
         radius: 1,
         z: 1,
-        hovered: false,
         visible: true,
         updating: false,
         lastFrame: performance.now(),
@@ -40,14 +65,6 @@ function startCameraRotation(plotElement, initialEye) {
     };
     updateRotationFromEye(state, initialEye);
     rotatingPlots.set(plotElement, state);
-
-    plotElement.addEventListener("pointerenter", () => {
-        state.hovered = true;
-    });
-    plotElement.addEventListener("pointerleave", () => {
-        state.hovered = false;
-        state.lastFrame = performance.now();
-    });
 
     if (window.IntersectionObserver) {
         const observer = new IntersectionObserver((entries) => {
@@ -79,16 +96,21 @@ function startCameraRotation(plotElement, initialEye) {
         const elapsed = now - state.lastFrame;
         state.lastFrame = now;
         const paused = (
-            state.hovered
+            cameraRotationSettings.paused
             || !state.visible
             || document.hidden
-            || reducedMotion.matches
         );
         if (paused || state.updating) return;
 
         state.angle = (
             state.angle
-            + elapsed * Math.PI * 2 / CAMERA_ROTATION_PERIOD_MS
+            + (
+                elapsed
+                * cameraRotationSettings.speed
+                * Math.PI
+                * 2
+                / CAMERA_ROTATION_PERIOD_MS
+            )
         ) % (Math.PI * 2);
         if (now - state.lastUpdate < CAMERA_UPDATE_INTERVAL_MS) return;
 
@@ -258,6 +280,7 @@ function renderPlots(root = document) {
 
 document.addEventListener("DOMContentLoaded", () => {
     updateCoordinateFields();
+    syncRotationControls();
     setColorMode(document.documentElement.dataset.colorMode || "light", { persist: false });
 
     document.getElementById("menu-toggle")?.addEventListener("click", (event) => {
@@ -285,6 +308,20 @@ document.addEventListener("change", (event) => {
     }
 });
 
+document.addEventListener("click", (event) => {
+    if (!event.target.closest("[data-rotation-toggle]")) return;
+    cameraRotationSettings.paused = !cameraRotationSettings.paused;
+    syncRotationControls();
+});
+
+document.addEventListener("input", (event) => {
+    if (!event.target.matches("[data-rotation-speed]")) return;
+    const speed = Number.parseFloat(event.target.value);
+    if (!Number.isFinite(speed)) return;
+    cameraRotationSettings.speed = speed;
+    syncRotationControls();
+});
+
 document.addEventListener("click", () => setMenuOpen(false));
 
 document.addEventListener("keydown", (event) => {
@@ -297,6 +334,7 @@ document.addEventListener("keydown", (event) => {
 document.body.addEventListener("htmx:afterSwap", () => {
     const preview = document.getElementById("grid-preview");
     if (preview) {
+        syncRotationControls(preview);
         renderPlots(preview);
     }
 });

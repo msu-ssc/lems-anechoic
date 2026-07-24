@@ -176,6 +176,8 @@ def test_three_dimensional_figure_contains_requested_geometry_and_az_el_grid():
         "y": pytest.approx(2.4),
         "z": pytest.approx(2.4),
     }
+    assert "title" not in figure["layout"]
+    assert figure["layout"]["margin"]["t"] == 20
     for axis_name in ("xaxis", "yaxis", "zaxis"):
         assert figure["layout"]["scene"][axis_name]["showticklabels"] is False
         assert figure["layout"]["scene"][axis_name]["ticks"] == ""
@@ -285,18 +287,22 @@ def test_grid_designer_uses_large_high_contrast_type_and_yellow_header_details()
     assert figure["layout"]["xaxis"]["tickfont"]["size"] == 14
 
 
-def test_three_dimensional_view_rotates_and_respects_motion_preferences():
+def test_three_dimensional_view_has_explicit_rotation_controls():
     script = TestClient(app).get("/static/grid-designer.js")
 
     assert script.status_code == 200
     assert "CAMERA_ROTATION_PERIOD_MS = 60_000" in script.text
     assert "window.Plotly.relayout" in script.text
     assert '"scene.camera.eye"' in script.text
-    assert '"pointerenter"' in script.text
-    assert '"pointerleave"' in script.text
+    assert "paused: true" in script.text
+    assert "cameraRotationSettings.paused" in script.text
+    assert "cameraRotationSettings.speed" in script.text
+    assert "[data-rotation-toggle]" in script.text
+    assert "[data-rotation-speed]" in script.text
+    assert '"pointerenter"' not in script.text
+    assert '"pointerleave"' not in script.text
     assert "IntersectionObserver" in script.text
     assert "document.hidden" in script.text
-    assert "prefers-reduced-motion: reduce" in script.text
 
 
 def test_preview_accepts_a_range_that_does_not_align_with_step_size():
@@ -343,4 +349,10 @@ def test_pan_tilt_preview_contains_three_plot_payloads():
     assert 'id="az-el-figure"' in response.text
     assert 'id="pan-tilt-figure"' in response.text
     assert 'id="three-dimensional-figure"' in response.text
+    assert "data-rotation-toggle" in response.text
+    assert "data-rotation-speed" in response.text
+    assert "data-rotation-speed-output" in response.text
+    assert "<h3>3D pointing geometry</h3>" in response.text
+    assert '<button type="button" data-rotation-toggle>Play</button>' in response.text
+    assert 'max="10"' in response.text
     assert "<strong>9</strong> points" in response.text
