@@ -129,6 +129,91 @@
                             </div>
                         </fieldset>
                     </div>
+                    <section class="quantization-section" aria-labelledby="quantization-heading">
+                        <h3 id="quantization-heading">Quantize</h3>
+                        <div class="quantization-grid">
+                            <fieldset class="quantization-axis">
+                                <label class="quantization-toggle">
+                                    <input
+                                        type="checkbox"
+                                        name="quantize_pan"
+                                        value="true"
+                                        {% if quantize_pan %}checked{% endif %}
+                                    >
+                                    Pan
+                                </label>
+                                <div class="quantization-inputs">
+                                    <label>
+                                        Origin
+                                        <span class="number-input">
+                                            <input
+                                                name="pan_quantization_origin"
+                                                type="number"
+                                                step="any"
+                                                value="{{ pan_quantization_origin }}"
+                                                required
+                                            >
+                                            <b>°</b>
+                                        </span>
+                                    </label>
+                                    <label>
+                                        Step size
+                                        <span class="number-input">
+                                            <input
+                                                name="pan_quantization_step"
+                                                type="number"
+                                                min="0.000001"
+                                                step="any"
+                                                value="{{ pan_quantization_step }}"
+                                                required
+                                            >
+                                            <b>°</b>
+                                        </span>
+                                    </label>
+                                </div>
+                            </fieldset>
+                            <fieldset class="quantization-axis">
+                                <label class="quantization-toggle">
+                                    <input
+                                        type="checkbox"
+                                        name="quantize_tilt"
+                                        value="true"
+                                        {% if quantize_tilt %}checked{% endif %}
+                                    >
+                                    Tilt
+                                </label>
+                                <div class="quantization-inputs">
+                                    <label>
+                                        Origin
+                                        <span class="number-input">
+                                            <input
+                                                name="tilt_quantization_origin"
+                                                type="number"
+                                                step="any"
+                                                value="{{ tilt_quantization_origin }}"
+                                                required
+                                            >
+                                            <b>°</b>
+                                        </span>
+                                    </label>
+                                    <label>
+                                        Step size
+                                        <span class="number-input">
+                                            <input
+                                                name="tilt_quantization_step"
+                                                type="number"
+                                                min="0.000001"
+                                                step="any"
+                                                value="{{ tilt_quantization_step }}"
+                                                required
+                                            >
+                                            <b>°</b>
+                                        </span>
+                                    </label>
+                                </div>
+                            </fieldset>
+                        </div>
+                    </section>
                     <div class="form-footnote">
                         <label class="point-filter">
                             <input

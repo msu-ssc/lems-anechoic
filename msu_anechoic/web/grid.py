@@ -15,6 +15,7 @@ import math
 from dataclasses import dataclass
 from decimal import Decimal
 from decimal import InvalidOperation
+from decimal import ROUND_HALF_UP
 from typing import Literal
 
 CoordinateSystem = Literal["az_el", "pan_tilt"]
@@ -35,10 +36,21 @@ class AxisDefinition:
 
 
 @dataclass(frozen=True)
+class QuantizationDefinition:
+    enabled: bool = False
+    origin: float = 0.0
+    step: float = 0.5
+
+
+@dataclass(frozen=True)
 class GridPoint:
     traversal_index: int
     row: int
     column: int
+    ideal_azimuth: float
+    ideal_elevation: float
+    ideal_pan: float
+    ideal_tilt: float
     azimuth: float
     elevation: float
     pan: float
@@ -143,12 +155,37 @@ def axis_values(axis: AxisDefinition, *, label: str) -> tuple[float, ...]:
     return tuple(float(value) for value in values)
 
 
+def quantize_angle(
+    value: float,
+    definition: QuantizationDefinition,
+    *,
+    label: str,
+) -> float:
+    """Round an angle to the nearest ``origin + N * step`` lattice point."""
+    if not definition.enabled:
+        return value
+    if not all(math.isfinite(number) for number in (value, definition.origin, definition.step)):
+        raise GridValidationError(f"{label} quantization values must be finite numbers.")
+    if definition.step <= 0:
+        raise GridValidationError(f"{label} quantization step size must be greater than zero.")
+
+    value_decimal = Decimal(str(value))
+    origin_decimal = Decimal(str(definition.origin))
+    step_decimal = Decimal(str(definition.step))
+    multiple = ((value_decimal - origin_decimal) / step_decimal).to_integral_value(
+        rounding=ROUND_HALF_UP
+    )
+    return _clean_angle(float(origin_decimal + multiple * step_decimal))
+
+
 def design_grid(
     *,
     input_system: CoordinateSystem,
     horizontal: AxisDefinition,
     vertical: AxisDefinition,
     reject_inaccessible: bool = False,
+    pan_quantization: QuantizationDefinition = QuantizationDefinition(),
+    tilt_quantization: QuantizationDefinition = QuantizationDefinition(),
 ) -> DesignedGrid:
     """Create a top-left, horizontal-first serpentine grid."""
     if input_system not in ("az_el", "pan_tilt"):
@@ -172,12 +209,34 @@ def design_grid(
         row_horizontal_values = horizontal_values if row % 2 == 0 else tuple(reversed(horizontal_values))
         for traversal_column, horizontal_value in enumerate(row_horizontal_values):
             if input_system == "az_el":
-                azimuth = horizontal_value
-                elevation = vertical_value
-                pan, tilt = az_el_to_pan_tilt(azimuth, elevation)
+                ideal_azimuth = horizontal_value
+                ideal_elevation = vertical_value
+                ideal_pan, ideal_tilt = az_el_to_pan_tilt(
+                    ideal_azimuth,
+                    ideal_elevation,
+                )
             else:
-                pan = horizontal_value
-                tilt = vertical_value
+                ideal_pan = horizontal_value
+                ideal_tilt = vertical_value
+                ideal_azimuth, ideal_elevation = pan_tilt_to_az_el(
+                    ideal_pan,
+                    ideal_tilt,
+                )
+
+            pan = quantize_angle(
+                ideal_pan,
+                pan_quantization,
+                label="Pan",
+            )
+            tilt = quantize_angle(
+                ideal_tilt,
+                tilt_quantization,
+                label="Tilt",
+            )
+            if pan == ideal_pan and tilt == ideal_tilt:
+                azimuth = ideal_azimuth
+                elevation = ideal_elevation
+            else:
                 azimuth, elevation = pan_tilt_to_az_el(pan, tilt)
 
             if reject_inaccessible and tilt > MAX_TURNTABLE_TILT + _ZERO_TOLERANCE:
@@ -188,6 +247,10 @@ def design_grid(
                     traversal_index=len(points) + 1,
                     row=row,
                     column=traversal_column,
+                    ideal_azimuth=ideal_azimuth,
+                    ideal_elevation=ideal_elevation,
+                    ideal_pan=ideal_pan,
+                    ideal_tilt=ideal_tilt,
                     azimuth=azimuth,
                     elevation=elevation,
                     pan=pan,

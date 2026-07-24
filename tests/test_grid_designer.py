@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from msu_anechoic.web.app import _az_el_unit_vector
 from msu_anechoic.web.app import _figure
 from msu_anechoic.web.app import _flat_topped_lower_hemisphere_mesh
+from msu_anechoic.web.app import _quantization_error_figure
 from msu_anechoic.web.app import _spherical_patch_mesh
 from msu_anechoic.web.app import _three_dimensional_figure
 from msu_anechoic.web.app import INACCESSIBLE_AZ_EL_REGIONS
@@ -13,10 +14,12 @@ from msu_anechoic.web.app import app
 from msu_anechoic.web.grid import AxisDefinition
 from msu_anechoic.web.grid import GridValidationError
 from msu_anechoic.web.grid import MAX_TURNTABLE_TILT
+from msu_anechoic.web.grid import QuantizationDefinition
 from msu_anechoic.web.grid import axis_values
 from msu_anechoic.web.grid import az_el_to_pan_tilt
 from msu_anechoic.web.grid import design_grid
 from msu_anechoic.web.grid import pan_tilt_to_az_el
+from msu_anechoic.web.grid import quantize_angle
 
 
 def test_axis_values_are_inclusive_and_decimal_safe():
@@ -27,6 +30,49 @@ def test_axis_values_are_inclusive_and_decimal_safe():
 def test_axis_uses_a_shorter_final_interval_to_include_maximum():
     values = axis_values(AxisDefinition(0, 10, 3), label="Tilt")
     assert values == (0, 3, 6, 9, 10)
+
+
+def test_quantization_rounds_to_nearest_origin_plus_integer_step():
+    definition = QuantizationDefinition(enabled=True, origin=0.1, step=0.5)
+
+    assert quantize_angle(20.123, definition, label="Pan") == pytest.approx(20.1)
+    assert quantize_angle(20.298, definition, label="Pan") == pytest.approx(20.1)
+    assert quantize_angle(20.35, definition, label="Pan") == pytest.approx(20.6)
+    assert quantize_angle(-0.15, definition, label="Pan") == pytest.approx(-0.4)
+    assert quantize_angle(
+        20.298,
+        QuantizationDefinition(enabled=False, origin=0.1, step=0.5),
+        label="Pan",
+    ) == 20.298
+
+
+def test_grid_retains_ideal_and_quantized_coordinates():
+    grid = design_grid(
+        input_system="pan_tilt",
+        horizontal=AxisDefinition(20.123, 20.298, 0.175),
+        vertical=AxisDefinition(10.123, 10.123, 1),
+        pan_quantization=QuantizationDefinition(enabled=True, step=0.5),
+        tilt_quantization=QuantizationDefinition(enabled=True, step=0.5),
+    )
+
+    assert [point.ideal_pan for point in grid.points] == [20.123, 20.298]
+    assert [point.pan for point in grid.points] == [20.0, 20.5]
+    assert all(point.ideal_tilt == 10.123 for point in grid.points)
+    assert all(point.tilt == 10.0 for point in grid.points)
+
+
+def test_quantization_happens_before_inaccessible_point_rejection():
+    grid = design_grid(
+        input_system="pan_tilt",
+        horizontal=AxisDefinition(0, 0, 1),
+        vertical=AxisDefinition(45.24, 45.26, 0.02),
+        reject_inaccessible=True,
+        tilt_quantization=QuantizationDefinition(enabled=True, step=0.5),
+    )
+
+    assert len(grid.points) == 1
+    assert grid.points[0].ideal_tilt == pytest.approx(45.24)
+    assert grid.points[0].tilt == pytest.approx(45.0)
 
 
 def test_grid_starts_top_left_and_traverses_horizontal_serpentine():
@@ -283,6 +329,23 @@ def test_grid_designer_page_loads():
     assert "grid-designer-color-mode" in response.text
     assert "Azimuth / elevation" in response.text
     assert "Pan / tilt" in response.text
+    assert "Quantize" in response.text
+    quantization_markup = response.text.split(
+        '<section class="quantization-section"',
+        1,
+    )[1].split("</section>", 1)[0]
+    assert quantization_markup.index('name="quantize_pan"') < quantization_markup.index(
+        'name="quantize_tilt"'
+    )
+    assert "<legend" not in quantization_markup
+    tilt_control = response.text.split('name="quantize_tilt"', 1)[1].split(">", 1)[0]
+    pan_control = response.text.split('name="quantize_pan"', 1)[1].split(">", 1)[0]
+    assert "checked" in tilt_control
+    assert "checked" not in pan_control
+    assert 'name="tilt_quantization_origin"' in response.text
+    assert 'name="tilt_quantization_step"' in response.text
+    assert 'name="pan_quantization_origin"' in response.text
+    assert 'name="pan_quantization_step"' in response.text
     assert 'name="reject_inaccessible"' in response.text
     assert "Reject inaccessible points" in response.text
     assert client.get("/vendor/plotly.min.js").status_code == 200
@@ -324,7 +387,8 @@ def test_grid_designer_uses_large_high_contrast_type_and_yellow_header_details()
     figure = _figure(grid, coordinate_system="az_el")
     assert figure["layout"]["font"]["color"] == "#000000"
     assert figure["layout"]["font"]["size"] == 14
-    assert figure["layout"]["title"]["font"]["size"] == 20
+    assert "title" not in figure["layout"]
+    assert ".plot-card-heading h3" in stylesheet.text
     assert figure["layout"]["xaxis"]["title"]["font"]["size"] == 16
     assert figure["layout"]["xaxis"]["tickfont"]["size"] == 14
 
@@ -378,6 +442,43 @@ def test_two_dimensional_views_include_non_ranging_inaccessible_masks():
         "coordinate_system": "pan_tilt",
         "maximum_turntable_tilt": MAX_TURNTABLE_TILT,
     }
+
+
+def test_two_dimensional_figures_contain_ideal_and_quantized_traces():
+    grid = design_grid(
+        input_system="pan_tilt",
+        horizontal=AxisDefinition(20.2, 20.2, 1),
+        vertical=AxisDefinition(10.2, 10.2, 1),
+        pan_quantization=QuantizationDefinition(enabled=True, step=0.5),
+        tilt_quantization=QuantizationDefinition(enabled=True, step=0.5),
+    )
+    figure = _figure(grid, coordinate_system="pan_tilt")
+    traces_by_role = {trace["meta"]["role"]: trace for trace in figure["data"]}
+
+    assert traces_by_role["grid-ideal"]["x"] == [20.2]
+    assert traces_by_role["grid-ideal"]["y"] == [10.2]
+    assert traces_by_role["grid-ideal"]["meta"]["representation"] == "ideal"
+    assert traces_by_role["grid-path"]["x"] == [20.0]
+    assert traces_by_role["grid-path"]["y"] == [10.0]
+    assert traces_by_role["grid-path"]["meta"]["representation"] == "quantized"
+
+
+def test_quantization_error_figures_plot_actual_minus_ideal_components():
+    grid = design_grid(
+        input_system="pan_tilt",
+        horizontal=AxisDefinition(20.2, 20.2, 1),
+        vertical=AxisDefinition(10.2, 10.2, 1),
+        pan_quantization=QuantizationDefinition(enabled=True, step=0.5),
+        tilt_quantization=QuantizationDefinition(enabled=True, step=0.5),
+    )
+    figure = _quantization_error_figure(grid, coordinate_system="pan_tilt")
+    trace = figure["data"][0]
+
+    assert trace["x"] == pytest.approx([-0.2])
+    assert trace["y"] == pytest.approx([-0.2])
+    assert trace["meta"]["role"] == "quantization-error"
+    assert figure["layout"]["xaxis"]["title"]["text"] == "Pan error (°)"
+    assert figure["layout"]["yaxis"]["title"]["text"] == "Tilt error (°)"
 
 
 def test_az_el_mask_boundaries_are_precomputed_at_one_degree_intervals():
@@ -448,6 +549,10 @@ def test_pan_tilt_preview_contains_three_plot_payloads():
     assert 'id="az-el-figure"' in response.text
     assert 'id="pan-tilt-figure"' in response.text
     assert 'id="three-dimensional-figure"' in response.text
+    assert 'id="az-el-error-figure"' in response.text
+    assert 'id="pan-tilt-error-figure"' in response.text
+    assert response.text.count("Show ideal") == 2
+    assert response.text.count("Show quantized") == 2
     assert "data-rotation-toggle" in response.text
     assert "data-rotation-speed" in response.text
     assert "data-rotation-speed-output" in response.text

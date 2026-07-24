@@ -5,6 +5,10 @@ const cameraRotationSettings = {
     paused: true,
     speed: 1,
 };
+const plotVisibilitySettings = {
+    "az-el-figure": { ideal: true, quantized: true },
+    "pan-tilt-figure": { ideal: true, quantized: true },
+};
 
 function formatRotationSpeed(speed) {
     return `${speed.toFixed(2).replace(/\.?0+$/, "")}×`;
@@ -26,6 +30,27 @@ function syncRotationControls(root = document) {
     root.querySelectorAll("[data-rotation-speed-output]").forEach((output) => {
         output.value = formatRotationSpeed(cameraRotationSettings.speed);
         output.textContent = output.value;
+    });
+}
+
+function syncPlotVisibilityControls(root = document) {
+    root.querySelectorAll("[data-plot-visibility-controls]").forEach((controls) => {
+        const settings = plotVisibilitySettings[controls.dataset.plotVisibilityControls];
+        if (!settings) return;
+        controls.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
+            checkbox.checked = settings[checkbox.value];
+        });
+    });
+}
+
+function applyPlotVisibility(figure, sourceId) {
+    const settings = plotVisibilitySettings[sourceId];
+    if (!settings) return;
+    figure.data.forEach((trace) => {
+        const representation = trace.meta?.representation;
+        if (representation in settings) {
+            trace.visible = settings[representation];
+        }
     });
 }
 
@@ -260,6 +285,7 @@ function plotColors() {
         boresight: value("--plot-boresight", "#005eb8"),
         screen: value("--plot-screen", "#7a7a7a"),
         inaccessible: value("--plot-inaccessible", "#6f7680"),
+        ideal: value("--plot-ideal", "#626a76"),
     };
 }
 
@@ -286,8 +312,19 @@ function applyTraceColors(trace, colors) {
         trace.color = colors.screen;
         return;
     }
+    if (role === "grid-ideal") {
+        trace.line.color = colors.ideal;
+        trace.marker.color = colors.ideal;
+        trace.marker.line.color = colors.ideal;
+        return;
+    }
     if (role === "grid-path") {
         trace.line.color = colors.line;
+        trace.marker.colorscale = [[0, colors.start], [1, colors.end]];
+        trace.marker.line.color = colors.paper;
+        return;
+    }
+    if (role === "quantization-error") {
         trace.marker.colorscale = [[0, colors.start], [1, colors.end]];
         trace.marker.line.color = colors.paper;
         return;
@@ -314,6 +351,7 @@ function renderPlots(root = document) {
         if (!source) return;
 
         const figure = JSON.parse(source.textContent);
+        applyPlotVisibility(figure, plotElement.dataset.plotSource);
         const colors = plotColors();
         figure.layout.paper_bgcolor = colors.paper;
         figure.layout.plot_bgcolor = colors.background;
@@ -359,6 +397,7 @@ function renderPlots(root = document) {
 document.addEventListener("DOMContentLoaded", () => {
     updateCoordinateFields();
     syncRotationControls();
+    syncPlotVisibilityControls();
     setColorMode(document.documentElement.dataset.colorMode || "light", { persist: false });
 
     document.getElementById("menu-toggle")?.addEventListener("click", (event) => {
@@ -383,6 +422,29 @@ document.addEventListener("DOMContentLoaded", () => {
 document.addEventListener("change", (event) => {
     if (event.target.matches('input[name="input_system"]')) {
         updateCoordinateFields();
+    }
+
+    const controls = event.target.closest("[data-plot-visibility-controls]");
+    if (!controls || !event.target.matches('input[type="checkbox"]')) return;
+    const sourceId = controls.dataset.plotVisibilityControls;
+    const settings = plotVisibilitySettings[sourceId];
+    if (!settings || !(event.target.value in settings)) return;
+
+    settings[event.target.value] = event.target.checked;
+    syncPlotVisibilityControls(controls);
+    const plotElement = document.querySelector(`[data-plot-source="${sourceId}"]`);
+    if (!plotElement?.data) return;
+    const traceIndexes = plotElement.data
+        .map((trace, index) => (
+            trace.meta?.representation === event.target.value ? index : -1
+        ))
+        .filter((index) => index >= 0);
+    if (traceIndexes.length) {
+        window.Plotly.restyle(
+            plotElement,
+            { visible: event.target.checked },
+            traceIndexes,
+        );
     }
 });
 
@@ -413,6 +475,7 @@ document.body.addEventListener("htmx:afterSwap", () => {
     const preview = document.getElementById("grid-preview");
     if (preview) {
         syncRotationControls(preview);
+        syncPlotVisibilityControls(preview);
         renderPlots(preview);
     }
 });

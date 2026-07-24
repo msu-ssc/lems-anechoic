@@ -21,10 +21,32 @@
 
         <div class="plot-grid">
             <article class="plot-card">
+                <header class="plot-card-heading">
+                    <h3>Azimuth / elevation</h3>
+                    <div
+                        class="plot-visibility-controls"
+                        data-plot-visibility-controls="az-el-figure"
+                        aria-label="Azimuth and elevation plot visibility"
+                    >
+                        <label><input type="checkbox" value="ideal" checked> Show ideal</label>
+                        <label><input type="checkbox" value="quantized" checked> Show quantized</label>
+                    </div>
+                </header>
                 <div class="plot" data-plot-source="az-el-figure"></div>
                 <script id="az-el-figure" type="application/json">{{ az_el_figure_json | safe }}</script>
             </article>
             <article class="plot-card">
+                <header class="plot-card-heading">
+                    <h3>Pan / tilt</h3>
+                    <div
+                        class="plot-visibility-controls"
+                        data-plot-visibility-controls="pan-tilt-figure"
+                        aria-label="Pan and tilt plot visibility"
+                    >
+                        <label><input type="checkbox" value="ideal" checked> Show ideal</label>
+                        <label><input type="checkbox" value="quantized" checked> Show quantized</label>
+                    </div>
+                </header>
                 <div class="plot" data-plot-source="pan-tilt-figure"></div>
                 <script id="pan-tilt-figure" type="application/json">{{ pan_tilt_figure_json | safe }}</script>
             </article>
@@ -49,6 +71,20 @@
                 </header>
                 <div class="plot plot--3d" data-plot-source="three-dimensional-figure"></div>
                 <script id="three-dimensional-figure" type="application/json">{{ three_dimensional_figure_json | safe }}</script>
+            </article>
+            <article class="plot-card">
+                <header class="plot-card-heading">
+                    <h3>Azimuth / elevation quantization error</h3>
+                </header>
+                <div class="plot" data-plot-source="az-el-error-figure"></div>
+                <script id="az-el-error-figure" type="application/json">{{ az_el_error_figure_json | safe }}</script>
+            </article>
+            <article class="plot-card">
+                <header class="plot-card-heading">
+                    <h3>Pan / tilt quantization error</h3>
+                </header>
+                <div class="plot" data-plot-source="pan-tilt-error-figure"></div>
+                <script id="pan-tilt-error-figure" type="application/json">{{ pan_tilt_error_figure_json | safe }}</script>
             </article>
         </div>
 

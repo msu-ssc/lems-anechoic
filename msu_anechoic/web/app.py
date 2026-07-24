@@ -21,6 +21,7 @@ from msu_anechoic.web.grid import AxisDefinition
 from msu_anechoic.web.grid import DesignedGrid
 from msu_anechoic.web.grid import GridValidationError
 from msu_anechoic.web.grid import MAX_TURNTABLE_TILT
+from msu_anechoic.web.grid import QuantizationDefinition
 from msu_anechoic.web.grid import design_grid
 
 WEB_ROOT = Path(__file__).parent
@@ -43,6 +44,12 @@ DEFAULTS = {
     "tilt_min": -20.0,
     "tilt_max": 20.0,
     "tilt_step": 10.0,
+    "quantize_tilt": True,
+    "tilt_quantization_origin": 0.0,
+    "tilt_quantization_step": 0.5,
+    "quantize_pan": False,
+    "pan_quantization_origin": 0.0,
+    "pan_quantization_step": 0.5,
     "reject_inaccessible": False,
 }
 
@@ -311,18 +318,20 @@ def _figure(
     if coordinate_system == "az_el":
         x = [point.azimuth for point in grid.points]
         y = [point.elevation for point in grid.points]
+        ideal_x = [point.ideal_azimuth for point in grid.points]
+        ideal_y = [point.ideal_elevation for point in grid.points]
         x_title = "Azimuth (°)"
         y_title = "Elevation (°)"
-        title = "Azimuth / elevation"
     else:
         x = [point.pan for point in grid.points]
         y = [point.tilt for point in grid.points]
+        ideal_x = [point.ideal_pan for point in grid.points]
+        ideal_y = [point.ideal_tilt for point in grid.points]
         x_title = "Pan (°)"
         y_title = "Tilt (°)"
-        title = "Pan / tilt"
 
     point_numbers = [point.traversal_index for point in grid.points]
-    hover_text = [
+    quantized_hover_text = [
         (
             f"<b>Point {point.traversal_index}</b><br>"
             f"Azimuth: {point.azimuth:.3f}°<br>"
@@ -332,15 +341,43 @@ def _figure(
         )
         for point in grid.points
     ]
+    ideal_hover_text = [
+        (
+            f"<b>Ideal point {point.traversal_index}</b><br>"
+            f"Azimuth: {point.ideal_azimuth:.3f}°<br>"
+            f"Elevation: {point.ideal_elevation:.3f}°<br>"
+            f"Pan: {point.ideal_pan:.3f}°<br>"
+            f"Tilt: {point.ideal_tilt:.3f}°"
+        )
+        for point in grid.points
+    ]
 
     data = [
+        {
+            "type": "scatter",
+            "mode": "lines+markers",
+            "x": ideal_x,
+            "y": ideal_y,
+            "customdata": point_numbers,
+            "text": ideal_hover_text,
+            "hovertemplate": "%{text}<extra></extra>",
+            "line": {"color": "#6f7680", "width": 2, "dash": "dot"},
+            "marker": {
+                "color": "#6f7680",
+                "size": 7,
+                "symbol": "circle-open",
+                "line": {"color": "#6f7680", "width": 2},
+            },
+            "name": "Ideal",
+            "meta": {"role": "grid-ideal", "representation": "ideal"},
+        },
         {
             "type": "scatter",
             "mode": "lines+markers",
             "x": x,
             "y": y,
             "customdata": point_numbers,
-            "text": hover_text,
+            "text": quantized_hover_text,
             "hovertemplate": "%{text}<extra></extra>",
             "line": {"color": "#4368aa", "width": 2},
             "marker": {
@@ -349,8 +386,8 @@ def _figure(
                 "size": 8,
                 "line": {"color": "#ffffff", "width": 1},
             },
-            "name": "Traversal",
-            "meta": {"role": "grid-path"},
+            "name": "Quantized",
+            "meta": {"role": "grid-path", "representation": "quantized"},
         },
         {
             "type": "scatter",
@@ -365,7 +402,7 @@ def _figure(
                 "line": {"color": "#ffffff", "width": 3},
             },
             "name": "Start",
-            "meta": {"role": "grid-start"},
+            "meta": {"role": "grid-start", "representation": "quantized"},
         },
         {
             "type": "scatter",
@@ -380,19 +417,13 @@ def _figure(
                 "line": {"color": "#ffffff", "width": 3},
             },
             "name": "End",
-            "meta": {"role": "grid-end"},
+            "meta": {"role": "grid-end", "representation": "quantized"},
         },
     ]
 
     return {
         "data": data,
         "layout": {
-            "title": {
-                "text": title,
-                "x": 0.02,
-                "xanchor": "left",
-                "font": {"size": 20},
-            },
             "paper_bgcolor": "#e6eeff",
             "plot_bgcolor": "#d1e0ff",
             "font": {
@@ -400,7 +431,7 @@ def _figure(
                 "color": "#000000",
                 "size": 14,
             },
-            "margin": {"l": 62, "r": 24, "t": 58, "b": 58},
+            "margin": {"l": 62, "r": 24, "t": 20, "b": 58},
             "hovermode": "closest",
             "showlegend": False,
             "meta": {
@@ -429,6 +460,108 @@ def _figure(
                 "scaleratio": 1,
             },
             "uirevision": f"{coordinate_system}-{grid.input_system}",
+        },
+        "config": {
+            "displaylogo": False,
+            "responsive": True,
+            "scrollZoom": True,
+            "modeBarButtonsToRemove": ["lasso2d", "select2d"],
+        },
+    }
+
+
+def _angular_error(actual: float, ideal: float) -> float:
+    difference = (actual - ideal + 180.0) % 360.0 - 180.0
+    if difference == -180.0 and actual - ideal > 0:
+        return 180.0
+    return difference
+
+
+def _quantization_error_figure(
+    grid: DesignedGrid,
+    *,
+    coordinate_system: Literal["az_el", "pan_tilt"],
+) -> dict:
+    if coordinate_system == "az_el":
+        x = [
+            _angular_error(point.azimuth, point.ideal_azimuth)
+            for point in grid.points
+        ]
+        y = [
+            point.elevation - point.ideal_elevation
+            for point in grid.points
+        ]
+        x_title = "Azimuth error (°)"
+        y_title = "Elevation error (°)"
+    else:
+        x = [
+            _angular_error(point.pan, point.ideal_pan)
+            for point in grid.points
+        ]
+        y = [
+            point.tilt - point.ideal_tilt
+            for point in grid.points
+        ]
+        x_title = "Pan error (°)"
+        y_title = "Tilt error (°)"
+
+    point_numbers = [point.traversal_index for point in grid.points]
+    hover_text = [
+        (
+            f"<b>Point {point.traversal_index}</b><br>"
+            f"Azimuth error: {_angular_error(point.azimuth, point.ideal_azimuth):.4f}°<br>"
+            f"Elevation error: {point.elevation - point.ideal_elevation:.4f}°<br>"
+            f"Pan error: {_angular_error(point.pan, point.ideal_pan):.4f}°<br>"
+            f"Tilt error: {point.tilt - point.ideal_tilt:.4f}°"
+        )
+        for point in grid.points
+    ]
+    return {
+        "data": [{
+            "type": "scatter",
+            "mode": "markers",
+            "x": x,
+            "y": y,
+            "customdata": point_numbers,
+            "text": hover_text,
+            "hovertemplate": "%{text}<extra></extra>",
+            "marker": {
+                "color": point_numbers,
+                "colorscale": [[0, "#0033a0"], [1, "#c49300"]],
+                "size": 9,
+                "line": {"color": "#ffffff", "width": 1},
+            },
+            "name": "Quantization error",
+            "meta": {"role": "quantization-error"},
+        }],
+        "layout": {
+            "paper_bgcolor": "#e6eeff",
+            "plot_bgcolor": "#d1e0ff",
+            "font": {
+                "family": "Aptos, Segoe UI, Arial, sans-serif",
+                "color": "#000000",
+                "size": 14,
+            },
+            "margin": {"l": 62, "r": 24, "t": 20, "b": 58},
+            "hovermode": "closest",
+            "showlegend": False,
+            "xaxis": {
+                "title": {"text": x_title, "font": {"size": 16}},
+                "tickfont": {"size": 14},
+                "gridcolor": "#8fa6d2",
+                "zerolinecolor": "#5f79ad",
+                "automargin": True,
+            },
+            "yaxis": {
+                "title": {"text": y_title, "font": {"size": 16}},
+                "tickfont": {"size": 14},
+                "gridcolor": "#8fa6d2",
+                "zerolinecolor": "#5f79ad",
+                "automargin": True,
+                "scaleanchor": "x",
+                "scaleratio": 1,
+            },
+            "uirevision": f"quantization-error-{coordinate_system}-{grid.input_system}",
         },
         "config": {
             "displaylogo": False,
@@ -622,6 +755,14 @@ def _preview_context(grid: DesignedGrid) -> dict:
         "az_el_figure_json": json.dumps(_figure(grid, coordinate_system="az_el"), allow_nan=False),
         "pan_tilt_figure_json": json.dumps(_figure(grid, coordinate_system="pan_tilt"), allow_nan=False),
         "three_dimensional_figure_json": json.dumps(_three_dimensional_figure(grid), allow_nan=False),
+        "az_el_error_figure_json": json.dumps(
+            _quantization_error_figure(grid, coordinate_system="az_el"),
+            allow_nan=False,
+        ),
+        "pan_tilt_error_figure_json": json.dumps(
+            _quantization_error_figure(grid, coordinate_system="pan_tilt"),
+            allow_nan=False,
+        ),
         "error": None,
     }
 
@@ -641,6 +782,12 @@ def _build_grid(
     tilt_min: float,
     tilt_max: float,
     tilt_step: float,
+    quantize_tilt: bool,
+    tilt_quantization_origin: float,
+    tilt_quantization_step: float,
+    quantize_pan: bool,
+    pan_quantization_origin: float,
+    pan_quantization_step: float,
     reject_inaccessible: bool,
 ) -> DesignedGrid:
     if input_system == "az_el":
@@ -654,6 +801,16 @@ def _build_grid(
         horizontal=horizontal,
         vertical=vertical,
         reject_inaccessible=reject_inaccessible,
+        pan_quantization=QuantizationDefinition(
+            enabled=quantize_pan,
+            origin=pan_quantization_origin,
+            step=pan_quantization_step,
+        ),
+        tilt_quantization=QuantizationDefinition(
+            enabled=quantize_tilt,
+            origin=tilt_quantization_origin,
+            step=tilt_quantization_step,
+        ),
     )
 
 
@@ -701,12 +858,38 @@ def grid_designer_preview(
     tilt_min: str = str(DEFAULTS["tilt_min"]),
     tilt_max: str = str(DEFAULTS["tilt_max"]),
     tilt_step: str = str(DEFAULTS["tilt_step"]),
+    quantize_tilt: bool = False,
+    tilt_quantization_origin: str = str(DEFAULTS["tilt_quantization_origin"]),
+    tilt_quantization_step: str = str(DEFAULTS["tilt_quantization_step"]),
+    quantize_pan: bool = False,
+    pan_quantization_origin: str = str(DEFAULTS["pan_quantization_origin"]),
+    pan_quantization_step: str = str(DEFAULTS["pan_quantization_step"]),
     reject_inaccessible: bool = False,
 ) -> HTMLResponse:
     try:
         values = dict(DEFAULTS)
         values["input_system"] = input_system
         values["reject_inaccessible"] = reject_inaccessible
+        values.update(
+            quantize_tilt=quantize_tilt,
+            tilt_quantization_origin=_parse_number(
+                tilt_quantization_origin,
+                label="tilt quantization origin",
+            ),
+            tilt_quantization_step=_parse_number(
+                tilt_quantization_step,
+                label="tilt quantization step size",
+            ),
+            quantize_pan=quantize_pan,
+            pan_quantization_origin=_parse_number(
+                pan_quantization_origin,
+                label="pan quantization origin",
+            ),
+            pan_quantization_step=_parse_number(
+                pan_quantization_step,
+                label="pan quantization step size",
+            ),
+        )
         if input_system == "az_el":
             values.update(
                 azimuth_min=_parse_number(azimuth_min, label="azimuth minimum"),
