@@ -88,6 +88,8 @@ def test_grid_designer_page_loads():
     assert "LEMS Anechoic Chamber" not in response.text
     assert 'id="menu-toggle"' in response.text
     assert 'id="application-menu"' in response.text
+    assert 'id="theme-select"' not in response.text
+    assert "grid-designer-themes" not in response.text
     assert "Azimuth / elevation" in response.text
     assert "Pan / tilt" in response.text
     assert client.get("/vendor/plotly.min.js").status_code == 200
