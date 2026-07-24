@@ -48,6 +48,7 @@ class QuantizationDefinition:
 class SimpleGridDefinition:
     horizontal: AxisDefinition
     vertical: AxisDefinition
+    name: str = ""
     cosine_correct_azimuth_spacing: bool = False
     stagger_alternate_elevation_rows: bool = False
     equal_area_pan_spacing: bool = False

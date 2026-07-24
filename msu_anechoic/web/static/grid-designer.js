@@ -276,8 +276,10 @@ function updateCoordinateFields() {
 function updateSimpleGridList() {
     const cards = [...document.querySelectorAll("[data-simple-grid]")];
     cards.forEach((card, index) => {
-        const number = card.querySelector("[data-simple-grid-number]");
-        if (number) number.textContent = String(index + 1);
+        const nameInput = card.querySelector("[data-simple-grid-name]");
+        if (nameInput) {
+            nameInput.setAttribute("aria-label", `Grid ${index + 1} name`);
+        }
         card.querySelectorAll("[data-simple-grid-option]").forEach((control) => {
             control.name = `${control.dataset.simpleGridOption}_${index}`;
         });
@@ -306,6 +308,22 @@ function addSimpleGrid() {
             input.value = sourceInputs[index].value;
         }
     });
+        const existingNames = new Set(
+            [...list.querySelectorAll("[data-simple-grid-name]")]
+                .map((input) => input.value.trim()),
+        );
+        const existingDefaultIndexes = [...existingNames]
+            .map((name) => /^Grid (\d+)$/.exec(name))
+            .filter(Boolean)
+            .map((match) => Number(match[1]));
+        let defaultNameIndex = Math.max(
+            list.children.length + 1,
+            ...existingDefaultIndexes.map((index) => index + 1),
+        );
+        while (existingNames.has(`Grid ${defaultNameIndex}`)) {
+            defaultNameIndex += 1;
+        }
+    clone.querySelector("[data-simple-grid-name]").value = `Grid ${defaultNameIndex}`;
     list.append(clone);
     updateCoordinateFields();
     updateSimpleGridList();

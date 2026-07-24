@@ -331,38 +331,57 @@ h2 {
     margin: 0 0 12px;
 }
 
-.grid-info-list {
-    margin: 0;
-    padding-top: 12px;
-    display: grid;
-    grid-template-columns: minmax(220px, 2fr) repeat(3, minmax(100px, 1fr));
+.grid-info-table-wrap {
+    overflow-x: auto;
+}
+
+.grid-info-table {
+    width: 100%;
+    min-width: 520px;
+    border-collapse: collapse;
+    font-variant-numeric: tabular-nums;
+}
+
+.grid-info-table th,
+.grid-info-table td {
+    padding: 10px 14px;
     border-top: 1px solid var(--border);
+    color: var(--text);
+    text-align: right;
 }
 
-.grid-info-list > div {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    padding-right: 20px;
+.grid-info-table th:first-child,
+.grid-info-table td:first-child {
+    padding-left: 0;
+    text-align: left;
 }
 
-.grid-info-list > div + div {
-    padding-left: 20px;
-    border-left: 1px solid var(--border);
+.grid-info-table th:last-child,
+.grid-info-table td:last-child {
+    padding-right: 0;
 }
 
-.grid-info-list dt {
+.grid-info-table thead th {
     color: var(--text-muted);
     font-size: 14px;
     font-weight: 600;
 }
 
-.grid-info-list dd {
-    margin: 0;
-    color: var(--text);
-    font-size: 18px;
+.grid-info-table tbody th,
+.grid-info-table tbody td {
+    font-size: 16px;
+}
+
+.grid-info-table tbody th {
     font-weight: 650;
-    font-variant-numeric: tabular-nums;
+}
+
+.grid-info-table tbody tr.grid-info-subgrid {
+    font-style: italic;
+}
+
+.grid-info-table tbody tr.grid-info-subgrid th {
+    font-weight: 400;
 }
 
 .panel-heading,
@@ -446,6 +465,32 @@ h2 {
 
 .simple-grid h4 {
     font-size: 15px;
+}
+
+.simple-grid-name {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    color: var(--text);
+    font-size: 14px;
+    font-weight: 650;
+}
+
+.simple-grid-name input {
+    width: min(280px, 42vw);
+    height: 34px;
+    padding: 5px 9px;
+    border: 1px solid var(--border-dark);
+    border-radius: 2px;
+    outline: 0;
+    background: var(--input);
+    color: var(--text);
+    font: inherit;
+}
+
+.simple-grid-name input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
 }
 
 .secondary-button,
@@ -992,25 +1037,6 @@ legend span {
 
     .input-grid {
         grid-template-columns: 1fr;
-    }
-
-    .grid-info-list {
-        grid-template-columns: 1fr 1fr;
-        row-gap: 12px;
-    }
-
-    .grid-info-list > div {
-        padding-right: 12px;
-    }
-
-    .grid-info-list > div:nth-child(odd) {
-        padding-left: 0;
-        border-left: 0;
-    }
-
-    .grid-info-list > div:nth-child(n + 3) {
-        padding-top: 12px;
-        border-top: 1px solid var(--border);
     }
 
     .grid-summary {

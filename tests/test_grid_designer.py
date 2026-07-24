@@ -582,11 +582,35 @@ def test_grid_travel_time_sums_simultaneous_axis_move_estimates(monkeypatch):
         vertical=AxisDefinition(0, 10, 10),
     )
 
-    assert _estimate_grid_travel_time(grid) == pytest.approx(70)
+    assert _estimate_grid_travel_time(grid) == pytest.approx(100)
     assert calls == [
+        (10, "vertical", False),
         (10, "horizontal", False),
         (10, "vertical", False),
         (10, "horizontal", False),
+    ]
+
+
+def test_grid_travel_time_includes_both_origin_legs(monkeypatch):
+    calls = []
+
+    def fake_estimate_time(angle, *, kind, trace):
+        calls.append((angle, kind, trace))
+        return angle * (2 if kind == "horizontal" else 3)
+
+    monkeypatch.setattr(experiment, "_estimate_time", fake_estimate_time)
+    grid = design_grid(
+        input_system="pan_tilt",
+        horizontal=AxisDefinition(10, 10, 1),
+        vertical=AxisDefinition(20, 20, 1),
+    )
+
+    assert _estimate_grid_travel_time(grid) == pytest.approx(120)
+    assert calls == [
+        (10, "horizontal", False),
+        (20, "vertical", False),
+        (10, "horizontal", False),
+        (20, "vertical", False),
     ]
 
 
@@ -700,6 +724,9 @@ def test_grid_designer_page_loads():
     response = client.get("/grid-designer")
     assert response.status_code == 200
     assert "Grid Designer" in response.text
+    assert 'name="grid_name"' in response.text
+    assert 'value="Grid 1"' in response.text
+    assert "data-simple-grid-name" in response.text
     assert "MSU Anechoic Chamber" in response.text
     assert "LEMS Anechoic Chamber" not in response.text
     assert 'id="menu-toggle"' in response.text
@@ -996,9 +1023,12 @@ def test_pan_tilt_preview_contains_three_plot_payloads():
     assert "Grid info" in response.text
     assert 'class="grid-info-card"' in response.text
     assert "Estimated travel time" in response.text
-    assert "<dt>Points</dt>" in response.text
-    assert "<dt>Rows</dt>" in response.text
-    assert "<dt>Columns</dt>" in response.text
+    assert 'class="grid-info-table"' in response.text
+    assert ">Grid</th>" in response.text
+    assert ">Points</th>" in response.text
+    assert ">Rows</th>" in response.text
+    assert ">Columns</th>" not in response.text
+    assert '<th scope="row">Grid 1</th>' in response.text
     assert "seconds" in response.text
     assert (
         'data-plot-visibility-controls="three-dimensional-figure"'
@@ -1037,6 +1067,8 @@ def test_preview_combines_repeated_simple_grid_parameters():
         "/grid-designer/preview",
         params=[
             ("input_system", "pan_tilt"),
+            ("grid_name", "Sparse"),
+            ("grid_name", "Dense"),
             ("pan_min", "-2"),
             ("pan_min", "-1"),
             ("pan_max", "2"),
@@ -1056,3 +1088,8 @@ def test_preview_combines_repeated_simple_grid_parameters():
     assert "<strong>17</strong> points" in response.text
     assert "<strong>5</strong> rows" in response.text
     assert "<strong>5</strong> columns" in response.text
+    assert '<th scope="row">Combined grid</th>' in response.text
+    assert '<th scope="row">Sparse</th>' in response.text
+    assert '<th scope="row">Dense</th>' in response.text
+    assert response.text.count('<th scope="row">') == 3
+    assert response.text.count('class="grid-info-subgrid"') == 2

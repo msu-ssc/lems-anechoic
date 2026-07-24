@@ -103,7 +103,17 @@
                             {% for simple_grid in simple_grids %}
                                 <article class="simple-grid" data-simple-grid>
                                     <header>
-                                        <h4>Grid <span data-simple-grid-number>{{ loop.index }}</span></h4>
+                                        <label class="simple-grid-name">
+                                            <span>Name</span>
+                                            <input
+                                                type="text"
+                                                name="grid_name"
+                                                value="{{ simple_grid.grid_name }}"
+                                                maxlength="80"
+                                                data-simple-grid-name
+                                                aria-label="Grid {{ loop.index }} name"
+                                            >
+                                        </label>
                                         <button
                                             type="button"
                                             class="text-button"

@@ -36,6 +36,7 @@ app.mount("/static", StaticFiles(directory=WEB_ROOT / "static"), name="static")
 
 DEFAULTS = {
     "input_system": "az_el",
+    "grid_name": "Grid 1",
     "azimuth_min": -30.0,
     "azimuth_max": 30.0,
     "azimuth_step": 10.0,
@@ -116,11 +117,16 @@ def _shortest_angular_delta(start: float, end: float) -> float:
 
 
 def _estimate_grid_travel_time(grid: DesignedGrid) -> float:
-    """Estimate traversal time for simultaneous pan and tilt movements."""
+    """Estimate a complete origin-to-grid-to-origin excursion."""
     total_seconds = 0.0
-    for start, end in zip(grid.points, grid.points[1:]):
-        pan_delta = abs(_shortest_angular_delta(start.pan, end.pan))
-        tilt_delta = abs(end.tilt - start.tilt)
+    route = (
+        (0.0, 0.0),
+        *((point.pan, point.tilt) for point in grid.points),
+        (0.0, 0.0),
+    )
+    for start, end in zip(route, route[1:]):
+        pan_delta = abs(_shortest_angular_delta(start[0], end[0]))
+        tilt_delta = abs(end[1] - start[1])
         horizontal_seconds = (
             experiment._estimate_time(
                 pan_delta,
@@ -878,10 +884,27 @@ def _three_dimensional_figure(grid: DesignedGrid) -> dict:
     }
 
 
-def _preview_context(grid: DesignedGrid) -> dict:
+def _grid_info_row(name: str, grid: DesignedGrid | None) -> dict:
+    estimated_seconds = _estimate_grid_travel_time(grid) if grid else 0.0
+    return {
+        "name": name,
+        "estimated_travel_time_seconds": estimated_seconds,
+        "estimated_travel_time_label": _format_duration(estimated_seconds),
+        "point_count": len(grid.points) if grid else 0,
+        "row_count": grid.row_count if grid else 0,
+        "column_count": grid.column_count if grid else 0,
+    }
+
+
+def _preview_context(
+    grid: DesignedGrid,
+    *,
+    grid_info_rows: list[dict] | None = None,
+) -> dict:
     estimated_travel_time_seconds = _estimate_grid_travel_time(grid)
     return {
         "grid": grid,
+        "grid_info_rows": grid_info_rows or [_grid_info_row("Grid 1", grid)],
         "estimated_travel_time_seconds": estimated_travel_time_seconds,
         "estimated_travel_time_label": _format_duration(
             estimated_travel_time_seconds
@@ -930,9 +953,50 @@ def _build_grid(
     )
 
 
+def _build_grid_info_rows(
+    *,
+    combined_grid: DesignedGrid,
+    input_system: Literal["az_el", "pan_tilt"],
+    grids: tuple[SimpleGridDefinition, ...],
+    quantize_tilt: bool,
+    tilt_quantization_origin: float,
+    tilt_quantization_step: float,
+    quantize_pan: bool,
+    pan_quantization_origin: float,
+    pan_quantization_step: float,
+    reject_inaccessible: bool,
+) -> list[dict]:
+    if len(grids) == 1:
+        return [_grid_info_row(grids[0].name or "Grid 1", combined_grid)]
+
+    rows = [_grid_info_row("Combined grid", combined_grid)]
+    for index, definition in enumerate(grids):
+        try:
+            simple_grid = _build_grid(
+                input_system=input_system,
+                grids=(definition,),
+                quantize_tilt=quantize_tilt,
+                tilt_quantization_origin=tilt_quantization_origin,
+                tilt_quantization_step=tilt_quantization_step,
+                quantize_pan=quantize_pan,
+                pan_quantization_origin=pan_quantization_origin,
+                pan_quantization_step=pan_quantization_step,
+                reject_inaccessible=reject_inaccessible,
+            )
+        except GridValidationError:
+            simple_grid = None
+        rows.append(
+            _grid_info_row(
+                definition.name or f"Grid {index + 1}",
+                simple_grid,
+            )
+        )
+    return rows
+
+
 def _simple_grid_definition(
     input_system: Literal["az_el", "pan_tilt"],
-    values: dict[str, float | bool],
+    values: dict[str, float | bool | str],
 ) -> SimpleGridDefinition:
     if input_system == "az_el":
         return SimpleGridDefinition(
@@ -946,6 +1010,7 @@ def _simple_grid_definition(
                 values["elevation_max"],
                 values["elevation_step"],
             ),
+            name=str(values["grid_name"]),
             cosine_correct_azimuth_spacing=bool(
                 values["cosine_correct_azimuth_spacing"]
             ),
@@ -964,6 +1029,7 @@ def _simple_grid_definition(
             values["tilt_max"],
             values["tilt_step"],
         ),
+        name=str(values["grid_name"]),
         equal_area_pan_spacing=bool(values["equal_area_pan_spacing"]),
         stagger_alternate_tilt_rows=bool(
             values["stagger_alternate_tilt_rows"]
@@ -1009,6 +1075,11 @@ def _parse_simple_grids(
         for name in names
     }
     grid_count = max((len(values) for values in raw_values.values()), default=0) or 1
+    raw_grid_names = request.query_params.getlist("grid_name")
+    if raw_grid_names and len(raw_grid_names) != grid_count:
+        raise GridValidationError(
+            "Every simple grid must have one name."
+        )
     for name, values in raw_values.items():
         if not values:
             raw_values[name] = [str(DEFAULTS[name])] * grid_count
@@ -1028,13 +1099,15 @@ def _parse_simple_grids(
             )
             return f"grid {index + 1} {label}" if grid_count > 1 else label
 
-        values: dict[str, float | bool] = {
+        values: dict[str, float | bool | str] = {
             name: _parse_number(
                 raw_values[name][index],
                 label=field_label(name),
             )
             for name in names
         }
+        grid_name = raw_grid_names[index].strip() if raw_grid_names else ""
+        values["grid_name"] = grid_name or f"Grid {index + 1}"
         options = (
             (
                 "cosine_correct_azimuth_spacing",
@@ -1063,14 +1136,27 @@ def index() -> RedirectResponse:
 
 @app.get("/grid-designer", response_class=HTMLResponse)
 def grid_designer(request: Request) -> HTMLResponse:
+    simple_grids = (
+        _simple_grid_definition(
+            DEFAULTS["input_system"],
+            DEFAULTS,
+        ),
+    )
     grid = _build_grid(
         input_system=DEFAULTS["input_system"],
-        grids=(
-            _simple_grid_definition(
-                DEFAULTS["input_system"],
-                DEFAULTS,
-            ),
-        ),
+        grids=simple_grids,
+        quantize_tilt=DEFAULTS["quantize_tilt"],
+        tilt_quantization_origin=DEFAULTS["tilt_quantization_origin"],
+        tilt_quantization_step=DEFAULTS["tilt_quantization_step"],
+        quantize_pan=DEFAULTS["quantize_pan"],
+        pan_quantization_origin=DEFAULTS["pan_quantization_origin"],
+        pan_quantization_step=DEFAULTS["pan_quantization_step"],
+        reject_inaccessible=DEFAULTS["reject_inaccessible"],
+    )
+    grid_info_rows = _build_grid_info_rows(
+        combined_grid=grid,
+        input_system=DEFAULTS["input_system"],
+        grids=simple_grids,
         quantize_tilt=DEFAULTS["quantize_tilt"],
         tilt_quantization_origin=DEFAULTS["tilt_quantization_origin"],
         tilt_quantization_step=DEFAULTS["tilt_quantization_step"],
@@ -1085,7 +1171,7 @@ def grid_designer(request: Request) -> HTMLResponse:
         context={
             **DEFAULTS,
             "simple_grids": [dict(DEFAULTS)],
-            **_preview_context(grid),
+            **_preview_context(grid, grid_info_rows=grid_info_rows),
         },
     )
 
@@ -1103,30 +1189,47 @@ def grid_designer_preview(
     reject_inaccessible: bool = False,
 ) -> HTMLResponse:
     try:
+        grids = _parse_simple_grids(request, input_system)
+        tilt_origin = _parse_number(
+            tilt_quantization_origin,
+            label="tilt quantization origin",
+        )
+        tilt_step = _parse_number(
+            tilt_quantization_step,
+            label="tilt quantization step size",
+        )
+        pan_origin = _parse_number(
+            pan_quantization_origin,
+            label="pan quantization origin",
+        )
+        pan_step = _parse_number(
+            pan_quantization_step,
+            label="pan quantization step size",
+        )
         grid = _build_grid(
             input_system=input_system,
-            grids=_parse_simple_grids(request, input_system),
+            grids=grids,
             quantize_tilt=quantize_tilt,
-            tilt_quantization_origin=_parse_number(
-                tilt_quantization_origin,
-                label="tilt quantization origin",
-            ),
-            tilt_quantization_step=_parse_number(
-                tilt_quantization_step,
-                label="tilt quantization step size",
-            ),
+            tilt_quantization_origin=tilt_origin,
+            tilt_quantization_step=tilt_step,
             quantize_pan=quantize_pan,
-            pan_quantization_origin=_parse_number(
-                pan_quantization_origin,
-                label="pan quantization origin",
-            ),
-            pan_quantization_step=_parse_number(
-                pan_quantization_step,
-                label="pan quantization step size",
-            ),
+            pan_quantization_origin=pan_origin,
+            pan_quantization_step=pan_step,
             reject_inaccessible=reject_inaccessible,
         )
-        context = _preview_context(grid)
+        grid_info_rows = _build_grid_info_rows(
+            combined_grid=grid,
+            input_system=input_system,
+            grids=grids,
+            quantize_tilt=quantize_tilt,
+            tilt_quantization_origin=tilt_origin,
+            tilt_quantization_step=tilt_step,
+            quantize_pan=quantize_pan,
+            pan_quantization_origin=pan_origin,
+            pan_quantization_step=pan_step,
+            reject_inaccessible=reject_inaccessible,
+        )
+        context = _preview_context(grid, grid_info_rows=grid_info_rows)
     except GridValidationError as exc:
         context = {"grid": None, "error": str(exc)}
 

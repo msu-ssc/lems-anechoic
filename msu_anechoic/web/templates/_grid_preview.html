@@ -11,26 +11,30 @@
         <section class="grid-info-section" aria-labelledby="grid-info-heading">
             <article class="grid-info-card">
                 <h2 id="grid-info-heading">Grid info</h2>
-                <dl class="grid-info-list">
-                    <div>
-                        <dt>Estimated travel time</dt>
-                        <dd title="{{ '%.1f' | format(estimated_travel_time_seconds) }} seconds">
-                            {{ estimated_travel_time_label }}
-                        </dd>
-                    </div>
-                    <div>
-                        <dt>Points</dt>
-                        <dd>{{ "{:,}".format(grid.points | length) }}</dd>
-                    </div>
-                    <div>
-                        <dt>Rows</dt>
-                        <dd>{{ grid.row_count }}</dd>
-                    </div>
-                    <div>
-                        <dt>Columns</dt>
-                        <dd>{{ grid.column_count }}</dd>
-                    </div>
-                </dl>
+                <div class="grid-info-table-wrap">
+                    <table class="grid-info-table">
+                        <thead>
+                            <tr>
+                                <th scope="col">Grid</th>
+                                <th scope="col">Estimated travel time</th>
+                                <th scope="col">Points</th>
+                                <th scope="col">Rows</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for info in grid_info_rows %}
+                                <tr{% if grid_info_rows | length > 1 and not loop.first %} class="grid-info-subgrid"{% endif %}>
+                                    <th scope="row">{{ info.name }}</th>
+                                    <td title="{{ '%.1f' | format(info.estimated_travel_time_seconds) }} seconds">
+                                        {{ info.estimated_travel_time_label }}
+                                    </td>
+                                    <td>{{ "{:,}".format(info.point_count) }}</td>
+                                    <td>{{ info.row_count }}</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
             </article>
         </section>
 
