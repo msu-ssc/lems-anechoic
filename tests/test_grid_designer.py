@@ -3,24 +3,25 @@ import math
 import pytest
 from fastapi.testclient import TestClient
 
+from msu_anechoic.web.app import INACCESSIBLE_AZ_EL_REGIONS
 from msu_anechoic.web.app import _az_el_unit_vector
 from msu_anechoic.web.app import _figure
 from msu_anechoic.web.app import _flat_topped_lower_hemisphere_mesh
+from msu_anechoic.web.app import _interpolated_route_coordinates
 from msu_anechoic.web.app import _quantization_error_figure
 from msu_anechoic.web.app import _spherical_patch_mesh
 from msu_anechoic.web.app import _three_dimensional_figure
-from msu_anechoic.web.app import INACCESSIBLE_AZ_EL_REGIONS
 from msu_anechoic.web.app import app
-from msu_anechoic.web.grid import AxisDefinition
 from msu_anechoic.web.grid import DUPLICATE_TOLERANCE
-from msu_anechoic.web.grid import GridValidationError
 from msu_anechoic.web.grid import MAX_TURNTABLE_TILT
+from msu_anechoic.web.grid import AxisDefinition
+from msu_anechoic.web.grid import GridValidationError
 from msu_anechoic.web.grid import QuantizationDefinition
 from msu_anechoic.web.grid import SimpleGridDefinition
 from msu_anechoic.web.grid import axis_values
 from msu_anechoic.web.grid import az_el_to_pan_tilt
-from msu_anechoic.web.grid import design_grid
 from msu_anechoic.web.grid import design_combined_grid
+from msu_anechoic.web.grid import design_grid
 from msu_anechoic.web.grid import pan_tilt_to_az_el
 from msu_anechoic.web.grid import quantize_angle
 
@@ -335,6 +336,73 @@ def test_spherical_screen_caps_azimuth_at_one_revolution():
     assert len(i) == len(j) == len(k) == azimuth_segments * elevation_segments * 2
 
 
+def test_long_az_el_routes_are_interpolated_in_azimuth_and_elevation():
+    grid = design_combined_grid(
+        input_system="az_el",
+        grids=(
+            SimpleGridDefinition(
+                horizontal=AxisDefinition(0, 0, 1),
+                vertical=AxisDefinition(0, 0, 1),
+            ),
+            SimpleGridDefinition(
+                horizontal=AxisDefinition(80, 80, 1),
+                vertical=AxisDefinition(60, 60, 1),
+            ),
+        ),
+    )
+
+    route = _interpolated_route_coordinates(grid)
+
+    assert len(route) == 51
+    assert route[25] == pytest.approx(_az_el_unit_vector(40, 30))
+    assert all(math.dist(point, (0.0, 0.0, 0.0)) == pytest.approx(1.0) for point in route)
+
+
+def test_long_pan_tilt_routes_are_interpolated_in_pan_and_tilt():
+    grid = design_combined_grid(
+        input_system="pan_tilt",
+        grids=(
+            SimpleGridDefinition(
+                horizontal=AxisDefinition(0, 0, 1),
+                vertical=AxisDefinition(0, 0, 1),
+            ),
+            SimpleGridDefinition(
+                horizontal=AxisDefinition(80, 80, 1),
+                vertical=AxisDefinition(60, 60, 1),
+            ),
+        ),
+    )
+
+    route = _interpolated_route_coordinates(grid)
+    midpoint_azimuth, midpoint_elevation = pan_tilt_to_az_el(40, 30)
+
+    assert len(route) == 51
+    assert route[25] == pytest.approx(
+        _az_el_unit_vector(midpoint_azimuth, midpoint_elevation)
+    )
+    assert all(math.dist(point, (0.0, 0.0, 0.0)) == pytest.approx(1.0) for point in route)
+
+
+def test_native_coordinate_routes_leave_ten_degree_segments_unsubdivided():
+    grid = design_combined_grid(
+        input_system="az_el",
+        grids=(
+            SimpleGridDefinition(
+                horizontal=AxisDefinition(0, 0, 1),
+                vertical=AxisDefinition(0, 0, 1),
+            ),
+            SimpleGridDefinition(
+                horizontal=AxisDefinition(6, 6, 1),
+                vertical=AxisDefinition(8, 8, 1),
+            ),
+        ),
+    )
+
+    route = _interpolated_route_coordinates(grid)
+
+    assert len(route) == 2
+
+
 def test_three_dimensional_figure_contains_requested_geometry_and_az_el_grid():
     grid = design_grid(
         input_system="pan_tilt",
@@ -350,7 +418,8 @@ def test_three_dimensional_figure_contains_requested_geometry_and_az_el_grid():
         "origin",
         "source",
         "grid-screen",
-        "grid-path",
+        "grid-route",
+        "grid-points",
         "grid-start",
         "grid-end",
     }
@@ -374,13 +443,18 @@ def test_three_dimensional_figure_contains_requested_geometry_and_az_el_grid():
         assert figure["layout"]["scene"][axis_name]["showticklabels"] is False
         assert figure["layout"]["scene"][axis_name]["ticks"] == ""
 
-    path = traces_by_role["grid-path"]
+    points = traces_by_role["grid-points"]
     expected = [
         _az_el_unit_vector(point.azimuth, point.elevation)
         for point in grid.points
     ]
-    assert list(zip(path["x"], path["y"], path["z"])) == pytest.approx(expected)
-    assert path["mode"] == "lines+markers"
+    assert list(zip(points["x"], points["y"], points["z"])) == pytest.approx(expected)
+    assert points["mode"] == "markers"
+
+    route = traces_by_role["grid-route"]
+    assert route["mode"] == "lines"
+    assert route["hoverinfo"] == "skip"
+    assert len(route["x"]) >= len(points["x"])
 
 
 @pytest.mark.parametrize(

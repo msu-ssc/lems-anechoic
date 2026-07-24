@@ -17,13 +17,15 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from plotly.offline import get_plotlyjs
 
+from msu_anechoic.web.grid import MAX_TURNTABLE_TILT
 from msu_anechoic.web.grid import AxisDefinition
 from msu_anechoic.web.grid import DesignedGrid
+from msu_anechoic.web.grid import GridPoint
 from msu_anechoic.web.grid import GridValidationError
-from msu_anechoic.web.grid import MAX_TURNTABLE_TILT
 from msu_anechoic.web.grid import QuantizationDefinition
 from msu_anechoic.web.grid import SimpleGridDefinition
 from msu_anechoic.web.grid import design_combined_grid
+from msu_anechoic.web.grid import pan_tilt_to_az_el
 
 WEB_ROOT = Path(__file__).parent
 templates = Jinja2Templates(directory=WEB_ROOT / "templates")
@@ -53,6 +55,9 @@ DEFAULTS = {
     "pan_quantization_step": 0.5,
     "reject_inaccessible": False,
 }
+
+ROUTE_INTERPOLATION_THRESHOLD_DEGREES = 10.0
+ROUTE_MAX_STEP_DEGREES = 2.0
 
 
 def _precompute_inaccessible_az_el_regions() -> tuple[dict, ...]:
@@ -96,6 +101,59 @@ def _az_el_unit_vector(azimuth: float, elevation: float) -> tuple[float, float, 
         -horizontal_radius * math.sin(azimuth_radians),
         math.sin(elevation_radians),
     )
+
+
+def _shortest_angular_delta(start: float, end: float) -> float:
+    delta = (end - start + 180.0) % 360.0 - 180.0
+    if delta == -180.0 and end - start > 0.0:
+        return 180.0
+    return delta
+
+
+def _interpolated_route_coordinates(
+    grid: DesignedGrid,
+) -> list[tuple[float, float, float]]:
+    """Interpolate long route segments in the grid's specified coordinates."""
+    if not grid.points:
+        return []
+
+    def specified_coordinates(point: GridPoint) -> tuple[float, float]:
+        if grid.input_system == "az_el":
+            return point.azimuth, point.elevation
+        return point.pan, point.tilt
+
+    def unit_vector(horizontal: float, vertical: float) -> tuple[float, float, float]:
+        if grid.input_system == "az_el":
+            azimuth, elevation = horizontal, vertical
+        else:
+            azimuth, elevation = pan_tilt_to_az_el(horizontal, vertical)
+        return _az_el_unit_vector(azimuth, elevation)
+
+    first_horizontal, first_vertical = specified_coordinates(grid.points[0])
+    route = [unit_vector(first_horizontal, first_vertical)]
+    for start, end in zip(grid.points, grid.points[1:]):
+        start_horizontal, start_vertical = specified_coordinates(start)
+        end_horizontal, end_vertical = specified_coordinates(end)
+        horizontal_delta = _shortest_angular_delta(
+            start_horizontal,
+            end_horizontal,
+        )
+        vertical_delta = end_vertical - start_vertical
+        coordinate_distance = math.hypot(horizontal_delta, vertical_delta)
+        subdivision_count = (
+            math.ceil(coordinate_distance / ROUTE_MAX_STEP_DEGREES)
+            if coordinate_distance > ROUTE_INTERPOLATION_THRESHOLD_DEGREES + 1e-9
+            else 1
+        )
+        for step in range(1, subdivision_count + 1):
+            fraction = step / subdivision_count
+            route.append(
+                unit_vector(
+                    start_horizontal + horizontal_delta * fraction,
+                    start_vertical + vertical_delta * fraction,
+                )
+            )
+    return route
 
 
 def _sphere_mesh(
@@ -581,6 +639,10 @@ def _three_dimensional_figure(grid: DesignedGrid) -> dict:
     x = [coordinate[0] for coordinate in coordinates]
     y = [coordinate[1] for coordinate in coordinates]
     z = [coordinate[2] for coordinate in coordinates]
+    route_coordinates = _interpolated_route_coordinates(grid)
+    route_x = [coordinate[0] for coordinate in route_coordinates]
+    route_y = [coordinate[1] for coordinate in route_coordinates]
+    route_z = [coordinate[2] for coordinate in route_coordinates]
     point_numbers = [point.traversal_index for point in grid.points]
     azimuths = [point.azimuth for point in grid.points]
     elevations = [point.elevation for point in grid.points]
@@ -639,23 +701,34 @@ def _three_dimensional_figure(grid: DesignedGrid) -> dict:
         ),
         {
             "type": "scatter3d",
-            "mode": "lines+markers",
+            "mode": "lines",
+            "x": route_x,
+            "y": route_y,
+            "z": route_z,
+            "line": {"color": "#4368aa", "width": 4},
+            "hoverinfo": "skip",
+            "name": "Traversal route",
+            "showlegend": False,
+            "meta": {"role": "grid-route"},
+        },
+        {
+            "type": "scatter3d",
+            "mode": "markers",
             "x": x,
             "y": y,
             "z": z,
             "customdata": point_numbers,
             "text": hover_text,
             "hovertemplate": "%{text}<extra></extra>",
-            "line": {"color": "#4368aa", "width": 4},
             "marker": {
                 "color": point_numbers,
                 "colorscale": [[0, "#0033a0"], [1, "#c49300"]],
                 "size": 4,
                 "line": {"color": "#ffffff", "width": 1},
             },
-            "name": "Traversal",
+            "name": "Measurement points",
             "showlegend": False,
-            "meta": {"role": "grid-path"},
+            "meta": {"role": "grid-points"},
         },
         {
             "type": "scatter3d",

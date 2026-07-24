@@ -359,6 +359,15 @@ function applyTraceColors(trace, colors) {
         trace.marker.line.color = colors.ideal;
         return;
     }
+    if (role === "grid-route") {
+        trace.line.color = colors.line;
+        return;
+    }
+    if (role === "grid-points") {
+        trace.marker.colorscale = [[0, colors.start], [1, colors.end]];
+        trace.marker.line.color = colors.paper;
+        return;
+    }
     if (role === "grid-path") {
         trace.line.color = colors.line;
         trace.marker.colorscale = [[0, colors.start], [1, colors.end]];
