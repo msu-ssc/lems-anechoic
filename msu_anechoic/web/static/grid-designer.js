@@ -41,8 +41,8 @@ function plotColors() {
     const styles = window.getComputedStyle(document.documentElement);
     const value = (name, fallback) => styles.getPropertyValue(name).trim() || fallback;
     return {
-        paper: value("--plot-paper", "#fcfcfe"),
-        background: value("--plot-background", "#f2f5fa"),
+        paper: value("--plot-paper", "#f5f7fb"),
+        background: value("--plot-background", "#e6ebf6"),
         text: value("--plot-text", "#343434"),
         grid: value("--plot-grid", "#d3dced"),
         zero: value("--plot-zero", "#91a3c3"),

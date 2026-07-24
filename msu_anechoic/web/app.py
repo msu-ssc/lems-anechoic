@@ -126,8 +126,8 @@ def _figure(
         "data": data,
         "layout": {
             "title": {"text": title, "x": 0.02, "xanchor": "left"},
-            "paper_bgcolor": "#fcfcfe",
-            "plot_bgcolor": "#f2f5fa",
+            "paper_bgcolor": "#f5f7fb",
+            "plot_bgcolor": "#e6ebf6",
             "font": {"family": "Aptos, Segoe UI, Arial, sans-serif", "color": "#343434"},
             "margin": {"l": 62, "r": 24, "t": 58, "b": 58},
             "hovermode": "closest",

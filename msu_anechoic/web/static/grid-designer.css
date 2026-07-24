@@ -1,12 +1,12 @@
 :root {
     color-scheme: light;
     /*
-     * Light surfaces are low-opacity tints of primary MSU blue over white.
-     * The percentages increase with visual depth.
+     * Light surfaces are visible but low-strength tints of primary MSU blue
+     * over white. Cards sit slightly above the blue-tinted workspace.
      */
-    --background: #f2f5fa;
-    --surface: #fcfcfe;
-    --surface-muted: #edf1f8;
+    --background: #e8edf6;
+    --surface: #f5f7fb;
+    --surface-muted: #e0e7f4;
     --border: #c7d2eb;
     --border-dark: #99add9;
     --text: #343434;
@@ -25,8 +25,8 @@
     --menu-hover: #e6ecf7;
     --warning: #b45309;
     --warning-surface: #fff1df;
-    --plot-paper: #fcfcfe;
-    --plot-background: #f2f5fa;
+    --plot-paper: #f5f7fb;
+    --plot-background: #e6ebf6;
     --plot-text: #343434;
     --plot-grid: #d3dced;
     --plot-zero: #91a3c3;
@@ -41,10 +41,11 @@
 :root[data-color-mode="dark"] {
     color-scheme: dark;
     /*
-     * Dark surfaces are primary MSU blue (#0033a0) multiplied by black:
-     * background 25%, muted surface 35%, surface 45%, input 72%.
+     * Dark surfaces are primary MSU blue (#0033a0) multiplied by black.
+     * The workspace is now darker than the 45%-black cards, with still
+     * darker plot wells and inputs.
      */
-    --background: #002678;
+    --background: #000f30;
     --surface: #001c58;
     --surface-muted: #002168;
     --border: #31528a;
@@ -65,7 +66,7 @@
     --warning: #ffb36b;
     --warning-surface: #392518;
     --plot-paper: #001c58;
-    --plot-background: #002168;
+    --plot-background: #001238;
     --plot-text: #eef3ff;
     --plot-grid: #274b83;
     --plot-zero: #6680ad;
