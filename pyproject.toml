@@ -60,11 +60,6 @@ known-first-party = ["lems_a3", "moc_tools"]
 Homepage = "https://github.com/msu-ssc/lems-anechoic"
 Source = "https://github.com/msu-ssc/lems-anechoic"
 
-[tool.uv]
-dev-dependencies = [
-    "pytest>=8.3.4",
-]
-
 [dependency-groups]
 dev = [
     "httpx>=0.28",
