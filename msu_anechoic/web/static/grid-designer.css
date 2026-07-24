@@ -33,6 +33,10 @@
     --plot-line: #4368aa;
     --plot-start: #0033a0;
     --plot-end: #c49300;
+    --plot-turntable: #808080;
+    --plot-origin: #d62728;
+    --plot-source: #2ca02c;
+    --plot-boresight: #005eb8;
     font-family: "Segoe UI", Arial, sans-serif;
     color: var(--text);
     background: var(--background);
@@ -73,6 +77,10 @@
     --plot-line: #83a1d1;
     --plot-start: #79a7ff;
     --plot-end: #ffcf00;
+    --plot-turntable: #9299a6;
+    --plot-origin: #ff5c5c;
+    --plot-source: #45c46a;
+    --plot-boresight: #63aee8;
 }
 
 * {
@@ -507,9 +515,17 @@ legend span {
     padding: 4px;
 }
 
+.plot-card--3d {
+    grid-column: 1 / -1;
+}
+
 .plot {
     width: 100%;
     min-height: 500px;
+}
+
+.plot--3d {
+    min-height: 650px;
 }
 
 .path-note {
@@ -566,6 +582,10 @@ legend span {
     .plot {
         min-height: 450px;
     }
+
+    .plot--3d {
+        min-height: 560px;
+    }
 }
 
 @media (max-width: 620px) {
@@ -621,5 +641,9 @@ legend span {
 
     .plot {
         min-height: 380px;
+    }
+
+    .plot--3d {
+        min-height: 500px;
     }
 }

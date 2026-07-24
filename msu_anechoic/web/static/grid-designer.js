@@ -49,7 +49,47 @@ function plotColors() {
         line: value("--plot-line", "#4368aa"),
         start: value("--plot-start", "#0033a0"),
         end: value("--plot-end", "#c49300"),
+        turntable: value("--plot-turntable", "#808080"),
+        origin: value("--plot-origin", "#d62728"),
+        source: value("--plot-source", "#2ca02c"),
+        boresight: value("--plot-boresight", "#005eb8"),
     };
+}
+
+function applyTraceColors(trace, colors) {
+    const role = trace.meta?.role;
+
+    if (role === "turntable") {
+        trace.color = colors.turntable;
+        return;
+    }
+    if (role === "origin") {
+        trace.color = colors.origin;
+        return;
+    }
+    if (role === "source") {
+        trace.color = colors.source;
+        return;
+    }
+    if (role === "boresight") {
+        trace.line.color = colors.boresight;
+        return;
+    }
+    if (role === "grid-path") {
+        trace.line.color = colors.line;
+        trace.marker.colorscale = [[0, colors.start], [1, colors.end]];
+        trace.marker.line.color = colors.paper;
+        return;
+    }
+    if (role === "grid-start") {
+        trace.marker.color = colors.start;
+        trace.marker.line.color = colors.paper;
+        return;
+    }
+    if (role === "grid-end") {
+        trace.marker.color = colors.end;
+        trace.marker.line.color = colors.paper;
+    }
 }
 
 function renderPlots(root = document) {
@@ -67,17 +107,20 @@ function renderPlots(root = document) {
         figure.layout.paper_bgcolor = colors.paper;
         figure.layout.plot_bgcolor = colors.background;
         figure.layout.font.color = colors.text;
-        figure.layout.xaxis.gridcolor = colors.grid;
-        figure.layout.xaxis.zerolinecolor = colors.zero;
-        figure.layout.yaxis.gridcolor = colors.grid;
-        figure.layout.yaxis.zerolinecolor = colors.zero;
-        figure.data[0].line.color = colors.line;
-        figure.data[0].marker.colorscale = [[0, colors.start], [1, colors.end]];
-        figure.data[0].marker.line.color = colors.paper;
-        figure.data[1].marker.color = colors.start;
-        figure.data[1].marker.line.color = colors.paper;
-        figure.data[2].marker.color = colors.end;
-        figure.data[2].marker.line.color = colors.paper;
+        if (figure.layout.xaxis && figure.layout.yaxis) {
+            figure.layout.xaxis.gridcolor = colors.grid;
+            figure.layout.xaxis.zerolinecolor = colors.zero;
+            figure.layout.yaxis.gridcolor = colors.grid;
+            figure.layout.yaxis.zerolinecolor = colors.zero;
+        }
+        if (figure.layout.scene) {
+            figure.layout.scene.bgcolor = colors.background;
+            ["xaxis", "yaxis", "zaxis"].forEach((axisName) => {
+                figure.layout.scene[axisName].gridcolor = colors.grid;
+                figure.layout.scene[axisName].zerolinecolor = colors.zero;
+            });
+        }
+        figure.data.forEach((trace) => applyTraceColors(trace, colors));
         window.Plotly.react(
             plotElement,
             figure.data,

@@ -3,7 +3,10 @@ import math
 import pytest
 from fastapi.testclient import TestClient
 
+from msu_anechoic.web.app import _az_el_unit_vector
 from msu_anechoic.web.app import _figure
+from msu_anechoic.web.app import _flat_topped_lower_hemisphere_mesh
+from msu_anechoic.web.app import _three_dimensional_figure
 from msu_anechoic.web.app import app
 from msu_anechoic.web.grid import AxisDefinition
 from msu_anechoic.web.grid import axis_values
@@ -42,6 +45,64 @@ def test_grid_starts_top_left_and_traverses_horizontal_serpentine():
         (10, -10),
     ]
     assert [point.traversal_index for point in grid.points] == list(range(1, 10))
+
+
+@pytest.mark.parametrize(
+    ("azimuth", "elevation", "expected"),
+    [
+        (0, 0, (1, 0, 0)),
+        (90, 0, (0, 1, 0)),
+        (-90, 0, (0, -1, 0)),
+        (0, 90, (0, 0, 1)),
+        (0, -90, (0, 0, -1)),
+    ],
+)
+def test_az_el_unit_vector_uses_positive_x_as_boresight(azimuth, elevation, expected):
+    assert _az_el_unit_vector(azimuth, elevation) == pytest.approx(expected, abs=1e-12)
+
+
+def test_turntable_mesh_is_a_flat_topped_lower_hemisphere():
+    x, y, z, i, j, k = _flat_topped_lower_hemisphere_mesh(radius=0.5)
+
+    assert min(z) == pytest.approx(-0.5)
+    assert max(z) == pytest.approx(0.0, abs=1e-12)
+    assert all(value <= 1e-12 for value in z)
+    assert max(math.sqrt(x_value**2 + y_value**2 + z_value**2) for x_value, y_value, z_value in zip(x, y, z)) == pytest.approx(0.5)
+    assert len(i) == len(j) == len(k)
+    assert len(i) > 0
+
+
+def test_three_dimensional_figure_contains_requested_geometry_and_az_el_grid():
+    grid = design_grid(
+        input_system="pan_tilt",
+        horizontal=AxisDefinition(-10, 10, 10),
+        vertical=AxisDefinition(-10, 10, 10),
+    )
+    figure = _three_dimensional_figure(grid)
+    traces_by_role = {trace["meta"]["role"]: trace for trace in figure["data"]}
+
+    assert set(traces_by_role) == {
+        "turntable",
+        "boresight",
+        "origin",
+        "source",
+        "grid-path",
+        "grid-start",
+        "grid-end",
+    }
+    assert traces_by_role["turntable"]["type"] == "mesh3d"
+    assert traces_by_role["boresight"]["x"] == [0.0, 3.0]
+    assert traces_by_role["boresight"]["y"] == [0.0, 0.0]
+    assert traces_by_role["boresight"]["z"] == [0.0, 0.0]
+    assert traces_by_role["boresight"]["line"]["color"] == "#005eb8"
+
+    path = traces_by_role["grid-path"]
+    expected = [
+        _az_el_unit_vector(point.azimuth, point.elevation)
+        for point in grid.points
+    ]
+    assert list(zip(path["x"], path["y"], path["z"])) == pytest.approx(expected)
+    assert path["mode"] == "lines+markers"
 
 
 @pytest.mark.parametrize(
@@ -167,7 +228,7 @@ def test_preview_reports_an_incomplete_input_without_http_error():
     assert "Enter a number for azimuth minimum" in response.text
 
 
-def test_pan_tilt_preview_contains_two_plot_payloads():
+def test_pan_tilt_preview_contains_three_plot_payloads():
     response = TestClient(app).get(
         "/grid-designer/preview",
         params={
@@ -183,4 +244,5 @@ def test_pan_tilt_preview_contains_two_plot_payloads():
     assert response.status_code == 200
     assert 'id="az-el-figure"' in response.text
     assert 'id="pan-tilt-figure"' in response.text
+    assert 'id="three-dimensional-figure"' in response.text
     assert "<strong>9</strong> points" in response.text
