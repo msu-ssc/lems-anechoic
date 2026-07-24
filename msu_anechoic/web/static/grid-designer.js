@@ -6,8 +6,9 @@ const cameraRotationSettings = {
     speed: 1,
 };
 const plotVisibilitySettings = {
-    "az-el-figure": { ideal: true, quantized: true },
-    "pan-tilt-figure": { ideal: true, quantized: true },
+    "az-el-figure": { ideal: true, quantized: true, path: true },
+    "pan-tilt-figure": { ideal: true, quantized: true, path: true },
+    "three-dimensional-figure": { path: true },
 };
 
 function formatRotationSpeed(speed) {
@@ -51,7 +52,40 @@ function applyPlotVisibility(figure, sourceId) {
         if (representation in settings) {
             trace.visible = settings[representation];
         }
+        if (trace.meta?.line_segments === "with-markers") {
+            trace.mode = settings.path ? "lines+markers" : "markers";
+        }
+        if (trace.meta?.line_segments === "line-only") {
+            trace.visible = settings.path;
+        }
     });
+}
+
+function updateLineSegmentVisibility(plotElement, isVisible) {
+    const tracesWithMarkers = [];
+    const lineOnlyTraces = [];
+    plotElement.data.forEach((trace, index) => {
+        if (trace.meta?.line_segments === "with-markers") {
+            tracesWithMarkers.push(index);
+        }
+        if (trace.meta?.line_segments === "line-only") {
+            lineOnlyTraces.push(index);
+        }
+    });
+    if (tracesWithMarkers.length) {
+        window.Plotly.restyle(
+            plotElement,
+            { mode: isVisible ? "lines+markers" : "markers" },
+            tracesWithMarkers,
+        );
+    }
+    if (lineOnlyTraces.length) {
+        window.Plotly.restyle(
+            plotElement,
+            { visible: isVisible },
+            lineOnlyTraces,
+        );
+    }
 }
 
 function cameraEyeFromRelayout(eventData) {
@@ -492,6 +526,10 @@ document.addEventListener("change", (event) => {
     syncPlotVisibilityControls(controls);
     const plotElement = document.querySelector(`[data-plot-source="${sourceId}"]`);
     if (!plotElement?.data) return;
+    if (event.target.value === "path") {
+        updateLineSegmentVisibility(plotElement, event.target.checked);
+        return;
+    }
     const traceIndexes = plotElement.data
         .map((trace, index) => (
             trace.meta?.representation === event.target.value ? index : -1

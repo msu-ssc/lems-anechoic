@@ -616,6 +616,7 @@ def test_three_dimensional_figure_contains_requested_geometry_and_az_el_grid():
     route = traces_by_role["grid-route"]
     assert route["mode"] == "lines"
     assert route["hoverinfo"] == "skip"
+    assert route["meta"]["line_segments"] == "line-only"
     assert len(route["x"]) >= len(points["x"])
 
 
@@ -812,9 +813,11 @@ def test_two_dimensional_figures_contain_ideal_and_quantized_traces():
     assert traces_by_role["grid-ideal"]["x"] == [20.2]
     assert traces_by_role["grid-ideal"]["y"] == [10.2]
     assert traces_by_role["grid-ideal"]["meta"]["representation"] == "ideal"
+    assert traces_by_role["grid-ideal"]["meta"]["line_segments"] == "with-markers"
     assert traces_by_role["grid-path"]["x"] == [20.0]
     assert traces_by_role["grid-path"]["y"] == [10.0]
     assert traces_by_role["grid-path"]["meta"]["representation"] == "quantized"
+    assert traces_by_role["grid-path"]["meta"]["line_segments"] == "with-markers"
 
 
 def test_quantization_error_figures_plot_actual_minus_ideal_components():
@@ -949,6 +952,11 @@ def test_pan_tilt_preview_contains_three_plot_payloads():
     assert 'id="pan-tilt-error-figure"' in response.text
     assert response.text.count("Show ideal") == 2
     assert response.text.count("Show quantized") == 2
+    assert response.text.count("Show line segments") == 3
+    assert (
+        'data-plot-visibility-controls="three-dimensional-figure"'
+        in response.text
+    )
     assert "data-rotation-toggle" in response.text
     assert "data-rotation-speed" in response.text
     assert "data-rotation-speed-output" in response.text

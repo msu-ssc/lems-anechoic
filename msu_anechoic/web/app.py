@@ -432,7 +432,11 @@ def _figure(
                 "line": {"color": "#6f7680", "width": 2},
             },
             "name": "Ideal",
-            "meta": {"role": "grid-ideal", "representation": "ideal"},
+            "meta": {
+                "role": "grid-ideal",
+                "representation": "ideal",
+                "line_segments": "with-markers",
+            },
         },
         {
             "type": "scatter",
@@ -450,7 +454,11 @@ def _figure(
                 "line": {"color": "#ffffff", "width": 1},
             },
             "name": "Quantized",
-            "meta": {"role": "grid-path", "representation": "quantized"},
+            "meta": {
+                "role": "grid-path",
+                "representation": "quantized",
+                "line_segments": "with-markers",
+            },
         },
         {
             "type": "scatter",
@@ -713,7 +721,7 @@ def _three_dimensional_figure(grid: DesignedGrid) -> dict:
             "hoverinfo": "skip",
             "name": "Traversal route",
             "showlegend": False,
-            "meta": {"role": "grid-route"},
+            "meta": {"role": "grid-route", "line_segments": "line-only"},
         },
         {
             "type": "scatter3d",

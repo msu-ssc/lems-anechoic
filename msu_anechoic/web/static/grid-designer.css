@@ -741,6 +741,14 @@ legend span {
     font-weight: 400;
 }
 
+.three-dimensional-controls {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 10px 22px;
+}
+
 .rotation-controls {
     display: flex;
     align-items: center;
@@ -951,6 +959,11 @@ legend span {
 
     .rotation-controls {
         width: 100%;
+    }
+
+    .three-dimensional-controls {
+        width: 100%;
+        justify-content: flex-start;
     }
 
     .plot-visibility-controls {

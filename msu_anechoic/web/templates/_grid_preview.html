@@ -30,6 +30,7 @@
                     >
                         <label><input type="checkbox" value="ideal" checked> Show ideal</label>
                         <label><input type="checkbox" value="quantized" checked> Show quantized</label>
+                        <label><input type="checkbox" value="path" checked> Show line segments</label>
                     </div>
                 </header>
                 <div class="plot" data-plot-source="az-el-figure"></div>
@@ -45,6 +46,7 @@
                     >
                         <label><input type="checkbox" value="ideal" checked> Show ideal</label>
                         <label><input type="checkbox" value="quantized" checked> Show quantized</label>
+                        <label><input type="checkbox" value="path" checked> Show line segments</label>
                     </div>
                 </header>
                 <div class="plot" data-plot-source="pan-tilt-figure"></div>
@@ -53,7 +55,15 @@
             <article class="plot-card plot-card--3d">
                 <header class="plot-card-heading">
                     <h3>3D pointing geometry</h3>
-                    <div class="rotation-controls" aria-label="3D view rotation controls">
+                    <div class="three-dimensional-controls">
+                        <div
+                            class="plot-visibility-controls"
+                            data-plot-visibility-controls="three-dimensional-figure"
+                            aria-label="3D plot visibility"
+                        >
+                            <label><input type="checkbox" value="path" checked> Show line segments</label>
+                        </div>
+                        <div class="rotation-controls" aria-label="3D view rotation controls">
                         <button type="button" data-rotation-toggle>Play</button>
                         <label>
                             <span>Rotation speed</span>
@@ -67,6 +77,7 @@
                             >
                             <output data-rotation-speed-output>1×</output>
                         </label>
+                        </div>
                     </div>
                 </header>
                 <div class="plot plot--3d" data-plot-source="three-dimensional-figure"></div>
