@@ -1,18 +1,69 @@
 :root {
     color-scheme: light;
-    --background: #f3f4f6;
+    --background: #f3f5f9;
     --surface: #ffffff;
-    --surface-muted: #f8f9fa;
-    --border: #cfd4da;
-    --border-dark: #aeb6bf;
-    --text: #20262d;
-    --text-muted: #59636e;
-    --accent: #176b73;
-    --accent-dark: #10545a;
+    --surface-muted: #f7f8fb;
+    --border: #ccd3df;
+    --border-dark: #aab4c3;
+    --text: #343434;
+    --text-muted: #5d6673;
+    --accent: #0033a0;
+    --accent-dark: #002779;
+    --accent-secondary: #005eb8;
+    --accent-ink: #ffffff;
+    --brand-yellow: #ffcf00;
+    --header: #0033a0;
+    --header-border: #002779;
+    --header-text: #ffffff;
+    --header-muted: #dce5f8;
+    --header-divider: #6684c6;
+    --input: #ffffff;
+    --menu-hover: #edf2fb;
     --warning: #b45309;
+    --warning-surface: #fff1df;
+    --plot-paper: #ffffff;
+    --plot-background: #f7f9fc;
+    --plot-text: #343434;
+    --plot-grid: #dce2ec;
+    --plot-zero: #9aa8bc;
+    --plot-line: #6d87ad;
+    --plot-start: #0033a0;
+    --plot-end: #c49300;
     font-family: "Segoe UI", Arial, sans-serif;
     color: var(--text);
     background: var(--background);
+}
+
+:root[data-color-mode="dark"] {
+    color-scheme: dark;
+    --background: #101621;
+    --surface: #182230;
+    --surface-muted: #202c3d;
+    --border: #39485e;
+    --border-dark: #52637c;
+    --text: #e8ebf0;
+    --text-muted: #aab4c2;
+    --accent: #79a7ff;
+    --accent-dark: #9bbdff;
+    --accent-secondary: #63aee8;
+    --accent-ink: #0c1b34;
+    --header: #071b43;
+    --header-border: #284a88;
+    --header-text: #ffffff;
+    --header-muted: #c3d2ed;
+    --header-divider: #536f9f;
+    --input: #101824;
+    --menu-hover: #26354a;
+    --warning: #ffb36b;
+    --warning-surface: #392518;
+    --plot-paper: #182230;
+    --plot-background: #101722;
+    --plot-text: #e8ebf0;
+    --plot-grid: #2c3b52;
+    --plot-zero: #60718b;
+    --plot-line: #6482b4;
+    --plot-start: #79a7ff;
+    --plot-end: #ffcf00;
 }
 
 * {
@@ -34,9 +85,9 @@ body {
     display: flex;
     align-items: center;
     gap: 14px;
-    border-bottom: 1px solid #bfc5cb;
-    background: #29343e;
-    color: #ffffff;
+    border-bottom: 1px solid var(--header-border);
+    background: var(--header);
+    color: var(--header-text);
 }
 
 .menu-toggle {
@@ -48,19 +99,19 @@ body {
     flex-direction: column;
     justify-content: center;
     gap: 4px;
-    border: 1px solid #74808a;
+    border: 1px solid var(--header-divider);
     border-radius: 3px;
-    background: #29343e;
+    background: var(--header);
     cursor: pointer;
 }
 
 .menu-toggle:hover,
 .menu-toggle[aria-expanded="true"] {
-    background: #3b4853;
+    background: rgb(255 255 255 / 12%);
 }
 
 .menu-toggle:focus-visible {
-    outline: 2px solid #7cc5cb;
+    outline: 2px solid var(--brand-yellow);
     outline-offset: 2px;
 }
 
@@ -68,11 +119,11 @@ body {
     width: 100%;
     height: 2px;
     display: block;
-    background: #ffffff;
+    background: var(--header-text);
 }
 
 .application-name {
-    color: #ffffff;
+    color: var(--header-text);
     font-size: 14px;
     font-weight: 650;
     text-decoration: none;
@@ -81,8 +132,8 @@ body {
 .current-page {
     margin-left: 10px;
     padding-left: 24px;
-    border-left: 1px solid #66717b;
-    color: #dbe0e4;
+    border-left: 1px solid var(--header-divider);
+    color: var(--header-muted);
     font-size: 13px;
 }
 
@@ -121,7 +172,7 @@ body {
 }
 
 .application-menu a:hover {
-    background: #e9edef;
+    background: var(--menu-hover);
 }
 
 .application-menu a span {
@@ -135,6 +186,63 @@ body {
     display: block;
     color: var(--text-muted);
     font-size: 11px;
+}
+
+.appearance-control {
+    margin-top: 6px;
+    padding: 10px 8px 8px;
+    border-top: 1px solid var(--border);
+}
+
+.appearance-control legend {
+    margin-bottom: 7px;
+    padding: 0;
+    float: none;
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 650;
+}
+
+.color-mode-switch {
+    display: flex;
+    border: 1px solid var(--border-dark);
+    border-radius: 3px;
+    overflow: hidden;
+    background: var(--surface-muted);
+}
+
+.color-mode-switch label {
+    flex: 1;
+    cursor: pointer;
+}
+
+.color-mode-switch label + label {
+    border-left: 1px solid var(--border-dark);
+}
+
+.color-mode-switch input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.color-mode-switch span {
+    padding: 7px 10px;
+    display: block;
+    color: var(--text);
+    font-size: 12px;
+    font-weight: 600;
+    text-align: center;
+}
+
+.color-mode-switch input:checked + span {
+    color: var(--accent-ink);
+    background: var(--accent);
+}
+
+.color-mode-switch input:focus-visible + span {
+    outline: 2px solid var(--accent-secondary);
+    outline-offset: -2px;
 }
 
 main {
@@ -228,12 +336,12 @@ h2 {
 }
 
 .coordinate-switch input:checked + span {
-    color: #ffffff;
+    color: var(--accent-ink);
     background: var(--accent);
 }
 
 .coordinate-switch input:focus-visible + span {
-    outline: 2px solid #7cc5cb;
+    outline: 2px solid var(--accent-secondary);
     outline-offset: -2px;
 }
 
@@ -267,7 +375,7 @@ legend {
 
 legend span {
     float: right;
-    color: #747e88;
+    color: var(--text-muted);
     font-size: 11px;
     font-weight: 400;
 }
@@ -290,7 +398,7 @@ legend span {
     align-items: center;
     border: 1px solid var(--border-dark);
     border-radius: 2px;
-    background: #ffffff;
+    background: var(--input);
 }
 
 .number-input:focus-within {
@@ -313,7 +421,7 @@ legend span {
 
 .number-input b {
     padding-right: 9px;
-    color: #737d87;
+    color: var(--text-muted);
     font-size: 12px;
     font-weight: 400;
 }
@@ -375,7 +483,7 @@ legend span {
 
 .end-key {
     border-radius: 1px !important;
-    background: #d97732;
+    background: var(--plot-end);
     transform: rotate(45deg);
 }
 
@@ -417,7 +525,7 @@ legend span {
     flex: 0 0 22px;
     place-items: center;
     border-radius: 50%;
-    background: #fff1df;
+    background: var(--warning-surface);
     color: var(--warning);
     font-weight: 700;
 }
@@ -430,6 +538,14 @@ legend span {
 .validation-message p {
     margin-bottom: 0;
     color: var(--text-muted);
+}
+
+.modebar-btn path {
+    fill: var(--text-muted) !important;
+}
+
+.modebar-btn:hover path {
+    fill: var(--text) !important;
 }
 
 @media (max-width: 900px) {

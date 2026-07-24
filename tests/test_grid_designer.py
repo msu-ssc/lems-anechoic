@@ -90,10 +90,25 @@ def test_grid_designer_page_loads():
     assert 'id="application-menu"' in response.text
     assert 'id="theme-select"' not in response.text
     assert "grid-designer-themes" not in response.text
+    assert 'id="color-mode-light"' in response.text
+    assert 'id="color-mode-dark"' in response.text
+    assert "grid-designer-color-mode" in response.text
     assert "Azimuth / elevation" in response.text
     assert "Pan / tilt" in response.text
     assert client.get("/vendor/plotly.min.js").status_code == 200
     assert client.get("/static/htmx.min.js").status_code == 200
+
+
+def test_grid_designer_uses_msu_palette_for_both_color_modes():
+    client = TestClient(app)
+    page = client.get("/grid-designer")
+    stylesheet = client.get("/static/grid-designer.css")
+
+    assert "#0033a0" in page.text
+    assert "#18453b" not in page.text
+    assert "--accent: #0033a0" in stylesheet.text
+    assert "--brand-yellow: #ffcf00" in stylesheet.text
+    assert ':root[data-color-mode="dark"]' in stylesheet.text
 
 
 def test_preview_accepts_a_range_that_does_not_align_with_step_size():

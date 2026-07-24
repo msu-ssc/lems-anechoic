@@ -5,6 +5,20 @@
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="description" content="Design serpentine antenna measurement grids in azimuth/elevation or pan/tilt coordinates.">
         <title>Grid Designer · MSU Anechoic Chamber</title>
+        <script>
+            (() => {
+                let mode = null;
+                try {
+                    mode = window.localStorage.getItem("grid-designer-color-mode");
+                } catch {
+                    // Use the system preference when storage is unavailable.
+                }
+                if (mode !== "light" && mode !== "dark") {
+                    mode = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+                }
+                document.documentElement.dataset.colorMode = mode;
+            })();
+        </script>
         <link rel="stylesheet" href="{{ url_for('static', path='grid-designer.css') }}">
         <script src="{{ url_for('static', path='htmx.min.js') }}" defer></script>
         <script src="/vendor/plotly.min.js" defer></script>
@@ -32,6 +46,19 @@
                     <span>Grid Designer</span>
                     <small>Plan azimuth/elevation and pan/tilt grids</small>
                 </a>
+                <fieldset class="appearance-control">
+                    <legend>Appearance</legend>
+                    <div class="color-mode-switch" role="radiogroup" aria-label="Color mode">
+                        <label>
+                            <input id="color-mode-light" type="radio" name="color_mode" value="light">
+                            <span>Light</span>
+                        </label>
+                        <label>
+                            <input id="color-mode-dark" type="radio" name="color_mode" value="dark">
+                            <span>Dark</span>
+                        </label>
+                    </div>
+                </fieldset>
             </nav>
         </header>
 
