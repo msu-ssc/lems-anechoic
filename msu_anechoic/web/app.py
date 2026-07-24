@@ -16,6 +16,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
+import numpy as np
 from fastapi import FastAPI
 from fastapi import Request
 from fastapi.responses import HTMLResponse
@@ -24,6 +25,7 @@ from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from plotly.offline import get_plotlyjs
+from scipy.spatial import cKDTree
 
 from msu_anechoic import experiment
 from msu_anechoic.web.grid import MAX_TURNTABLE_TILT
@@ -76,6 +78,9 @@ DEFAULT_OPTIMIZATION_TIME_SECONDS = 1.0
 MAX_OPTIMIZATION_TIME_SECONDS = 60.0
 MAX_OPTIMIZATION_SESSIONS = 32
 MAX_OPTIMIZATION_HISTORY = 50
+OPTIMIZATION_NEIGHBOR_COUNT = 48
+PAN_TRAVEL_TIME_SCALE = 0.3940
+TILT_TRAVEL_TIME_SCALE = 0.9038
 
 
 def _precompute_inaccessible_az_el_regions() -> tuple[dict, ...]:
@@ -211,6 +216,364 @@ def _two_opt_delta(
     return new_seconds - old_seconds
 
 
+class _RouteCostModel:
+    """Cache symmetric move costs while an optimization run is active."""
+
+    def __init__(self, points: tuple[GridPoint, ...]):
+        self.points = points
+        self._cache: dict[tuple[int, int], float] = {}
+
+    def move_seconds(self, left: int, right: int) -> float:
+        if left == right:
+            return 0.0
+        key = (left, right) if left < right else (right, left)
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached
+        left_coordinates = (0.0, 0.0) if left == -1 else (self.points[left].pan, self.points[left].tilt)
+        right_coordinates = (0.0, 0.0) if right == -1 else (self.points[right].pan, self.points[right].tilt)
+        seconds = _estimate_move_travel_time(
+            left_coordinates,
+            right_coordinates,
+        )
+        self._cache[key] = seconds
+        return seconds
+
+    def route_seconds(self, order: tuple[int, ...] | list[int]) -> float:
+        total_seconds = 0.0
+        previous = -1
+        for point_index in order:
+            total_seconds += self.move_seconds(previous, point_index)
+            previous = point_index
+        return total_seconds + self.move_seconds(previous, -1)
+
+    def two_opt_delta(
+        self,
+        order: list[int],
+        start_index: int,
+        end_index: int,
+    ) -> float:
+        before = -1 if start_index == 0 else order[start_index - 1]
+        first = order[start_index]
+        last = order[end_index]
+        after = -1 if end_index == len(order) - 1 else order[end_index + 1]
+        return (
+            self.move_seconds(before, last)
+            + self.move_seconds(first, after)
+            - self.move_seconds(before, first)
+            - self.move_seconds(last, after)
+        )
+
+
+def _pan_tilt_candidate_neighbors(
+    points: tuple[GridPoint, ...],
+    *,
+    neighbor_count: int = OPTIMIZATION_NEIGHBOR_COUNT,
+) -> tuple[tuple[tuple[int, ...], ...], tuple[int, ...]]:
+    """Find local mechanical neighbors, including the ±180° pan wrap.
+
+    Keeping candidate edges local in both pan and tilt prevents a route that
+    crosses either ±90° pan pole from jumping to a distant tilt branch.
+    """
+    point_count = len(points)
+    if point_count == 0:
+        return (), ()
+
+    coordinates = np.array(
+        [
+            (
+                point.pan * PAN_TRAVEL_TIME_SCALE,
+                point.tilt * TILT_TRAVEL_TIME_SCALE,
+            )
+            for point in points
+        ],
+        dtype=float,
+    )
+    pan_period = 360.0 * PAN_TRAVEL_TIME_SCALE
+    replicated_coordinates = np.concatenate(
+        (
+            coordinates + (-pan_period, 0.0),
+            coordinates,
+            coordinates + (pan_period, 0.0),
+        )
+    )
+    replicated_indexes = np.tile(np.arange(point_count), 3)
+    tree = cKDTree(replicated_coordinates)
+    query_count = min(
+        len(replicated_indexes),
+        neighbor_count * 3 + 1,
+    )
+    _, neighbor_indexes = tree.query(
+        coordinates,
+        k=query_count,
+    )
+
+    candidate_neighbors = []
+    for point_index, raw_neighbors in enumerate(np.atleast_2d(neighbor_indexes)):
+        seen = {point_index}
+        neighbors = []
+        for raw_neighbor in np.atleast_1d(raw_neighbors):
+            neighbor = int(replicated_indexes[int(raw_neighbor)])
+            if neighbor in seen:
+                continue
+            seen.add(neighbor)
+            neighbors.append(neighbor)
+            if len(neighbors) >= neighbor_count:
+                break
+        candidate_neighbors.append(tuple(neighbors))
+
+    origin_query_count = min(
+        len(replicated_indexes),
+        neighbor_count * 3,
+    )
+    _, raw_origin_neighbors = tree.query(
+        np.array((0.0, 0.0)),
+        k=origin_query_count,
+    )
+    seen = set()
+    origin_neighbors = []
+    for raw_neighbor in np.atleast_1d(raw_origin_neighbors):
+        neighbor = int(replicated_indexes[int(raw_neighbor)])
+        if neighbor in seen:
+            continue
+        seen.add(neighbor)
+        origin_neighbors.append(neighbor)
+        if len(origin_neighbors) >= neighbor_count:
+            break
+
+    return tuple(candidate_neighbors), tuple(origin_neighbors)
+
+
+def _multifragment_route_seed(
+    points: tuple[GridPoint, ...],
+    *,
+    candidate_neighbors: tuple[tuple[int, ...], ...],
+    cost_model: _RouteCostModel,
+    deadline: float,
+) -> tuple[int, ...] | None:
+    """Build a locally connected tour with a greedy multi-fragment heuristic."""
+    point_count = len(points)
+    origin = point_count
+    edges = []
+    for point_index, neighbors in enumerate(candidate_neighbors):
+        for neighbor in neighbors:
+            if neighbor <= point_index:
+                continue
+            edges.append(
+                (
+                    cost_model.move_seconds(point_index, neighbor),
+                    point_index,
+                    neighbor,
+                )
+            )
+    for point_index in range(point_count):
+        edges.append(
+            (
+                cost_model.move_seconds(-1, point_index),
+                origin,
+                point_index,
+            )
+        )
+    edges.sort()
+    if time.perf_counter() >= deadline:
+        return None
+
+    node_count = point_count + 1
+    parents = list(range(node_count))
+    component_sizes = [1] * node_count
+    degrees = [0] * node_count
+    adjacency: list[list[int]] = [[] for _ in range(node_count)]
+
+    def find(node: int) -> int:
+        while parents[node] != node:
+            parents[node] = parents[parents[node]]
+            node = parents[node]
+        return node
+
+    def add_edge(left: int, right: int) -> bool:
+        left_root = find(left)
+        right_root = find(right)
+        if degrees[left] >= 2 or degrees[right] >= 2 or left_root == right_root:
+            return False
+        adjacency[left].append(right)
+        adjacency[right].append(left)
+        degrees[left] += 1
+        degrees[right] += 1
+        if component_sizes[left_root] < component_sizes[right_root]:
+            left_root, right_root = right_root, left_root
+        parents[right_root] = left_root
+        component_sizes[left_root] += component_sizes[right_root]
+        return True
+
+    edge_count = 0
+    for _, left, right in edges:
+        if add_edge(left, right):
+            edge_count += 1
+            if edge_count == point_count:
+                break
+
+    # Degree constraints can leave a few local fragments. Join their open
+    # endpoints by exact turntable travel time rather than accepting a large
+    # arbitrary pole-crossing edge.
+    while edge_count < point_count and time.perf_counter() < deadline:
+        endpoints = [node for node, degree in enumerate(degrees) if degree < 2]
+        if len(endpoints) > 600:
+            return None
+        fallback_edges = []
+        for endpoint_index, left in enumerate(endpoints[:-1]):
+            for right in endpoints[endpoint_index + 1 :]:
+                if find(left) == find(right):
+                    continue
+                fallback_edges.append(
+                    (
+                        cost_model.move_seconds(
+                            -1 if left == origin else left,
+                            -1 if right == origin else right,
+                        ),
+                        left,
+                        right,
+                    )
+                )
+        fallback_edges.sort()
+        added_edge = False
+        for _, left, right in fallback_edges:
+            if add_edge(left, right):
+                edge_count += 1
+                added_edge = True
+                if edge_count == point_count:
+                    break
+        if not added_edge:
+            return None
+
+    if edge_count != point_count:
+        return None
+
+    endpoints = [node for node, degree in enumerate(degrees) if degree == 1]
+    if len(endpoints) != 2:
+        return None
+    adjacency[endpoints[0]].append(endpoints[1])
+    adjacency[endpoints[1]].append(endpoints[0])
+
+    route = []
+    previous = -1
+    current = origin
+    while True:
+        next_node = next(node for node in adjacency[current] if node != previous)
+        if next_node == origin:
+            break
+        route.append(next_node)
+        previous, current = current, next_node
+    return tuple(route) if len(route) == point_count else None
+
+
+def _long_edge_first_two_opt(
+    order: list[int],
+    *,
+    candidate_neighbors: tuple[tuple[int, ...], ...],
+    origin_neighbors: tuple[int, ...],
+    cost_model: _RouteCostModel,
+    deadline: float,
+) -> bool:
+    """Apply one improving 2-opt move, prioritizing the longest route edges."""
+    positions = [0] * len(order)
+    for position, point_index in enumerate(order):
+        positions[point_index] = position
+
+    anchors = [-1, *order]
+
+    def following_node(point_index: int) -> int:
+        if point_index == -1:
+            return order[0]
+        position = positions[point_index]
+        return -1 if position == len(order) - 1 else order[position + 1]
+
+    anchors.sort(
+        key=lambda point_index: cost_model.move_seconds(
+            point_index,
+            following_node(point_index),
+        ),
+        reverse=True,
+    )
+    for anchor_index, point_a in enumerate(anchors):
+        if anchor_index % 64 == 0 and time.perf_counter() >= deadline:
+            return False
+        position_a = -1 if point_a == -1 else positions[point_a]
+        neighbors = origin_neighbors if point_a == -1 else candidate_neighbors[point_a]
+        for point_b in neighbors:
+            position_b = positions[point_b]
+            start_index = min(position_a, position_b) + 1
+            end_index = max(position_a, position_b)
+            if start_index >= end_index:
+                continue
+            delta = cost_model.two_opt_delta(
+                order,
+                start_index,
+                end_index,
+            )
+            if delta < -1e-9:
+                order[start_index : end_index + 1] = reversed(order[start_index : end_index + 1])
+                return True
+    return False
+
+
+def _long_edge_first_relocate(
+    order: list[int],
+    *,
+    candidate_neighbors: tuple[tuple[int, ...], ...],
+    cost_model: _RouteCostModel,
+    deadline: float,
+) -> bool:
+    """Relocate one point, starting with points attached to costly edges."""
+    positions = [0] * len(order)
+    for position, point_index in enumerate(order):
+        positions[point_index] = position
+
+    points_by_edge_cost = list(order)
+
+    def adjacent_edge_cost(point_index: int) -> float:
+        position = positions[point_index]
+        previous = -1 if position == 0 else order[position - 1]
+        following = -1 if position == len(order) - 1 else order[position + 1]
+        return max(
+            cost_model.move_seconds(previous, point_index),
+            cost_model.move_seconds(point_index, following),
+        )
+
+    points_by_edge_cost.sort(
+        key=adjacent_edge_cost,
+        reverse=True,
+    )
+    for point_number, point_index in enumerate(points_by_edge_cost):
+        if point_number % 64 == 0 and time.perf_counter() >= deadline:
+            return False
+        position = positions[point_index]
+        previous = -1 if position == 0 else order[position - 1]
+        following = -1 if position == len(order) - 1 else order[position + 1]
+        for anchor in candidate_neighbors[point_index]:
+            anchor_position = positions[anchor]
+            if anchor_position in (position, position - 1):
+                continue
+            anchor_following = -1 if anchor_position == len(order) - 1 else order[anchor_position + 1]
+            delta = (
+                cost_model.move_seconds(previous, following)
+                + cost_model.move_seconds(anchor, point_index)
+                + cost_model.move_seconds(
+                    point_index,
+                    anchor_following,
+                )
+                - cost_model.move_seconds(previous, point_index)
+                - cost_model.move_seconds(point_index, following)
+                - cost_model.move_seconds(anchor, anchor_following)
+            )
+            if delta < -1e-9:
+                order.pop(position)
+                if anchor_position > position:
+                    anchor_position -= 1
+                order.insert(anchor_position + 1, point_index)
+                return True
+    return False
+
+
 def _optimize_grid_route(
     grid: DesignedGrid,
     *,
@@ -218,7 +581,7 @@ def _optimize_grid_route(
     max_seconds: float = DEFAULT_OPTIMIZATION_TIME_SECONDS,
     random_seed: int | None = None,
 ) -> tuple[tuple[int, ...], float]:
-    """Improve a route with bounded 2-opt search and randomized 3-opt kicks."""
+    """Improve a route with local seeding, 2-opt, and randomized 3-opt kicks."""
     point_count = len(grid.points)
     if starting_order is None:
         starting_order = tuple(range(point_count))
@@ -227,17 +590,63 @@ def _optimize_grid_route(
     if not math.isfinite(max_seconds) or max_seconds <= 0.0:
         raise ValueError("Optimization time must be greater than zero.")
 
-    deadline = time.perf_counter() + max_seconds
+    started = time.perf_counter()
+    deadline = started + max_seconds
     randomizer = random.Random(random_seed)
+    cost_model = _RouteCostModel(grid.points)
     best_order = list(starting_order)
-    best_seconds = _ordered_grid_travel_time(grid.points, tuple(best_order))
+    best_seconds = cost_model.route_seconds(best_order)
     working_order = list(best_order)
     working_seconds = best_seconds
     if point_count < 2:
         return tuple(best_order), best_seconds
 
+    candidate_neighbors: tuple[tuple[int, ...], ...] = ()
+    origin_neighbors: tuple[int, ...] = ()
+    if max_seconds >= 0.05 and time.perf_counter() < deadline:
+        candidate_neighbors, origin_neighbors = _pan_tilt_candidate_neighbors(grid.points)
+        if starting_order == tuple(range(point_count)):
+            seed = _multifragment_route_seed(
+                grid.points,
+                candidate_neighbors=candidate_neighbors,
+                cost_model=cost_model,
+                deadline=deadline,
+            )
+            if seed is not None:
+                seed_seconds = cost_model.route_seconds(seed)
+                if seed_seconds < best_seconds - 1e-9:
+                    best_order = list(seed)
+                    best_seconds = seed_seconds
+                    working_order = list(seed)
+                    working_seconds = seed_seconds
+
     exhaustive_search = point_count <= 250
     while time.perf_counter() < deadline:
+        if not exhaustive_search and candidate_neighbors:
+            if _long_edge_first_two_opt(
+                working_order,
+                candidate_neighbors=candidate_neighbors,
+                origin_neighbors=origin_neighbors,
+                cost_model=cost_model,
+                deadline=deadline,
+            ):
+                working_seconds = cost_model.route_seconds(working_order)
+                if working_seconds < best_seconds - 1e-9:
+                    best_order = list(working_order)
+                    best_seconds = working_seconds
+                continue
+            if _long_edge_first_relocate(
+                working_order,
+                candidate_neighbors=candidate_neighbors,
+                cost_model=cost_model,
+                deadline=deadline,
+            ):
+                working_seconds = cost_model.route_seconds(working_order)
+                if working_seconds < best_seconds - 1e-9:
+                    best_order = list(working_order)
+                    best_seconds = working_seconds
+                continue
+
         best_delta = -1e-9
         best_move: tuple[int, int] | None = None
 
@@ -248,13 +657,12 @@ def _optimize_grid_route(
                 for end_index in range(start_index + 1, point_count)
             )
         else:
-            pairs = (tuple(sorted(randomizer.sample(range(point_count), 2))) for _ in range(5_000))
+            pairs = (tuple(sorted(randomizer.sample(range(point_count), 2))) for _ in range(2_000))
 
         for pair_index, (start_index, end_index) in enumerate(pairs):
             if pair_index % 128 == 0 and time.perf_counter() >= deadline:
                 break
-            delta = _two_opt_delta(
-                grid.points,
+            delta = cost_model.two_opt_delta(
                 working_order,
                 start_index,
                 end_index,
@@ -266,7 +674,7 @@ def _optimize_grid_route(
         if best_move is not None:
             start_index, end_index = best_move
             working_order[start_index : end_index + 1] = reversed(working_order[start_index : end_index + 1])
-            working_seconds += best_delta
+            working_seconds = cost_model.route_seconds(working_order)
             if working_seconds < best_seconds - 1e-9:
                 best_order = list(working_order)
                 best_seconds = working_seconds
@@ -284,14 +692,10 @@ def _optimize_grid_route(
             + best_order[first_cut:second_cut]
             + best_order[third_cut:]
         )
-        working_seconds = _ordered_grid_travel_time(
-            grid.points,
-            tuple(working_order),
-        )
+        working_seconds = cost_model.route_seconds(working_order)
 
-    # Recalculate to avoid reporting accumulated floating-point delta error.
     best_result = tuple(best_order)
-    return best_result, _ordered_grid_travel_time(grid.points, best_result)
+    return best_result, cost_model.route_seconds(best_result)
 
 
 def _grid_with_order(

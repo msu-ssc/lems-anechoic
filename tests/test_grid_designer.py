@@ -15,6 +15,7 @@ from msu_anechoic.web.app import _format_duration
 from msu_anechoic.web.app import _grid_with_order
 from msu_anechoic.web.app import _interpolated_route_coordinates
 from msu_anechoic.web.app import _optimize_grid_route
+from msu_anechoic.web.app import _pan_tilt_candidate_neighbors
 from msu_anechoic.web.app import _quantization_error_figure
 from msu_anechoic.web.app import _spherical_patch_mesh
 from msu_anechoic.web.app import _three_dimensional_figure
@@ -611,6 +612,52 @@ def test_two_opt_improves_an_inefficient_pan_tilt_route():
 
     assert sorted(optimized_order) == [0, 1, 2, 3]
     assert optimized_seconds < original_seconds
+
+
+def test_optimizer_removes_large_pole_crossing_moves_from_spherical_grid():
+    grid = design_grid(
+        input_system="az_el",
+        horizontal=AxisDefinition(-180, 180, 10),
+        vertical=AxisDefinition(-90, 40, 10),
+    )
+    original_seconds = _estimate_grid_travel_time(grid)
+
+    optimized_order, optimized_seconds = _optimize_grid_route(
+        grid,
+        max_seconds=0.25,
+        random_seed=1,
+    )
+
+    route = (
+        [(0.0, 0.0)] + [(grid.points[index].pan, grid.points[index].tilt) for index in optimized_order] + [(0.0, 0.0)]
+    )
+    maximum_axis_move = max(
+        max(
+            abs((end[0] - start[0] + 180.0) % 360.0 - 180.0),
+            abs(end[1] - start[1]),
+        )
+        for start, end in zip(route, route[1:])
+    )
+
+    assert optimized_seconds < original_seconds * 0.5
+    assert maximum_axis_move < 90.0
+
+
+def test_optimizer_neighbors_match_tilt_branches_across_pan_pole():
+    grid = design_grid(
+        input_system="pan_tilt",
+        horizontal=AxisDefinition(-91, -89, 2),
+        vertical=AxisDefinition(-80, 40, 120),
+    )
+    neighbors, _ = _pan_tilt_candidate_neighbors(
+        grid.points,
+        neighbor_count=1,
+    )
+    point_index = next(index for index, point in enumerate(grid.points) if point.pan == -89 and point.tilt == -80)
+    neighbor = grid.points[neighbors[point_index][0]]
+
+    assert neighbor.pan == -91
+    assert neighbor.tilt == -80
 
 
 @pytest.mark.parametrize(
