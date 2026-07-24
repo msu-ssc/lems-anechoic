@@ -41,6 +41,8 @@ DEFAULTS = {
     "elevation_min": -20.0,
     "elevation_max": 20.0,
     "elevation_step": 10.0,
+    "cosine_correct_azimuth_spacing": False,
+    "stagger_alternate_elevation_rows": False,
     "pan_min": -30.0,
     "pan_max": 30.0,
     "pan_step": 10.0,
@@ -872,7 +874,7 @@ def _build_grid(
 
 def _simple_grid_definition(
     input_system: Literal["az_el", "pan_tilt"],
-    values: dict[str, float],
+    values: dict[str, float | bool],
 ) -> SimpleGridDefinition:
     if input_system == "az_el":
         return SimpleGridDefinition(
@@ -885,6 +887,12 @@ def _simple_grid_definition(
                 values["elevation_min"],
                 values["elevation_max"],
                 values["elevation_step"],
+            ),
+            cosine_correct_azimuth_spacing=bool(
+                values["cosine_correct_azimuth_spacing"]
+            ),
+            stagger_alternate_elevation_rows=bool(
+                values["stagger_alternate_elevation_rows"]
             ),
         )
     return SimpleGridDefinition(
@@ -958,13 +966,23 @@ def _parse_simple_grids(
             )
             return f"grid {index + 1} {label}" if grid_count > 1 else label
 
-        values = {
+        values: dict[str, float | bool] = {
             name: _parse_number(
                 raw_values[name][index],
                 label=field_label(name),
             )
             for name in names
         }
+        if input_system == "az_el":
+            values.update(
+                {
+                    option: request.query_params.get(f"{option}_{index}") == "true"
+                    for option in (
+                        "cosine_correct_azimuth_spacing",
+                        "stagger_alternate_elevation_rows",
+                    )
+                }
+            )
         grids.append(_simple_grid_definition(input_system, values))
     return tuple(grids)
 

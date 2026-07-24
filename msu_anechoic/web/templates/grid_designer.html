@@ -130,6 +130,28 @@
                                                 <label>Step size <span class="number-input"><input name="elevation_step" type="number" min="0.000001" step="any" value="{{ simple_grid.elevation_step }}" required><b>°</b></span></label>
                                             </div>
                                         </fieldset>
+                                        <div class="sampling-options">
+                                            <label>
+                                                <input
+                                                    type="checkbox"
+                                                    name="cosine_correct_azimuth_spacing_{{ loop.index0 }}"
+                                                    value="true"
+                                                    data-simple-grid-option="cosine_correct_azimuth_spacing"
+                                                    {% if simple_grid.cosine_correct_azimuth_spacing %}checked{% endif %}
+                                                >
+                                                Cosine-correct azimuth spacing
+                                            </label>
+                                            <label>
+                                                <input
+                                                    type="checkbox"
+                                                    name="stagger_alternate_elevation_rows_{{ loop.index0 }}"
+                                                    value="true"
+                                                    data-simple-grid-option="stagger_alternate_elevation_rows"
+                                                    {% if simple_grid.stagger_alternate_elevation_rows %}checked{% endif %}
+                                                >
+                                                Stagger alternate elevation rows
+                                            </label>
+                                        </div>
                                     </div>
                                     <div class="coordinate-fields" data-coordinate-fields="pan_tilt" hidden>
                                         <fieldset>

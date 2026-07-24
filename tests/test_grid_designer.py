@@ -36,6 +36,72 @@ def test_axis_uses_a_shorter_final_interval_to_include_maximum():
     assert values == (0, 3, 6, 9, 10)
 
 
+def test_cosine_corrected_azimuth_spacing_scales_each_elevation_row():
+    grid = design_grid(
+        input_system="az_el",
+        horizontal=AxisDefinition(0, 40, 10),
+        vertical=AxisDefinition(0, 60, 60),
+        cosine_correct_azimuth_spacing=True,
+    )
+    azimuths_by_elevation = {
+        elevation: [
+            point.azimuth
+            for point in grid.points
+            if point.elevation == elevation
+        ]
+        for elevation in (0, 60)
+    }
+
+    assert sorted(azimuths_by_elevation[0]) == pytest.approx([0, 10, 20, 30, 40])
+    assert sorted(azimuths_by_elevation[60]) == pytest.approx([0, 20, 40])
+
+
+def test_corrected_azimuth_rows_do_not_append_a_short_final_interval():
+    grid = design_grid(
+        input_system="az_el",
+        horizontal=AxisDefinition(0, 10, 3),
+        vertical=AxisDefinition(0, 0, 1),
+        cosine_correct_azimuth_spacing=True,
+    )
+
+    assert sorted(point.azimuth for point in grid.points) == [0, 3, 6, 9]
+
+
+def test_staggering_offsets_every_other_elevation_row_by_half_a_step():
+    grid = design_grid(
+        input_system="az_el",
+        horizontal=AxisDefinition(0, 40, 10),
+        vertical=AxisDefinition(0, 20, 10),
+        stagger_alternate_elevation_rows=True,
+    )
+    azimuths_by_elevation = {
+        elevation: sorted(
+            point.azimuth
+            for point in grid.points
+            if point.elevation == elevation
+        )
+        for elevation in (0, 10, 20)
+    }
+
+    assert azimuths_by_elevation[20] == [0, 10, 20, 30, 40]
+    assert azimuths_by_elevation[10] == [5, 15, 25, 35]
+    assert azimuths_by_elevation[0] == [0, 10, 20, 30, 40]
+
+
+def test_corrected_pole_rows_contain_one_centered_azimuth():
+    grid = design_grid(
+        input_system="az_el",
+        horizontal=AxisDefinition(-180, 180, 10),
+        vertical=AxisDefinition(-90, 90, 180),
+        cosine_correct_azimuth_spacing=True,
+        stagger_alternate_elevation_rows=True,
+    )
+
+    assert len(grid.points) == 2
+    assert {point.elevation for point in grid.points} == {-90, 90}
+    assert all(point.azimuth == 0 for point in grid.points)
+
+
 def test_quantization_rounds_to_nearest_origin_plus_integer_step():
     definition = QuantizationDefinition(enabled=True, origin=0.1, step=0.5)
 
@@ -514,6 +580,10 @@ def test_grid_designer_page_loads():
     assert "data-add-simple-grid" in response.text
     assert response.text.count("data-simple-grid>") == 1
     assert "data-remove-simple-grid" in response.text
+    assert "Cosine-correct azimuth spacing" in response.text
+    assert "Stagger alternate elevation rows" in response.text
+    assert 'name="cosine_correct_azimuth_spacing_0"' in response.text
+    assert 'name="stagger_alternate_elevation_rows_0"' in response.text
     quantization_markup = response.text.split(
         '<section class="quantization-section"',
         1,
@@ -701,6 +771,27 @@ def test_preview_accepts_a_range_that_does_not_align_with_step_size():
     )
     assert response.status_code == 200
     assert "<strong>25</strong> points" in response.text
+    assert "Check the grid definition" not in response.text
+
+
+def test_preview_applies_indexed_az_el_sampling_options():
+    response = TestClient(app).get(
+        "/grid-designer/preview",
+        params={
+            "input_system": "az_el",
+            "azimuth_min": 0,
+            "azimuth_max": 10,
+            "azimuth_step": 3,
+            "elevation_min": 0,
+            "elevation_max": 0,
+            "elevation_step": 1,
+            "cosine_correct_azimuth_spacing_0": "true",
+            "stagger_alternate_elevation_rows_0": "true",
+        },
+    )
+
+    assert response.status_code == 200
+    assert "<strong>4</strong> points" in response.text
     assert "Check the grid definition" not in response.text
 
 

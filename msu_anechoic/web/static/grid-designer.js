@@ -244,6 +244,9 @@ function updateSimpleGridList() {
     cards.forEach((card, index) => {
         const number = card.querySelector("[data-simple-grid-number]");
         if (number) number.textContent = String(index + 1);
+        card.querySelectorAll("[data-simple-grid-option]").forEach((control) => {
+            control.name = `${control.dataset.simpleGridOption}_${index}`;
+        });
         const removeButton = card.querySelector("[data-remove-simple-grid]");
         if (removeButton) removeButton.disabled = cards.length === 1;
     });
@@ -263,7 +266,11 @@ function addSimpleGrid() {
     const clone = source.cloneNode(true);
     const sourceInputs = source.querySelectorAll("input");
     clone.querySelectorAll("input").forEach((input, index) => {
-        input.value = sourceInputs[index].value;
+        if (input.type === "checkbox" || input.type === "radio") {
+            input.checked = sourceInputs[index].checked;
+        } else {
+            input.value = sourceInputs[index].value;
+        }
     });
     list.append(clone);
     updateCoordinateFields();

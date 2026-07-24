@@ -14,9 +14,9 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from dataclasses import replace
+from decimal import ROUND_HALF_UP
 from decimal import Decimal
 from decimal import InvalidOperation
-from decimal import ROUND_HALF_UP
 from typing import Literal
 
 CoordinateSystem = Literal["az_el", "pan_tilt"]
@@ -48,6 +48,8 @@ class QuantizationDefinition:
 class SimpleGridDefinition:
     horizontal: AxisDefinition
     vertical: AxisDefinition
+    cosine_correct_azimuth_spacing: bool = False
+    stagger_alternate_elevation_rows: bool = False
 
 
 @dataclass(frozen=True)
@@ -172,6 +174,53 @@ def axis_values(axis: AxisDefinition, *, label: str) -> tuple[float, ...]:
     if not values or values[-1] != maximum:
         values.append(maximum)
     return tuple(float(value) for value in values)
+
+
+def _regular_values_within_bounds(
+    axis: AxisDefinition,
+    *,
+    step: float,
+    offset: float = 0.0,
+) -> tuple[float, ...]:
+    """Generate regular values without appending a short final interval."""
+    minimum = Decimal(str(axis.minimum))
+    maximum = Decimal(str(axis.maximum))
+    decimal_step = Decimal(str(step))
+    start = minimum + Decimal(str(offset))
+    if start > maximum:
+        return (float(minimum),)
+    count = int((maximum - start) // decimal_step)
+    return tuple(float(start + decimal_step * index) for index in range(count + 1))
+
+
+def _azimuth_values_for_elevation(
+    grid: SimpleGridDefinition,
+    *,
+    elevation: float,
+    row_index: int,
+    validated_values: tuple[float, ...],
+) -> tuple[float, ...]:
+    if not (
+        grid.cosine_correct_azimuth_spacing
+        or grid.stagger_alternate_elevation_rows
+    ):
+        return validated_values
+    if abs(abs(elevation) - 90.0) < _ZERO_TOLERANCE:
+        return ((grid.horizontal.minimum + grid.horizontal.maximum) / 2.0,)
+
+    effective_step = grid.horizontal.step
+    if grid.cosine_correct_azimuth_spacing:
+        effective_step /= abs(math.cos(math.radians(elevation)))
+    offset = (
+        effective_step / 2.0
+        if grid.stagger_alternate_elevation_rows and row_index % 2 == 1
+        else 0.0
+    )
+    return _regular_values_within_bounds(
+        grid.horizontal,
+        step=effective_step,
+        offset=offset,
+    )
 
 
 def quantize_angle(
@@ -333,7 +382,9 @@ def design_combined_grid(
     vertical_label = "Elevation" if input_system == "az_el" else "Tilt"
     horizontal_value_set: set[float] = set()
     vertical_value_set: set[float] = set()
-    expanded_grids: list[tuple[tuple[float, ...], tuple[float, ...]]] = []
+    expanded_grids: list[
+        tuple[SimpleGridDefinition, tuple[float, ...], tuple[float, ...]]
+    ] = []
     point_count = 0
     for grid in grids:
         horizontal_values = axis_values(grid.horizontal, label=horizontal_label)
@@ -344,13 +395,23 @@ def design_combined_grid(
                 f"These grids contain {point_count:,} points before duplicate removal; "
                 f"the designer limit is {MAX_GRID_POINTS:,}."
             )
-        horizontal_value_set.update(horizontal_values)
         vertical_value_set.update(vertical_values)
-        expanded_grids.append((horizontal_values, vertical_values))
+        expanded_grids.append((grid, horizontal_values, vertical_values))
 
     candidates: list[_CandidatePoint] = []
-    for horizontal_values, vertical_values in expanded_grids:
-        for vertical_value in reversed(vertical_values):
+    for grid, validated_horizontal_values, vertical_values in expanded_grids:
+        for row_index, vertical_value in enumerate(reversed(vertical_values)):
+            horizontal_values = (
+                _azimuth_values_for_elevation(
+                    grid,
+                    elevation=vertical_value,
+                    row_index=row_index,
+                    validated_values=validated_horizontal_values,
+                )
+                if input_system == "az_el"
+                else validated_horizontal_values
+            )
+            horizontal_value_set.update(horizontal_values)
             for horizontal_value in horizontal_values:
                 if input_system == "az_el":
                     ideal_azimuth = horizontal_value
@@ -430,6 +491,8 @@ def design_grid(
     input_system: CoordinateSystem,
     horizontal: AxisDefinition,
     vertical: AxisDefinition,
+    cosine_correct_azimuth_spacing: bool = False,
+    stagger_alternate_elevation_rows: bool = False,
     reject_inaccessible: bool = False,
     pan_quantization: QuantizationDefinition = QuantizationDefinition(),
     tilt_quantization: QuantizationDefinition = QuantizationDefinition(),
@@ -441,6 +504,8 @@ def design_grid(
             SimpleGridDefinition(
                 horizontal=horizontal,
                 vertical=vertical,
+                cosine_correct_azimuth_spacing=cosine_correct_azimuth_spacing,
+                stagger_alternate_elevation_rows=stagger_alternate_elevation_rows,
             ),
         ),
         reject_inaccessible=reject_inaccessible,
