@@ -130,6 +130,15 @@
                         </fieldset>
                     </div>
                     <div class="form-footnote">
+                        <label class="point-filter">
+                            <input
+                                type="checkbox"
+                                name="reject_inaccessible"
+                                value="true"
+                                {% if reject_inaccessible %}checked{% endif %}
+                            >
+                            <span>Reject inaccessible points</span>
+                        </label>
                         <span id="updating-indicator" class="htmx-indicator">Updating views…</span>
                     </div>
                 </form>

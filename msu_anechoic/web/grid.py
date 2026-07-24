@@ -19,6 +19,7 @@ from typing import Literal
 
 CoordinateSystem = Literal["az_el", "pan_tilt"]
 MAX_GRID_POINTS = 10_000
+MAX_TURNTABLE_TILT = 45.0
 _ZERO_TOLERANCE = 1e-12
 
 
@@ -147,6 +148,7 @@ def design_grid(
     input_system: CoordinateSystem,
     horizontal: AxisDefinition,
     vertical: AxisDefinition,
+    reject_inaccessible: bool = False,
 ) -> DesignedGrid:
     """Create a top-left, horizontal-first serpentine grid."""
     if input_system not in ("az_el", "pan_tilt"):
@@ -178,6 +180,9 @@ def design_grid(
                 tilt = vertical_value
                 azimuth, elevation = pan_tilt_to_az_el(pan, tilt)
 
+            if reject_inaccessible and tilt > MAX_TURNTABLE_TILT + _ZERO_TOLERANCE:
+                continue
+
             points.append(
                 GridPoint(
                     traversal_index=len(points) + 1,
@@ -189,6 +194,11 @@ def design_grid(
                     tilt=tilt,
                 )
             )
+
+    if reject_inaccessible and not points:
+        raise GridValidationError(
+            "No accessible points remain after applying the +45° turntable tilt limit."
+        )
 
     return DesignedGrid(
         input_system=input_system,

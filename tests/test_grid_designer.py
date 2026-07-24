@@ -8,8 +8,11 @@ from msu_anechoic.web.app import _figure
 from msu_anechoic.web.app import _flat_topped_lower_hemisphere_mesh
 from msu_anechoic.web.app import _spherical_patch_mesh
 from msu_anechoic.web.app import _three_dimensional_figure
+from msu_anechoic.web.app import INACCESSIBLE_AZ_EL_REGIONS
 from msu_anechoic.web.app import app
 from msu_anechoic.web.grid import AxisDefinition
+from msu_anechoic.web.grid import GridValidationError
+from msu_anechoic.web.grid import MAX_TURNTABLE_TILT
 from msu_anechoic.web.grid import axis_values
 from msu_anechoic.web.grid import az_el_to_pan_tilt
 from msu_anechoic.web.grid import design_grid
@@ -46,6 +49,43 @@ def test_grid_starts_top_left_and_traverses_horizontal_serpentine():
         (10, -10),
     ]
     assert [point.traversal_index for point in grid.points] == list(range(1, 10))
+
+
+def test_grid_can_reject_points_above_turntable_tilt_limit():
+    grid = design_grid(
+        input_system="pan_tilt",
+        horizontal=AxisDefinition(-10, 10, 10),
+        vertical=AxisDefinition(40, 50, 5),
+        reject_inaccessible=True,
+    )
+
+    assert len(grid.points) == 6
+    assert all(point.tilt <= MAX_TURNTABLE_TILT for point in grid.points)
+    assert {point.tilt for point in grid.points} == {40, 45}
+    assert [point.traversal_index for point in grid.points] == list(range(1, 7))
+
+
+def test_grid_applies_tilt_limit_after_converting_azimuth_elevation():
+    grid = design_grid(
+        input_system="az_el",
+        horizontal=AxisDefinition(0, 0, 1),
+        vertical=AxisDefinition(45, 46, 1),
+        reject_inaccessible=True,
+    )
+
+    assert len(grid.points) == 1
+    assert grid.points[0].elevation == 45
+    assert grid.points[0].tilt == pytest.approx(MAX_TURNTABLE_TILT)
+
+
+def test_grid_reports_when_rejection_removes_every_point():
+    with pytest.raises(GridValidationError, match="No accessible points remain"):
+        design_grid(
+            input_system="pan_tilt",
+            horizontal=AxisDefinition(0, 10, 10),
+            vertical=AxisDefinition(46, 50, 4),
+            reject_inaccessible=True,
+        )
 
 
 @pytest.mark.parametrize(
@@ -243,6 +283,8 @@ def test_grid_designer_page_loads():
     assert "grid-designer-color-mode" in response.text
     assert "Azimuth / elevation" in response.text
     assert "Pan / tilt" in response.text
+    assert 'name="reject_inaccessible"' in response.text
+    assert "Reject inaccessible points" in response.text
     assert client.get("/vendor/plotly.min.js").status_code == 200
     assert client.get("/static/htmx.min.js").status_code == 200
 
@@ -305,6 +347,63 @@ def test_three_dimensional_view_has_explicit_rotation_controls():
     assert "document.hidden" in script.text
 
 
+def test_two_dimensional_views_include_non_ranging_inaccessible_masks():
+    client = TestClient(app)
+    stylesheet = client.get("/static/grid-designer.css")
+    script = client.get("/static/grid-designer.js")
+    grid = design_grid(
+        input_system="az_el",
+        horizontal=AxisDefinition(-90, 90, 30),
+        vertical=AxisDefinition(-60, 60, 30),
+    )
+    azimuth_elevation_figure = _figure(grid, coordinate_system="az_el")
+    pan_tilt_figure = _figure(grid, coordinate_system="pan_tilt")
+
+    assert "--plot-inaccessible:" in stylesheet.text
+    assert "azimuthElevationMaskShapes" in script.text
+    assert "panTiltMaskShapes" in script.text
+    assert "scheduleInaccessibleMaskUpdate" not in script.text
+    assert '"xaxis.range": xRange' in script.text
+    assert '"yaxis.range": yRange' in script.text
+    assert azimuth_elevation_figure["layout"]["meta"]["coordinate_system"] == "az_el"
+    assert (
+        azimuth_elevation_figure["layout"]["meta"]["maximum_turntable_tilt"]
+        == MAX_TURNTABLE_TILT
+    )
+    assert (
+        azimuth_elevation_figure["layout"]["meta"]["inaccessible_regions"]
+        is INACCESSIBLE_AZ_EL_REGIONS
+    )
+    assert pan_tilt_figure["layout"]["meta"] == {
+        "coordinate_system": "pan_tilt",
+        "maximum_turntable_tilt": MAX_TURNTABLE_TILT,
+    }
+
+
+def test_az_el_mask_boundaries_are_precomputed_at_one_degree_intervals():
+    assert len(INACCESSIBLE_AZ_EL_REGIONS) == 3
+    assert [len(region["azimuths"]) for region in INACCESSIBLE_AZ_EL_REGIONS] == [
+        91,
+        181,
+        91,
+    ]
+    for region in INACCESSIBLE_AZ_EL_REGIONS:
+        assert all(
+            right - left == 1
+            for left, right in zip(
+                region["azimuths"],
+                region["azimuths"][1:],
+            )
+        )
+
+    forward = INACCESSIBLE_AZ_EL_REGIONS[1]
+    assert forward["elevations"][0] == pytest.approx(0, abs=1e-12)
+    assert forward["elevations"][90] == pytest.approx(45)
+    assert forward["elevations"][-1] == pytest.approx(0, abs=1e-12)
+    assert INACCESSIBLE_AZ_EL_REGIONS[0]["elevations"][0] == pytest.approx(-45)
+    assert INACCESSIBLE_AZ_EL_REGIONS[2]["elevations"][-1] == pytest.approx(-45)
+
+
 def test_preview_accepts_a_range_that_does_not_align_with_step_size():
     response = TestClient(app).get(
         "/grid-designer/preview",
@@ -356,3 +455,22 @@ def test_pan_tilt_preview_contains_three_plot_payloads():
     assert '<button type="button" data-rotation-toggle>Play</button>' in response.text
     assert 'max="10"' in response.text
     assert "<strong>9</strong> points" in response.text
+
+
+def test_preview_checkbox_rejects_inaccessible_points():
+    response = TestClient(app).get(
+        "/grid-designer/preview",
+        params={
+            "input_system": "pan_tilt",
+            "pan_min": -10,
+            "pan_max": 10,
+            "pan_step": 10,
+            "tilt_min": 40,
+            "tilt_max": 50,
+            "tilt_step": 5,
+            "reject_inaccessible": "true",
+        },
+    )
+
+    assert response.status_code == 200
+    assert "<strong>6</strong> points" in response.text

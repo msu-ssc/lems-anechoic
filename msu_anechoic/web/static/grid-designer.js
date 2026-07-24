@@ -133,6 +133,76 @@ function startCameraRotation(plotElement, initialEye) {
     window.requestAnimationFrame(animate);
 }
 
+function maskShape(path, color) {
+    return {
+        type: "path",
+        xref: "x",
+        yref: "y",
+        path,
+        fillcolor: color,
+        opacity: 0.28,
+        line: { width: 0 },
+        layer: "below",
+    };
+}
+
+function azimuthElevationMaskShapes(regions, color) {
+    return regions.map((region) => {
+        const boundaryPoints = region.azimuths.map(
+            (azimuth, index) => [azimuth, region.elevations[index]],
+        );
+        const pathPoints = [
+            [region.azimuths[0], region.mask_edge],
+            ...boundaryPoints,
+            [region.azimuths.at(-1), region.mask_edge],
+        ];
+        const path = pathPoints
+            .map(([x, y], pointIndex) => (
+                `${pointIndex === 0 ? "M" : "L"} ${x} ${y}`
+            ))
+            .join(" ");
+        return maskShape(`${path} Z`, color);
+    });
+}
+
+function panTiltMaskShapes(maximumTilt, color) {
+    return [{
+        type: "rect",
+        xref: "paper",
+        yref: "y",
+        x0: 0,
+        x1: 1,
+        y0: maximumTilt,
+        y1: 90,
+        fillcolor: color,
+        opacity: 0.28,
+        line: { width: 0 },
+        layer: "below",
+    }];
+}
+
+function applyInaccessibleMasks(plotElement, metadata, color) {
+    const fullLayout = plotElement._fullLayout;
+    if (!fullLayout?.xaxis?.range || !fullLayout?.yaxis?.range) return;
+
+    const xRange = [...fullLayout.xaxis.range];
+    const yRange = [...fullLayout.yaxis.range];
+    const shapes = metadata.coordinate_system === "az_el"
+        ? azimuthElevationMaskShapes(
+            metadata.inaccessible_regions,
+            color,
+        )
+        : panTiltMaskShapes(metadata.maximum_turntable_tilt, color);
+
+    window.Plotly.relayout(plotElement, {
+        shapes,
+        "xaxis.range": xRange,
+        "xaxis.autorange": false,
+        "yaxis.range": yRange,
+        "yaxis.autorange": false,
+    });
+}
+
 function updateCoordinateFields() {
     const selected = document.querySelector('input[name="input_system"]:checked')?.value;
     document.querySelectorAll("[data-coordinate-fields]").forEach((element) => {
@@ -189,6 +259,7 @@ function plotColors() {
         source: value("--plot-source", "#2ca02c"),
         boresight: value("--plot-boresight", "#005eb8"),
         screen: value("--plot-screen", "#7a7a7a"),
+        inaccessible: value("--plot-inaccessible", "#6f7680"),
     };
 }
 
@@ -267,14 +338,21 @@ function renderPlots(root = document) {
             figure.layout,
             figure.config,
         );
-        if (plotElement.dataset.plotSource === "three-dimensional-figure") {
-            Promise.resolve(render).then(() => {
+        Promise.resolve(render).then(() => {
+            if (figure.layout.meta?.maximum_turntable_tilt !== undefined) {
+                applyInaccessibleMasks(
+                    plotElement,
+                    figure.layout.meta,
+                    colors.inaccessible,
+                );
+            }
+            if (plotElement.dataset.plotSource === "three-dimensional-figure") {
                 startCameraRotation(
                     plotElement,
                     figure.layout.scene.camera.eye,
                 );
-            });
-        }
+            }
+        });
     });
 }
 

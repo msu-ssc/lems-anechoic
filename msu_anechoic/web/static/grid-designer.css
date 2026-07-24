@@ -38,6 +38,7 @@
     --plot-source: #2ca02c;
     --plot-boresight: #005eb8;
     --plot-screen: #7a7a7a;
+    --plot-inaccessible: #6f7680;
     font-family: "Segoe UI", Arial, sans-serif;
     color: var(--text);
     background: var(--background);
@@ -83,6 +84,7 @@
     --plot-source: #45c46a;
     --plot-boresight: #63aee8;
     --plot-screen: #aab2c0;
+    --plot-inaccessible: #a1a7b0;
 }
 
 * {
@@ -453,6 +455,27 @@ legend span {
     gap: 20px;
     color: var(--text-muted);
     font-size: 14px;
+}
+
+.point-filter {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text);
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.point-filter input {
+    width: 17px;
+    height: 17px;
+    margin: 0;
+    accent-color: var(--accent);
+}
+
+.point-filter input:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
 }
 
 .htmx-indicator {

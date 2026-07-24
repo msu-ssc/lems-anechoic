@@ -20,6 +20,7 @@ from plotly.offline import get_plotlyjs
 from msu_anechoic.web.grid import AxisDefinition
 from msu_anechoic.web.grid import DesignedGrid
 from msu_anechoic.web.grid import GridValidationError
+from msu_anechoic.web.grid import MAX_TURNTABLE_TILT
 from msu_anechoic.web.grid import design_grid
 
 WEB_ROOT = Path(__file__).parent
@@ -42,7 +43,39 @@ DEFAULTS = {
     "tilt_min": -20.0,
     "tilt_max": 20.0,
     "tilt_step": 10.0,
+    "reject_inaccessible": False,
 }
+
+
+def _precompute_inaccessible_az_el_regions() -> tuple[dict, ...]:
+    """Sample the fixed +45° tilt boundary at one-degree azimuth intervals."""
+    tilt_tangent = math.tan(math.radians(MAX_TURNTABLE_TILT))
+    regions = []
+    for azimuth_start, azimuth_end, mask_edge in (
+        (-180, -90, -90.0),
+        (-90, 90, 90.0),
+        (90, 180, -90.0),
+    ):
+        azimuths = tuple(range(azimuth_start, azimuth_end + 1))
+        elevations = tuple(
+            math.degrees(
+                math.atan(
+                    tilt_tangent * math.cos(math.radians(azimuth))
+                )
+            )
+            for azimuth in azimuths
+        )
+        regions.append(
+            {
+                "azimuths": azimuths,
+                "elevations": elevations,
+                "mask_edge": mask_edge,
+            }
+        )
+    return tuple(regions)
+
+
+INACCESSIBLE_AZ_EL_REGIONS = _precompute_inaccessible_az_el_regions()
 
 
 def _az_el_unit_vector(azimuth: float, elevation: float) -> tuple[float, float, float]:
@@ -370,6 +403,15 @@ def _figure(
             "margin": {"l": 62, "r": 24, "t": 58, "b": 58},
             "hovermode": "closest",
             "showlegend": False,
+            "meta": {
+                "coordinate_system": coordinate_system,
+                "maximum_turntable_tilt": MAX_TURNTABLE_TILT,
+                **(
+                    {"inaccessible_regions": INACCESSIBLE_AZ_EL_REGIONS}
+                    if coordinate_system == "az_el"
+                    else {}
+                ),
+            },
             "xaxis": {
                 "title": {"text": x_title, "font": {"size": 16}},
                 "tickfont": {"size": 14},
@@ -599,6 +641,7 @@ def _build_grid(
     tilt_min: float,
     tilt_max: float,
     tilt_step: float,
+    reject_inaccessible: bool,
 ) -> DesignedGrid:
     if input_system == "az_el":
         horizontal = AxisDefinition(azimuth_min, azimuth_max, azimuth_step)
@@ -606,7 +649,12 @@ def _build_grid(
     else:
         horizontal = AxisDefinition(pan_min, pan_max, pan_step)
         vertical = AxisDefinition(tilt_min, tilt_max, tilt_step)
-    return design_grid(input_system=input_system, horizontal=horizontal, vertical=vertical)
+    return design_grid(
+        input_system=input_system,
+        horizontal=horizontal,
+        vertical=vertical,
+        reject_inaccessible=reject_inaccessible,
+    )
 
 
 def _parse_number(value: str | float, *, label: str) -> float:
@@ -653,10 +701,12 @@ def grid_designer_preview(
     tilt_min: str = str(DEFAULTS["tilt_min"]),
     tilt_max: str = str(DEFAULTS["tilt_max"]),
     tilt_step: str = str(DEFAULTS["tilt_step"]),
+    reject_inaccessible: bool = False,
 ) -> HTMLResponse:
     try:
         values = dict(DEFAULTS)
         values["input_system"] = input_system
+        values["reject_inaccessible"] = reject_inaccessible
         if input_system == "az_el":
             values.update(
                 azimuth_min=_parse_number(azimuth_min, label="azimuth minimum"),
