@@ -84,6 +84,10 @@ def test_grid_designer_page_loads():
     response = client.get("/grid-designer")
     assert response.status_code == 200
     assert "Grid Designer" in response.text
+    assert "MSU Anechoic Chamber" in response.text
+    assert "LEMS Anechoic Chamber" not in response.text
+    assert 'id="menu-toggle"' in response.text
+    assert 'id="application-menu"' in response.text
     assert "Azimuth / elevation" in response.text
     assert "Pan / tilt" in response.text
     assert client.get("/vendor/plotly.min.js").status_code == 200
