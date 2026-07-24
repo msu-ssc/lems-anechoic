@@ -239,6 +239,47 @@ function updateCoordinateFields() {
     });
 }
 
+function updateSimpleGridList() {
+    const cards = [...document.querySelectorAll("[data-simple-grid]")];
+    cards.forEach((card, index) => {
+        const number = card.querySelector("[data-simple-grid-number]");
+        if (number) number.textContent = String(index + 1);
+        const removeButton = card.querySelector("[data-remove-simple-grid]");
+        if (removeButton) removeButton.disabled = cards.length === 1;
+    });
+}
+
+function notifyGridFormChanged() {
+    document.getElementById("grid-form")?.dispatchEvent(
+        new Event("change", { bubbles: true }),
+    );
+}
+
+function addSimpleGrid() {
+    const list = document.querySelector("[data-simple-grid-list]");
+    const source = list?.querySelector("[data-simple-grid]:last-child");
+    if (!list || !source) return;
+
+    const clone = source.cloneNode(true);
+    const sourceInputs = source.querySelectorAll("input");
+    clone.querySelectorAll("input").forEach((input, index) => {
+        input.value = sourceInputs[index].value;
+    });
+    list.append(clone);
+    updateCoordinateFields();
+    updateSimpleGridList();
+    clone.querySelector('input:not(:disabled)')?.focus();
+    notifyGridFormChanged();
+}
+
+function removeSimpleGrid(button) {
+    const cards = document.querySelectorAll("[data-simple-grid]");
+    if (cards.length <= 1) return;
+    button.closest("[data-simple-grid]")?.remove();
+    updateSimpleGridList();
+    notifyGridFormChanged();
+}
+
 function setMenuOpen(isOpen) {
     const toggle = document.getElementById("menu-toggle");
     const menu = document.getElementById("application-menu");
@@ -396,6 +437,7 @@ function renderPlots(root = document) {
 
 document.addEventListener("DOMContentLoaded", () => {
     updateCoordinateFields();
+    updateSimpleGridList();
     syncRotationControls();
     syncPlotVisibilityControls();
     setColorMode(document.documentElement.dataset.colorMode || "light", { persist: false });
@@ -449,6 +491,15 @@ document.addEventListener("change", (event) => {
 });
 
 document.addEventListener("click", (event) => {
+    if (event.target.closest("[data-add-simple-grid]")) {
+        addSimpleGrid();
+        return;
+    }
+    const removeButton = event.target.closest("[data-remove-simple-grid]");
+    if (removeButton) {
+        removeSimpleGrid(removeButton);
+        return;
+    }
     if (!event.target.closest("[data-rotation-toggle]")) return;
     cameraRotationSettings.paused = !cameraRotationSettings.paused;
     syncRotationControls();

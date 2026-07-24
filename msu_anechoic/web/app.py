@@ -22,7 +22,8 @@ from msu_anechoic.web.grid import DesignedGrid
 from msu_anechoic.web.grid import GridValidationError
 from msu_anechoic.web.grid import MAX_TURNTABLE_TILT
 from msu_anechoic.web.grid import QuantizationDefinition
-from msu_anechoic.web.grid import design_grid
+from msu_anechoic.web.grid import SimpleGridDefinition
+from msu_anechoic.web.grid import design_combined_grid
 
 WEB_ROOT = Path(__file__).parent
 templates = Jinja2Templates(directory=WEB_ROOT / "templates")
@@ -770,18 +771,7 @@ def _preview_context(grid: DesignedGrid) -> dict:
 def _build_grid(
     *,
     input_system: Literal["az_el", "pan_tilt"],
-    azimuth_min: float,
-    azimuth_max: float,
-    azimuth_step: float,
-    elevation_min: float,
-    elevation_max: float,
-    elevation_step: float,
-    pan_min: float,
-    pan_max: float,
-    pan_step: float,
-    tilt_min: float,
-    tilt_max: float,
-    tilt_step: float,
+    grids: tuple[SimpleGridDefinition, ...],
     quantize_tilt: bool,
     tilt_quantization_origin: float,
     tilt_quantization_step: float,
@@ -790,16 +780,9 @@ def _build_grid(
     pan_quantization_step: float,
     reject_inaccessible: bool,
 ) -> DesignedGrid:
-    if input_system == "az_el":
-        horizontal = AxisDefinition(azimuth_min, azimuth_max, azimuth_step)
-        vertical = AxisDefinition(elevation_min, elevation_max, elevation_step)
-    else:
-        horizontal = AxisDefinition(pan_min, pan_max, pan_step)
-        vertical = AxisDefinition(tilt_min, tilt_max, tilt_step)
-    return design_grid(
+    return design_combined_grid(
         input_system=input_system,
-        horizontal=horizontal,
-        vertical=vertical,
+        grids=grids,
         reject_inaccessible=reject_inaccessible,
         pan_quantization=QuantizationDefinition(
             enabled=quantize_pan,
@@ -814,6 +797,37 @@ def _build_grid(
     )
 
 
+def _simple_grid_definition(
+    input_system: Literal["az_el", "pan_tilt"],
+    values: dict[str, float],
+) -> SimpleGridDefinition:
+    if input_system == "az_el":
+        return SimpleGridDefinition(
+            horizontal=AxisDefinition(
+                values["azimuth_min"],
+                values["azimuth_max"],
+                values["azimuth_step"],
+            ),
+            vertical=AxisDefinition(
+                values["elevation_min"],
+                values["elevation_max"],
+                values["elevation_step"],
+            ),
+        )
+    return SimpleGridDefinition(
+        horizontal=AxisDefinition(
+            values["pan_min"],
+            values["pan_max"],
+            values["pan_step"],
+        ),
+        vertical=AxisDefinition(
+            values["tilt_min"],
+            values["tilt_max"],
+            values["tilt_step"],
+        ),
+    )
+
+
 def _parse_number(value: str | float, *, label: str) -> float:
     try:
         number = float(value)
@@ -824,6 +838,64 @@ def _parse_number(value: str | float, *, label: str) -> float:
     return number
 
 
+def _parse_simple_grids(
+    request: Request,
+    input_system: Literal["az_el", "pan_tilt"],
+) -> tuple[SimpleGridDefinition, ...]:
+    names = (
+        (
+            "azimuth_min",
+            "azimuth_max",
+            "azimuth_step",
+            "elevation_min",
+            "elevation_max",
+            "elevation_step",
+        )
+        if input_system == "az_el"
+        else (
+            "pan_min",
+            "pan_max",
+            "pan_step",
+            "tilt_min",
+            "tilt_max",
+            "tilt_step",
+        )
+    )
+    raw_values = {
+        name: request.query_params.getlist(name)
+        for name in names
+    }
+    grid_count = max((len(values) for values in raw_values.values()), default=0) or 1
+    for name, values in raw_values.items():
+        if not values:
+            raw_values[name] = [str(DEFAULTS[name])] * grid_count
+    if any(len(values) != grid_count for values in raw_values.values()):
+        raise GridValidationError(
+            "Every simple grid must have a complete set of axis parameters."
+        )
+
+    grids = []
+    for index in range(grid_count):
+        def field_label(name: str) -> str:
+            label = (
+                name.replace("_min", " minimum")
+                .replace("_max", " maximum")
+                .replace("_step", " step size")
+                .replace("_", " ")
+            )
+            return f"grid {index + 1} {label}" if grid_count > 1 else label
+
+        values = {
+            name: _parse_number(
+                raw_values[name][index],
+                label=field_label(name),
+            )
+            for name in names
+        }
+        grids.append(_simple_grid_definition(input_system, values))
+    return tuple(grids)
+
+
 @app.get("/", include_in_schema=False)
 def index() -> RedirectResponse:
     return RedirectResponse(url="/grid-designer", status_code=307)
@@ -831,12 +903,28 @@ def index() -> RedirectResponse:
 
 @app.get("/grid-designer", response_class=HTMLResponse)
 def grid_designer(request: Request) -> HTMLResponse:
-    grid = _build_grid(**DEFAULTS)
+    grid = _build_grid(
+        input_system=DEFAULTS["input_system"],
+        grids=(
+            _simple_grid_definition(
+                DEFAULTS["input_system"],
+                DEFAULTS,
+            ),
+        ),
+        quantize_tilt=DEFAULTS["quantize_tilt"],
+        tilt_quantization_origin=DEFAULTS["tilt_quantization_origin"],
+        tilt_quantization_step=DEFAULTS["tilt_quantization_step"],
+        quantize_pan=DEFAULTS["quantize_pan"],
+        pan_quantization_origin=DEFAULTS["pan_quantization_origin"],
+        pan_quantization_step=DEFAULTS["pan_quantization_step"],
+        reject_inaccessible=DEFAULTS["reject_inaccessible"],
+    )
     return templates.TemplateResponse(
         request=request,
         name="grid_designer.html",
         context={
             **DEFAULTS,
+            "simple_grids": [dict(DEFAULTS)],
             **_preview_context(grid),
         },
     )
@@ -846,18 +934,6 @@ def grid_designer(request: Request) -> HTMLResponse:
 def grid_designer_preview(
     request: Request,
     input_system: Literal["az_el", "pan_tilt"] = "az_el",
-    azimuth_min: str = str(DEFAULTS["azimuth_min"]),
-    azimuth_max: str = str(DEFAULTS["azimuth_max"]),
-    azimuth_step: str = str(DEFAULTS["azimuth_step"]),
-    elevation_min: str = str(DEFAULTS["elevation_min"]),
-    elevation_max: str = str(DEFAULTS["elevation_max"]),
-    elevation_step: str = str(DEFAULTS["elevation_step"]),
-    pan_min: str = str(DEFAULTS["pan_min"]),
-    pan_max: str = str(DEFAULTS["pan_max"]),
-    pan_step: str = str(DEFAULTS["pan_step"]),
-    tilt_min: str = str(DEFAULTS["tilt_min"]),
-    tilt_max: str = str(DEFAULTS["tilt_max"]),
-    tilt_step: str = str(DEFAULTS["tilt_step"]),
     quantize_tilt: bool = False,
     tilt_quantization_origin: str = str(DEFAULTS["tilt_quantization_origin"]),
     tilt_quantization_step: str = str(DEFAULTS["tilt_quantization_step"]),
@@ -867,10 +943,9 @@ def grid_designer_preview(
     reject_inaccessible: bool = False,
 ) -> HTMLResponse:
     try:
-        values = dict(DEFAULTS)
-        values["input_system"] = input_system
-        values["reject_inaccessible"] = reject_inaccessible
-        values.update(
+        grid = _build_grid(
+            input_system=input_system,
+            grids=_parse_simple_grids(request, input_system),
             quantize_tilt=quantize_tilt,
             tilt_quantization_origin=_parse_number(
                 tilt_quantization_origin,
@@ -889,26 +964,8 @@ def grid_designer_preview(
                 pan_quantization_step,
                 label="pan quantization step size",
             ),
+            reject_inaccessible=reject_inaccessible,
         )
-        if input_system == "az_el":
-            values.update(
-                azimuth_min=_parse_number(azimuth_min, label="azimuth minimum"),
-                azimuth_max=_parse_number(azimuth_max, label="azimuth maximum"),
-                azimuth_step=_parse_number(azimuth_step, label="azimuth step size"),
-                elevation_min=_parse_number(elevation_min, label="elevation minimum"),
-                elevation_max=_parse_number(elevation_max, label="elevation maximum"),
-                elevation_step=_parse_number(elevation_step, label="elevation step size"),
-            )
-        else:
-            values.update(
-                pan_min=_parse_number(pan_min, label="pan minimum"),
-                pan_max=_parse_number(pan_max, label="pan maximum"),
-                pan_step=_parse_number(pan_step, label="pan step size"),
-                tilt_min=_parse_number(tilt_min, label="tilt minimum"),
-                tilt_max=_parse_number(tilt_max, label="tilt maximum"),
-                tilt_step=_parse_number(tilt_step, label="tilt step size"),
-            )
-        grid = _build_grid(**values)
         context = _preview_context(grid)
     except GridValidationError as exc:
         context = {"grid": None, "error": str(exc)}

@@ -368,6 +368,97 @@ h2 {
     outline-offset: -2px;
 }
 
+.simple-grids-section {
+    margin-top: 18px;
+    padding-top: 18px;
+    border-top: 1px solid var(--border);
+}
+
+.simple-grids-heading,
+.simple-grid > header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+}
+
+.simple-grids-heading {
+    margin-bottom: 12px;
+}
+
+.simple-grids-heading h3,
+.simple-grid h4 {
+    margin: 0;
+    color: var(--text);
+    font-weight: 650;
+}
+
+.simple-grids-heading h3 {
+    font-size: 16px;
+}
+
+.simple-grid h4 {
+    font-size: 15px;
+}
+
+.secondary-button,
+.text-button {
+    font: inherit;
+    font-size: 14px;
+    font-weight: 650;
+    cursor: pointer;
+}
+
+.secondary-button {
+    min-height: 34px;
+    padding: 5px 14px;
+    border: 1px solid var(--border-dark);
+    border-radius: 2px;
+    background: var(--surface-muted);
+    color: var(--text);
+}
+
+.text-button {
+    padding: 3px 0;
+    border: 0;
+    background: transparent;
+    color: var(--accent-dark);
+}
+
+.secondary-button:hover,
+.text-button:hover {
+    color: var(--text);
+    border-color: var(--accent);
+}
+
+.secondary-button:focus-visible,
+.text-button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+.text-button:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
+.simple-grid-list {
+    display: grid;
+    gap: 12px;
+}
+
+.simple-grid {
+    padding: 14px;
+    border: 1px solid var(--border);
+    background: var(--surface-muted);
+}
+
+.simple-grid .coordinate-fields {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-color: var(--border-dark);
+}
+
 .coordinate-fields {
     margin-top: 18px;
     padding-top: 18px;

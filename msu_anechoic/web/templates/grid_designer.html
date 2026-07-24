@@ -65,7 +65,7 @@
         <main>
             <div class="page-heading">
                 <h1>Grid Designer</h1>
-                <p>Define a rectangular measurement grid and inspect it in both coordinate systems.</p>
+                <p>Combine rectangular measurement grids and inspect the resulting path in both coordinate systems.</p>
             </div>
 
             <div class="workspace">
@@ -92,43 +92,67 @@
                         </div>
                     </div>
 
-                    <div class="coordinate-fields" data-coordinate-fields="az_el">
-                        <fieldset>
-                            <legend>Azimuth <span>horizontal axis</span></legend>
-                            <div class="input-grid">
-                                <label>Minimum <span class="number-input"><input name="azimuth_min" type="number" step="any" value="{{ azimuth_min }}" required><b>°</b></span></label>
-                                <label>Maximum <span class="number-input"><input name="azimuth_max" type="number" step="any" value="{{ azimuth_max }}" required><b>°</b></span></label>
-                                <label>Step size <span class="number-input"><input name="azimuth_step" type="number" min="0.000001" step="any" value="{{ azimuth_step }}" required><b>°</b></span></label>
-                            </div>
-                        </fieldset>
-                        <fieldset>
-                            <legend>Elevation <span>vertical axis</span></legend>
-                            <div class="input-grid">
-                                <label>Minimum <span class="number-input"><input name="elevation_min" type="number" step="any" value="{{ elevation_min }}" required><b>°</b></span></label>
-                                <label>Maximum <span class="number-input"><input name="elevation_max" type="number" step="any" value="{{ elevation_max }}" required><b>°</b></span></label>
-                                <label>Step size <span class="number-input"><input name="elevation_step" type="number" min="0.000001" step="any" value="{{ elevation_step }}" required><b>°</b></span></label>
-                            </div>
-                        </fieldset>
-                    </div>
-
-                    <div class="coordinate-fields" data-coordinate-fields="pan_tilt" hidden>
-                        <fieldset>
-                            <legend>Pan <span>horizontal axis</span></legend>
-                            <div class="input-grid">
-                                <label>Minimum <span class="number-input"><input name="pan_min" type="number" step="any" value="{{ pan_min }}" required><b>°</b></span></label>
-                                <label>Maximum <span class="number-input"><input name="pan_max" type="number" step="any" value="{{ pan_max }}" required><b>°</b></span></label>
-                                <label>Step size <span class="number-input"><input name="pan_step" type="number" min="0.000001" step="any" value="{{ pan_step }}" required><b>°</b></span></label>
-                            </div>
-                        </fieldset>
-                        <fieldset>
-                            <legend>Tilt <span>vertical axis</span></legend>
-                            <div class="input-grid">
-                                <label>Minimum <span class="number-input"><input name="tilt_min" type="number" step="any" value="{{ tilt_min }}" required><b>°</b></span></label>
-                                <label>Maximum <span class="number-input"><input name="tilt_max" type="number" step="any" value="{{ tilt_max }}" required><b>°</b></span></label>
-                                <label>Step size <span class="number-input"><input name="tilt_step" type="number" min="0.000001" step="any" value="{{ tilt_step }}" required><b>°</b></span></label>
-                            </div>
-                        </fieldset>
-                    </div>
+                    <section class="simple-grids-section" aria-labelledby="simple-grids-heading">
+                        <div class="simple-grids-heading">
+                            <h3 id="simple-grids-heading">Simple grids</h3>
+                            <button type="button" class="secondary-button" data-add-simple-grid>
+                                Add grid
+                            </button>
+                        </div>
+                        <div class="simple-grid-list" data-simple-grid-list>
+                            {% for simple_grid in simple_grids %}
+                                <article class="simple-grid" data-simple-grid>
+                                    <header>
+                                        <h4>Grid <span data-simple-grid-number>{{ loop.index }}</span></h4>
+                                        <button
+                                            type="button"
+                                            class="text-button"
+                                            data-remove-simple-grid
+                                            {% if simple_grids | length == 1 %}disabled{% endif %}
+                                        >
+                                            Remove
+                                        </button>
+                                    </header>
+                                    <div class="coordinate-fields" data-coordinate-fields="az_el">
+                                        <fieldset>
+                                            <legend>Azimuth <span>horizontal axis</span></legend>
+                                            <div class="input-grid">
+                                                <label>Minimum <span class="number-input"><input name="azimuth_min" type="number" step="any" value="{{ simple_grid.azimuth_min }}" required><b>°</b></span></label>
+                                                <label>Maximum <span class="number-input"><input name="azimuth_max" type="number" step="any" value="{{ simple_grid.azimuth_max }}" required><b>°</b></span></label>
+                                                <label>Step size <span class="number-input"><input name="azimuth_step" type="number" min="0.000001" step="any" value="{{ simple_grid.azimuth_step }}" required><b>°</b></span></label>
+                                            </div>
+                                        </fieldset>
+                                        <fieldset>
+                                            <legend>Elevation <span>vertical axis</span></legend>
+                                            <div class="input-grid">
+                                                <label>Minimum <span class="number-input"><input name="elevation_min" type="number" step="any" value="{{ simple_grid.elevation_min }}" required><b>°</b></span></label>
+                                                <label>Maximum <span class="number-input"><input name="elevation_max" type="number" step="any" value="{{ simple_grid.elevation_max }}" required><b>°</b></span></label>
+                                                <label>Step size <span class="number-input"><input name="elevation_step" type="number" min="0.000001" step="any" value="{{ simple_grid.elevation_step }}" required><b>°</b></span></label>
+                                            </div>
+                                        </fieldset>
+                                    </div>
+                                    <div class="coordinate-fields" data-coordinate-fields="pan_tilt" hidden>
+                                        <fieldset>
+                                            <legend>Pan <span>horizontal axis</span></legend>
+                                            <div class="input-grid">
+                                                <label>Minimum <span class="number-input"><input name="pan_min" type="number" step="any" value="{{ simple_grid.pan_min }}" required><b>°</b></span></label>
+                                                <label>Maximum <span class="number-input"><input name="pan_max" type="number" step="any" value="{{ simple_grid.pan_max }}" required><b>°</b></span></label>
+                                                <label>Step size <span class="number-input"><input name="pan_step" type="number" min="0.000001" step="any" value="{{ simple_grid.pan_step }}" required><b>°</b></span></label>
+                                            </div>
+                                        </fieldset>
+                                        <fieldset>
+                                            <legend>Tilt <span>vertical axis</span></legend>
+                                            <div class="input-grid">
+                                                <label>Minimum <span class="number-input"><input name="tilt_min" type="number" step="any" value="{{ simple_grid.tilt_min }}" required><b>°</b></span></label>
+                                                <label>Maximum <span class="number-input"><input name="tilt_max" type="number" step="any" value="{{ simple_grid.tilt_max }}" required><b>°</b></span></label>
+                                                <label>Step size <span class="number-input"><input name="tilt_step" type="number" min="0.000001" step="any" value="{{ simple_grid.tilt_step }}" required><b>°</b></span></label>
+                                            </div>
+                                        </fieldset>
+                                    </div>
+                                </article>
+                            {% endfor %}
+                        </div>
+                    </section>
                     <section class="quantization-section" aria-labelledby="quantization-heading">
                         <h3 id="quantization-heading">Quantize</h3>
                         <div class="quantization-grid">

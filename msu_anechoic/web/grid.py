@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from dataclasses import replace
 from decimal import Decimal
 from decimal import InvalidOperation
 from decimal import ROUND_HALF_UP
@@ -21,6 +22,7 @@ from typing import Literal
 CoordinateSystem = Literal["az_el", "pan_tilt"]
 MAX_GRID_POINTS = 10_000
 MAX_TURNTABLE_TILT = 45.0
+DUPLICATE_TOLERANCE = 0.1
 _ZERO_TOLERANCE = 1e-12
 
 
@@ -40,6 +42,12 @@ class QuantizationDefinition:
     enabled: bool = False
     origin: float = 0.0
     step: float = 0.5
+
+
+@dataclass(frozen=True)
+class SimpleGridDefinition:
+    horizontal: AxisDefinition
+    vertical: AxisDefinition
 
 
 @dataclass(frozen=True)
@@ -66,11 +74,22 @@ class DesignedGrid:
 
     @property
     def row_count(self) -> int:
-        return len(self.vertical_values)
+        return max((point.row for point in self.points), default=-1) + 1
 
     @property
     def column_count(self) -> int:
-        return len(self.horizontal_values)
+        if not self.points:
+            return 0
+        counts: dict[int, int] = {}
+        for point in self.points:
+            counts[point.row] = counts.get(point.row, 0) + 1
+        return max(counts.values())
+
+
+@dataclass(frozen=True)
+class _CandidatePoint:
+    point: GridPoint
+    logical_vertical: float
 
 
 def _clean_angle(value: float) -> float:
@@ -178,6 +197,234 @@ def quantize_angle(
     return _clean_angle(float(origin_decimal + multiple * step_decimal))
 
 
+def _specified_coordinates(
+    point: GridPoint,
+    input_system: CoordinateSystem,
+) -> tuple[float, float]:
+    if input_system == "az_el":
+        return point.azimuth, point.elevation
+    return point.pan, point.tilt
+
+
+def _angular_distance(left: float, right: float) -> float:
+    return abs((left - right + 180.0) % 360.0 - 180.0)
+
+
+def _points_are_duplicates(
+    left: GridPoint,
+    right: GridPoint,
+    input_system: CoordinateSystem,
+) -> bool:
+    left_x, left_y = _specified_coordinates(left, input_system)
+    right_x, right_y = _specified_coordinates(right, input_system)
+    return (
+        _angular_distance(left_x, right_x) <= DUPLICATE_TOLERANCE + _ZERO_TOLERANCE
+        and abs(left_y - right_y) <= DUPLICATE_TOLERANCE + _ZERO_TOLERANCE
+    )
+
+
+def _remove_duplicate_candidates(
+    candidates: list[_CandidatePoint],
+    input_system: CoordinateSystem,
+) -> list[_CandidatePoint]:
+    unique: list[_CandidatePoint] = []
+    buckets: dict[tuple[int, int], list[_CandidatePoint]] = {}
+    horizontal_bin_count = round(360.0 / DUPLICATE_TOLERANCE)
+
+    for candidate in candidates:
+        x, y = _specified_coordinates(candidate.point, input_system)
+        normalized_x = (x + 180.0) % 360.0
+        x_bin = math.floor(normalized_x / DUPLICATE_TOLERANCE) % horizontal_bin_count
+        y_bin = math.floor(y / DUPLICATE_TOLERANCE)
+        duplicate = False
+        for x_offset in (-1, 0, 1):
+            neighbor_x = (x_bin + x_offset) % horizontal_bin_count
+            for y_offset in (-1, 0, 1):
+                for existing in buckets.get((neighbor_x, y_bin + y_offset), ()):
+                    if _points_are_duplicates(
+                        candidate.point,
+                        existing.point,
+                        input_system,
+                    ):
+                        duplicate = True
+                        break
+                if duplicate:
+                    break
+            if duplicate:
+                break
+        if duplicate:
+            continue
+
+        unique.append(candidate)
+        buckets.setdefault((x_bin, y_bin), []).append(candidate)
+    return unique
+
+
+def _route_candidates(
+    candidates: list[_CandidatePoint],
+    input_system: CoordinateSystem,
+) -> tuple[GridPoint, ...]:
+    candidates.sort(key=lambda candidate: candidate.logical_vertical, reverse=True)
+    rows: list[tuple[float, list[_CandidatePoint]]] = []
+    for candidate in candidates:
+        matching_row = next(
+            (
+                row
+                for row in rows
+                if abs(row[0] - candidate.logical_vertical)
+                <= DUPLICATE_TOLERANCE + _ZERO_TOLERANCE
+            ),
+            None,
+        )
+        if matching_row is None:
+            rows.append((candidate.logical_vertical, [candidate]))
+        else:
+            matching_row[1].append(candidate)
+
+    routed: list[GridPoint] = []
+    previous_point: GridPoint | None = None
+    for row_index, (_, row_candidates) in enumerate(rows):
+        row_candidates.sort(
+            key=lambda candidate: _specified_coordinates(
+                candidate.point,
+                input_system,
+            )[0]
+        )
+        if previous_point is not None and len(row_candidates) > 1:
+            previous_x, previous_y = _specified_coordinates(
+                previous_point,
+                input_system,
+            )
+
+            def endpoint_distance(candidate: _CandidatePoint) -> float:
+                x, y = _specified_coordinates(candidate.point, input_system)
+                return math.hypot(_angular_distance(x, previous_x), y - previous_y)
+
+            if endpoint_distance(row_candidates[-1]) < endpoint_distance(row_candidates[0]):
+                row_candidates.reverse()
+
+        for column, candidate in enumerate(row_candidates):
+            point = replace(
+                candidate.point,
+                traversal_index=len(routed) + 1,
+                row=row_index,
+                column=column,
+            )
+            routed.append(point)
+            previous_point = point
+    return tuple(routed)
+
+
+def design_combined_grid(
+    *,
+    input_system: CoordinateSystem,
+    grids: tuple[SimpleGridDefinition, ...],
+    reject_inaccessible: bool = False,
+    pan_quantization: QuantizationDefinition = QuantizationDefinition(),
+    tilt_quantization: QuantizationDefinition = QuantizationDefinition(),
+) -> DesignedGrid:
+    """Combine simple grids, remove duplicates, and route them row by row."""
+    if input_system not in ("az_el", "pan_tilt"):
+        raise GridValidationError("Select either azimuth/elevation or pan/tilt input.")
+    if not grids:
+        raise GridValidationError("Add at least one simple grid.")
+
+    horizontal_label = "Azimuth" if input_system == "az_el" else "Pan"
+    vertical_label = "Elevation" if input_system == "az_el" else "Tilt"
+    horizontal_value_set: set[float] = set()
+    vertical_value_set: set[float] = set()
+    expanded_grids: list[tuple[tuple[float, ...], tuple[float, ...]]] = []
+    point_count = 0
+    for grid in grids:
+        horizontal_values = axis_values(grid.horizontal, label=horizontal_label)
+        vertical_values = axis_values(grid.vertical, label=vertical_label)
+        point_count += len(horizontal_values) * len(vertical_values)
+        if point_count > MAX_GRID_POINTS:
+            raise GridValidationError(
+                f"These grids contain {point_count:,} points before duplicate removal; "
+                f"the designer limit is {MAX_GRID_POINTS:,}."
+            )
+        horizontal_value_set.update(horizontal_values)
+        vertical_value_set.update(vertical_values)
+        expanded_grids.append((horizontal_values, vertical_values))
+
+    candidates: list[_CandidatePoint] = []
+    for horizontal_values, vertical_values in expanded_grids:
+        for vertical_value in reversed(vertical_values):
+            for horizontal_value in horizontal_values:
+                if input_system == "az_el":
+                    ideal_azimuth = horizontal_value
+                    ideal_elevation = vertical_value
+                    ideal_pan, ideal_tilt = az_el_to_pan_tilt(
+                        ideal_azimuth,
+                        ideal_elevation,
+                    )
+                else:
+                    ideal_pan = horizontal_value
+                    ideal_tilt = vertical_value
+                    ideal_azimuth, ideal_elevation = pan_tilt_to_az_el(
+                        ideal_pan,
+                        ideal_tilt,
+                    )
+
+                pan = quantize_angle(
+                    ideal_pan,
+                    pan_quantization,
+                    label="Pan",
+                )
+                tilt = quantize_angle(
+                    ideal_tilt,
+                    tilt_quantization,
+                    label="Tilt",
+                )
+                if pan == ideal_pan and tilt == ideal_tilt:
+                    azimuth = ideal_azimuth
+                    elevation = ideal_elevation
+                else:
+                    azimuth, elevation = pan_tilt_to_az_el(pan, tilt)
+
+                if (
+                    reject_inaccessible
+                    and tilt > MAX_TURNTABLE_TILT + _ZERO_TOLERANCE
+                ):
+                    continue
+
+                candidates.append(
+                    _CandidatePoint(
+                        point=GridPoint(
+                            traversal_index=0,
+                            row=0,
+                            column=0,
+                            ideal_azimuth=ideal_azimuth,
+                            ideal_elevation=ideal_elevation,
+                            ideal_pan=ideal_pan,
+                            ideal_tilt=ideal_tilt,
+                            azimuth=azimuth,
+                            elevation=elevation,
+                            pan=pan,
+                            tilt=tilt,
+                        ),
+                        logical_vertical=vertical_value,
+                    )
+                )
+
+    candidates = _remove_duplicate_candidates(candidates, input_system)
+    if not candidates:
+        if reject_inaccessible:
+            raise GridValidationError(
+                "No accessible points remain after applying the +45° turntable tilt limit."
+            )
+        raise GridValidationError("No points remain after duplicate removal.")
+
+    points = _route_candidates(candidates, input_system)
+    return DesignedGrid(
+        input_system=input_system,
+        horizontal_values=tuple(sorted(horizontal_value_set)),
+        vertical_values=tuple(sorted(vertical_value_set)),
+        points=points,
+    )
+
+
 def design_grid(
     *,
     input_system: CoordinateSystem,
@@ -187,85 +434,16 @@ def design_grid(
     pan_quantization: QuantizationDefinition = QuantizationDefinition(),
     tilt_quantization: QuantizationDefinition = QuantizationDefinition(),
 ) -> DesignedGrid:
-    """Create a top-left, horizontal-first serpentine grid."""
-    if input_system not in ("az_el", "pan_tilt"):
-        raise GridValidationError("Select either azimuth/elevation or pan/tilt input.")
-
-    horizontal_label = "Azimuth" if input_system == "az_el" else "Pan"
-    vertical_label = "Elevation" if input_system == "az_el" else "Tilt"
-    horizontal_values = axis_values(horizontal, label=horizontal_label)
-    vertical_values = axis_values(vertical, label=vertical_label)
-
-    point_count = len(horizontal_values) * len(vertical_values)
-    if point_count > MAX_GRID_POINTS:
-        raise GridValidationError(
-            f"This grid contains {point_count:,} points; the designer limit is {MAX_GRID_POINTS:,}."
-        )
-
-    points: list[GridPoint] = []
-    # Plot coordinates increase upward, so top-left means maximum vertical and
-    # minimum horizontal. Alternate horizontal direction on every row.
-    for row, vertical_value in enumerate(reversed(vertical_values)):
-        row_horizontal_values = horizontal_values if row % 2 == 0 else tuple(reversed(horizontal_values))
-        for traversal_column, horizontal_value in enumerate(row_horizontal_values):
-            if input_system == "az_el":
-                ideal_azimuth = horizontal_value
-                ideal_elevation = vertical_value
-                ideal_pan, ideal_tilt = az_el_to_pan_tilt(
-                    ideal_azimuth,
-                    ideal_elevation,
-                )
-            else:
-                ideal_pan = horizontal_value
-                ideal_tilt = vertical_value
-                ideal_azimuth, ideal_elevation = pan_tilt_to_az_el(
-                    ideal_pan,
-                    ideal_tilt,
-                )
-
-            pan = quantize_angle(
-                ideal_pan,
-                pan_quantization,
-                label="Pan",
-            )
-            tilt = quantize_angle(
-                ideal_tilt,
-                tilt_quantization,
-                label="Tilt",
-            )
-            if pan == ideal_pan and tilt == ideal_tilt:
-                azimuth = ideal_azimuth
-                elevation = ideal_elevation
-            else:
-                azimuth, elevation = pan_tilt_to_az_el(pan, tilt)
-
-            if reject_inaccessible and tilt > MAX_TURNTABLE_TILT + _ZERO_TOLERANCE:
-                continue
-
-            points.append(
-                GridPoint(
-                    traversal_index=len(points) + 1,
-                    row=row,
-                    column=traversal_column,
-                    ideal_azimuth=ideal_azimuth,
-                    ideal_elevation=ideal_elevation,
-                    ideal_pan=ideal_pan,
-                    ideal_tilt=ideal_tilt,
-                    azimuth=azimuth,
-                    elevation=elevation,
-                    pan=pan,
-                    tilt=tilt,
-                )
-            )
-
-    if reject_inaccessible and not points:
-        raise GridValidationError(
-            "No accessible points remain after applying the +45° turntable tilt limit."
-        )
-
-    return DesignedGrid(
+    """Create a combined grid containing one simple rectangular grid."""
+    return design_combined_grid(
         input_system=input_system,
-        horizontal_values=horizontal_values,
-        vertical_values=vertical_values,
-        points=tuple(points),
+        grids=(
+            SimpleGridDefinition(
+                horizontal=horizontal,
+                vertical=vertical,
+            ),
+        ),
+        reject_inaccessible=reject_inaccessible,
+        pan_quantization=pan_quantization,
+        tilt_quantization=tilt_quantization,
     )

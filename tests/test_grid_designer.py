@@ -12,12 +12,15 @@ from msu_anechoic.web.app import _three_dimensional_figure
 from msu_anechoic.web.app import INACCESSIBLE_AZ_EL_REGIONS
 from msu_anechoic.web.app import app
 from msu_anechoic.web.grid import AxisDefinition
+from msu_anechoic.web.grid import DUPLICATE_TOLERANCE
 from msu_anechoic.web.grid import GridValidationError
 from msu_anechoic.web.grid import MAX_TURNTABLE_TILT
 from msu_anechoic.web.grid import QuantizationDefinition
+from msu_anechoic.web.grid import SimpleGridDefinition
 from msu_anechoic.web.grid import axis_values
 from msu_anechoic.web.grid import az_el_to_pan_tilt
 from msu_anechoic.web.grid import design_grid
+from msu_anechoic.web.grid import design_combined_grid
 from msu_anechoic.web.grid import pan_tilt_to_az_el
 from msu_anechoic.web.grid import quantize_angle
 
@@ -73,6 +76,109 @@ def test_quantization_happens_before_inaccessible_point_rejection():
     assert len(grid.points) == 1
     assert grid.points[0].ideal_tilt == pytest.approx(45.24)
     assert grid.points[0].tilt == pytest.approx(45.0)
+
+
+def test_combined_grid_removes_overlapping_points():
+    grid = design_combined_grid(
+        input_system="pan_tilt",
+        grids=(
+            SimpleGridDefinition(
+                horizontal=AxisDefinition(-2, 2, 2),
+                vertical=AxisDefinition(-2, 2, 2),
+            ),
+            SimpleGridDefinition(
+                horizontal=AxisDefinition(-1, 1, 1),
+                vertical=AxisDefinition(-1, 1, 1),
+            ),
+        ),
+    )
+
+    assert len(grid.points) == 17
+    assert grid.row_count == 5
+    assert grid.column_count == 5
+
+
+def test_combined_grid_checks_duplicates_after_quantization():
+    grid = design_combined_grid(
+        input_system="pan_tilt",
+        grids=(
+            SimpleGridDefinition(
+                horizontal=AxisDefinition(20.12, 20.12, 1),
+                vertical=AxisDefinition(10, 10, 1),
+            ),
+            SimpleGridDefinition(
+                horizontal=AxisDefinition(20.24, 20.24, 1),
+                vertical=AxisDefinition(10, 10, 1),
+            ),
+        ),
+        pan_quantization=QuantizationDefinition(enabled=True, step=0.5),
+    )
+
+    assert len(grid.points) == 1
+    assert grid.points[0].pan == 20.0
+
+
+def test_duplicate_tolerance_applies_to_both_specified_axes():
+    grid = design_combined_grid(
+        input_system="pan_tilt",
+        grids=(
+            SimpleGridDefinition(
+                horizontal=AxisDefinition(0, 0, 1),
+                vertical=AxisDefinition(0, 0, 1),
+            ),
+            SimpleGridDefinition(
+                horizontal=AxisDefinition(
+                    DUPLICATE_TOLERANCE,
+                    DUPLICATE_TOLERANCE,
+                    1,
+                ),
+                vertical=AxisDefinition(
+                    DUPLICATE_TOLERANCE,
+                    DUPLICATE_TOLERANCE,
+                    1,
+                ),
+            ),
+            SimpleGridDefinition(
+                horizontal=AxisDefinition(
+                    DUPLICATE_TOLERANCE + 0.001,
+                    DUPLICATE_TOLERANCE + 0.001,
+                    1,
+                ),
+                vertical=AxisDefinition(0, 0, 1),
+            ),
+        ),
+    )
+
+    assert len(grid.points) == 2
+
+
+def test_combined_path_chooses_closest_endpoint_of_each_next_row():
+    grid = design_combined_grid(
+        input_system="pan_tilt",
+        grids=(
+            SimpleGridDefinition(
+                horizontal=AxisDefinition(0, 10, 10),
+                vertical=AxisDefinition(10, 10, 1),
+            ),
+            SimpleGridDefinition(
+                horizontal=AxisDefinition(1, 9, 8),
+                vertical=AxisDefinition(0, 0, 1),
+            ),
+            SimpleGridDefinition(
+                horizontal=AxisDefinition(0, 100, 100),
+                vertical=AxisDefinition(-10, -10, 1),
+            ),
+        ),
+    )
+
+    assert [(point.pan, point.tilt) for point in grid.points] == [
+        (0, 10),
+        (10, 10),
+        (9, 0),
+        (1, 0),
+        (0, -10),
+        (100, -10),
+    ]
 
 
 def test_grid_starts_top_left_and_traverses_horizontal_serpentine():
@@ -330,6 +436,10 @@ def test_grid_designer_page_loads():
     assert "Azimuth / elevation" in response.text
     assert "Pan / tilt" in response.text
     assert "Quantize" in response.text
+    assert "Simple grids" in response.text
+    assert "data-add-simple-grid" in response.text
+    assert response.text.count("data-simple-grid>") == 1
+    assert "data-remove-simple-grid" in response.text
     quantization_markup = response.text.split(
         '<section class="quantization-section"',
         1,
@@ -579,3 +689,29 @@ def test_preview_checkbox_rejects_inaccessible_points():
 
     assert response.status_code == 200
     assert "<strong>6</strong> points" in response.text
+
+
+def test_preview_combines_repeated_simple_grid_parameters():
+    response = TestClient(app).get(
+        "/grid-designer/preview",
+        params=[
+            ("input_system", "pan_tilt"),
+            ("pan_min", "-2"),
+            ("pan_min", "-1"),
+            ("pan_max", "2"),
+            ("pan_max", "1"),
+            ("pan_step", "2"),
+            ("pan_step", "1"),
+            ("tilt_min", "-2"),
+            ("tilt_min", "-1"),
+            ("tilt_max", "2"),
+            ("tilt_max", "1"),
+            ("tilt_step", "2"),
+            ("tilt_step", "1"),
+        ],
+    )
+
+    assert response.status_code == 200
+    assert "<strong>17</strong> points" in response.text
+    assert "<strong>5</strong> rows" in response.text
+    assert "<strong>5</strong> columns" in response.text

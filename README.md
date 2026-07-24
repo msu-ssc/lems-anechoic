@@ -47,10 +47,10 @@ uv run python -m msu_anechoic.web
 Then open <http://127.0.0.1:8000/grid-designer>.
 
 The grid designer is independent of the legacy experiment and coordinate
-classes. It generates an inclusive rectangular grid in either
-azimuth/elevation or pan/tilt coordinates, converts it to the other view, and
-always traverses from the top-left corner in a horizontal-first serpentine
-pattern.
+classes. It combines one or more inclusive rectangular grids defined in a
+single azimuth/elevation or pan/tilt regime, applies optional pan/tilt
+quantization, removes duplicate points, and routes each row from the endpoint
+closest to the preceding row.
 
 ## Changelog
 
