@@ -1,14 +1,14 @@
 :root {
     color-scheme: light;
     /*
-     * Light surfaces are visible but low-strength tints of primary MSU blue
-     * over white. Cards sit slightly above the blue-tinted workspace.
+     * Light surfaces preserve the primary blue's HSL hue and saturation
+     * (220.9deg, 100%) and change only lightness.
      */
-    --background: #e8edf6;
-    --surface: #f5f7fb;
-    --surface-muted: #e0e7f4;
-    --border: #c7d2eb;
-    --border-dark: #99add9;
+    --background: #ccdcff; /* HSL lightness 90% */
+    --surface: #e6eeff; /* HSL lightness 95% */
+    --surface-muted: #c2d5ff; /* HSL lightness 88% */
+    --border: #99add9;
+    --border-dark: #6684c6;
     --text: #343434;
     --text-muted: #5d6673;
     --accent: #0033a0;
@@ -22,15 +22,15 @@
     --header-muted: #dce5f8;
     --header-divider: #6684c6;
     --input: #ffffff;
-    --menu-hover: #e6ecf7;
+    --menu-hover: #ccdcff;
     --warning: #b45309;
     --warning-surface: #fff1df;
-    --plot-paper: #f5f7fb;
-    --plot-background: #e6ebf6;
+    --plot-paper: #e6eeff;
+    --plot-background: #d1e0ff; /* HSL lightness 91% */
     --plot-text: #343434;
-    --plot-grid: #d3dced;
-    --plot-zero: #91a3c3;
-    --plot-line: #6f89b7;
+    --plot-grid: #8fa6d2;
+    --plot-zero: #5f79ad;
+    --plot-line: #4368aa;
     --plot-start: #0033a0;
     --plot-end: #c49300;
     font-family: "Segoe UI", Arial, sans-serif;
