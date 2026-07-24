@@ -8,6 +8,32 @@
             </div>
         </div>
     {% else %}
+        <section class="grid-info-section" aria-labelledby="grid-info-heading">
+            <article class="grid-info-card">
+                <h2 id="grid-info-heading">Grid info</h2>
+                <dl class="grid-info-list">
+                    <div>
+                        <dt>Estimated travel time</dt>
+                        <dd title="{{ '%.1f' | format(estimated_travel_time_seconds) }} seconds">
+                            {{ estimated_travel_time_label }}
+                        </dd>
+                    </div>
+                    <div>
+                        <dt>Points</dt>
+                        <dd>{{ "{:,}".format(grid.points | length) }}</dd>
+                    </div>
+                    <div>
+                        <dt>Rows</dt>
+                        <dd>{{ grid.row_count }}</dd>
+                    </div>
+                    <div>
+                        <dt>Columns</dt>
+                        <dd>{{ grid.column_count }}</dd>
+                    </div>
+                </dl>
+            </article>
+        </section>
+
         <div class="preview-heading">
             <h2>Grid preview</h2>
             <div class="grid-summary">

@@ -308,6 +308,7 @@ h2 {
 }
 
 .designer-panel,
+.grid-info-card,
 .plot-card,
 .validation-message {
     border: 1px solid var(--border);
@@ -316,6 +317,52 @@ h2 {
 
 .designer-panel {
     padding: 20px;
+}
+
+.grid-info-section {
+    margin-bottom: 26px;
+}
+
+.grid-info-card {
+    padding: 16px 20px;
+}
+
+.grid-info-card h2 {
+    margin: 0 0 12px;
+}
+
+.grid-info-list {
+    margin: 0;
+    padding-top: 12px;
+    display: grid;
+    grid-template-columns: minmax(220px, 2fr) repeat(3, minmax(100px, 1fr));
+    border-top: 1px solid var(--border);
+}
+
+.grid-info-list > div {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding-right: 20px;
+}
+
+.grid-info-list > div + div {
+    padding-left: 20px;
+    border-left: 1px solid var(--border);
+}
+
+.grid-info-list dt {
+    color: var(--text-muted);
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.grid-info-list dd {
+    margin: 0;
+    color: var(--text);
+    font-size: 18px;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
 }
 
 .panel-heading,
@@ -945,6 +992,25 @@ legend span {
 
     .input-grid {
         grid-template-columns: 1fr;
+    }
+
+    .grid-info-list {
+        grid-template-columns: 1fr 1fr;
+        row-gap: 12px;
+    }
+
+    .grid-info-list > div {
+        padding-right: 12px;
+    }
+
+    .grid-info-list > div:nth-child(odd) {
+        padding-left: 0;
+        border-left: 0;
+    }
+
+    .grid-info-list > div:nth-child(n + 3) {
+        padding-top: 12px;
+        border-top: 1px solid var(--border);
     }
 
     .grid-summary {

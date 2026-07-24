@@ -17,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from plotly.offline import get_plotlyjs
 
+from msu_anechoic import experiment
 from msu_anechoic.web.grid import MAX_TURNTABLE_TILT
 from msu_anechoic.web.grid import AxisDefinition
 from msu_anechoic.web.grid import DesignedGrid
@@ -112,6 +113,48 @@ def _shortest_angular_delta(start: float, end: float) -> float:
     if delta == -180.0 and end - start > 0.0:
         return 180.0
     return delta
+
+
+def _estimate_grid_travel_time(grid: DesignedGrid) -> float:
+    """Estimate traversal time for simultaneous pan and tilt movements."""
+    total_seconds = 0.0
+    for start, end in zip(grid.points, grid.points[1:]):
+        pan_delta = abs(_shortest_angular_delta(start.pan, end.pan))
+        tilt_delta = abs(end.tilt - start.tilt)
+        horizontal_seconds = (
+            experiment._estimate_time(
+                pan_delta,
+                kind="horizontal",
+                trace=False,
+            )
+            if pan_delta > 1e-12
+            else 0.0
+        )
+        vertical_seconds = (
+            experiment._estimate_time(
+                tilt_delta,
+                kind="vertical",
+                trace=False,
+            )
+            if tilt_delta > 1e-12
+            else 0.0
+        )
+        total_seconds += max(0.0, horizontal_seconds, vertical_seconds)
+    return total_seconds
+
+
+def _format_duration(seconds: float) -> str:
+    total_seconds = max(0, round(seconds))
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    parts = []
+    if hours:
+        parts.append(f"{hours} hr")
+    if minutes:
+        parts.append(f"{minutes} min")
+    if seconds or not parts:
+        parts.append(f"{seconds} sec")
+    return " ".join(parts)
 
 
 def _interpolated_route_coordinates(
@@ -836,8 +879,13 @@ def _three_dimensional_figure(grid: DesignedGrid) -> dict:
 
 
 def _preview_context(grid: DesignedGrid) -> dict:
+    estimated_travel_time_seconds = _estimate_grid_travel_time(grid)
     return {
         "grid": grid,
+        "estimated_travel_time_seconds": estimated_travel_time_seconds,
+        "estimated_travel_time_label": _format_duration(
+            estimated_travel_time_seconds
+        ),
         "az_el_figure_json": json.dumps(_figure(grid, coordinate_system="az_el"), allow_nan=False),
         "pan_tilt_figure_json": json.dumps(_figure(grid, coordinate_system="pan_tilt"), allow_nan=False),
         "three_dimensional_figure_json": json.dumps(_three_dimensional_figure(grid), allow_nan=False),

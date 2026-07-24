@@ -3,10 +3,13 @@ import math
 import pytest
 from fastapi.testclient import TestClient
 
+from msu_anechoic import experiment
 from msu_anechoic.web.app import INACCESSIBLE_AZ_EL_REGIONS
 from msu_anechoic.web.app import _az_el_unit_vector
+from msu_anechoic.web.app import _estimate_grid_travel_time
 from msu_anechoic.web.app import _figure
 from msu_anechoic.web.app import _flat_topped_lower_hemisphere_mesh
+from msu_anechoic.web.app import _format_duration
 from msu_anechoic.web.app import _interpolated_route_coordinates
 from msu_anechoic.web.app import _quantization_error_figure
 from msu_anechoic.web.app import _spherical_patch_mesh
@@ -565,6 +568,42 @@ def test_native_coordinate_routes_leave_ten_degree_segments_unsubdivided():
     assert len(route) == 2
 
 
+def test_grid_travel_time_sums_simultaneous_axis_move_estimates(monkeypatch):
+    calls = []
+
+    def fake_estimate_time(angle, *, kind, trace):
+        calls.append((angle, kind, trace))
+        return angle * (2 if kind == "horizontal" else 3)
+
+    monkeypatch.setattr(experiment, "_estimate_time", fake_estimate_time)
+    grid = design_grid(
+        input_system="pan_tilt",
+        horizontal=AxisDefinition(0, 10, 10),
+        vertical=AxisDefinition(0, 10, 10),
+    )
+
+    assert _estimate_grid_travel_time(grid) == pytest.approx(70)
+    assert calls == [
+        (10, "horizontal", False),
+        (10, "vertical", False),
+        (10, "horizontal", False),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("seconds", "expected"),
+    [
+        (0, "0 sec"),
+        (12.4, "12 sec"),
+        (90, "1 min 30 sec"),
+        (3600, "1 hr"),
+        (3723, "1 hr 2 min 3 sec"),
+    ],
+)
+def test_duration_formatting(seconds, expected):
+    assert _format_duration(seconds) == expected
+
+
 def test_three_dimensional_figure_contains_requested_geometry_and_az_el_grid():
     grid = design_grid(
         input_system="pan_tilt",
@@ -953,6 +992,14 @@ def test_pan_tilt_preview_contains_three_plot_payloads():
     assert response.text.count("Show ideal") == 2
     assert response.text.count("Show quantized") == 2
     assert response.text.count("Show line segments") == 3
+    assert "<h2" in response.text
+    assert "Grid info" in response.text
+    assert 'class="grid-info-card"' in response.text
+    assert "Estimated travel time" in response.text
+    assert "<dt>Points</dt>" in response.text
+    assert "<dt>Rows</dt>" in response.text
+    assert "<dt>Columns</dt>" in response.text
+    assert "seconds" in response.text
     assert (
         'data-plot-visibility-controls="three-dimensional-figure"'
         in response.text
