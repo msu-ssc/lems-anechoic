@@ -285,6 +285,20 @@ def test_grid_designer_uses_large_high_contrast_type_and_yellow_header_details()
     assert figure["layout"]["xaxis"]["tickfont"]["size"] == 14
 
 
+def test_three_dimensional_view_rotates_and_respects_motion_preferences():
+    script = TestClient(app).get("/static/grid-designer.js")
+
+    assert script.status_code == 200
+    assert "CAMERA_ROTATION_PERIOD_MS = 60_000" in script.text
+    assert "window.Plotly.relayout" in script.text
+    assert '"scene.camera.eye"' in script.text
+    assert '"pointerenter"' in script.text
+    assert '"pointerleave"' in script.text
+    assert "IntersectionObserver" in script.text
+    assert "document.hidden" in script.text
+    assert "prefers-reduced-motion: reduce" in script.text
+
+
 def test_preview_accepts_a_range_that_does_not_align_with_step_size():
     response = TestClient(app).get(
         "/grid-designer/preview",

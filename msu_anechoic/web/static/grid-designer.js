@@ -1,3 +1,116 @@
+const CAMERA_ROTATION_PERIOD_MS = 60_000;
+const CAMERA_UPDATE_INTERVAL_MS = 50;
+const rotatingPlots = new WeakMap();
+
+function cameraEyeFromRelayout(eventData) {
+    if (eventData["scene.camera"]?.eye) {
+        return eventData["scene.camera"].eye;
+    }
+    if (eventData["scene.camera.eye"]) {
+        return eventData["scene.camera.eye"];
+    }
+
+    const x = eventData["scene.camera.eye.x"];
+    const y = eventData["scene.camera.eye.y"];
+    const z = eventData["scene.camera.eye.z"];
+    return [x, y, z].every(Number.isFinite) ? { x, y, z } : null;
+}
+
+function updateRotationFromEye(state, eye) {
+    if (![eye?.x, eye?.y, eye?.z].every(Number.isFinite)) return;
+    state.radius = Math.hypot(eye.x, eye.y);
+    state.angle = Math.atan2(eye.y, eye.x);
+    state.z = eye.z;
+}
+
+function startCameraRotation(plotElement, initialEye) {
+    if (rotatingPlots.has(plotElement)) return;
+
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const state = {
+        angle: 0,
+        radius: 1,
+        z: 1,
+        hovered: false,
+        visible: true,
+        updating: false,
+        lastFrame: performance.now(),
+        lastUpdate: 0,
+        observer: null,
+    };
+    updateRotationFromEye(state, initialEye);
+    rotatingPlots.set(plotElement, state);
+
+    plotElement.addEventListener("pointerenter", () => {
+        state.hovered = true;
+    });
+    plotElement.addEventListener("pointerleave", () => {
+        state.hovered = false;
+        state.lastFrame = performance.now();
+    });
+
+    if (window.IntersectionObserver) {
+        const observer = new IntersectionObserver((entries) => {
+            state.visible = entries.some((entry) => entry.isIntersecting);
+            state.lastFrame = performance.now();
+        });
+        observer.observe(plotElement);
+        state.observer = observer;
+    }
+
+    if (typeof plotElement.on === "function") {
+        plotElement.on("plotly_relayout", (eventData) => {
+            if (state.updating) return;
+            const eye = cameraEyeFromRelayout(eventData);
+            if (eye) {
+                updateRotationFromEye(state, eye);
+                state.lastFrame = performance.now();
+            }
+        });
+    }
+
+    function animate(now) {
+        if (!plotElement.isConnected) {
+            state.observer?.disconnect();
+            return;
+        }
+        window.requestAnimationFrame(animate);
+
+        const elapsed = now - state.lastFrame;
+        state.lastFrame = now;
+        const paused = (
+            state.hovered
+            || !state.visible
+            || document.hidden
+            || reducedMotion.matches
+        );
+        if (paused || state.updating) return;
+
+        state.angle = (
+            state.angle
+            + elapsed * Math.PI * 2 / CAMERA_ROTATION_PERIOD_MS
+        ) % (Math.PI * 2);
+        if (now - state.lastUpdate < CAMERA_UPDATE_INTERVAL_MS) return;
+
+        state.lastUpdate = now;
+        state.updating = true;
+        const eye = {
+            x: state.radius * Math.cos(state.angle),
+            y: state.radius * Math.sin(state.angle),
+            z: state.z,
+        };
+        Promise.resolve(
+            window.Plotly.relayout(plotElement, {
+                "scene.camera.eye": eye,
+            }),
+        ).finally(() => {
+            state.updating = false;
+        });
+    }
+
+    window.requestAnimationFrame(animate);
+}
+
 function updateCoordinateFields() {
     const selected = document.querySelector('input[name="input_system"]:checked')?.value;
     document.querySelectorAll("[data-coordinate-fields]").forEach((element) => {
@@ -126,12 +239,20 @@ function renderPlots(root = document) {
             });
         }
         figure.data.forEach((trace) => applyTraceColors(trace, colors));
-        window.Plotly.react(
+        const render = window.Plotly.react(
             plotElement,
             figure.data,
             figure.layout,
             figure.config,
         );
+        if (plotElement.dataset.plotSource === "three-dimensional-figure") {
+            Promise.resolve(render).then(() => {
+                startCameraRotation(
+                    plotElement,
+                    figure.layout.scene.camera.eye,
+                );
+            });
+        }
     });
 }
 
