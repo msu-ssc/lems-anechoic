@@ -18,6 +18,8 @@ from msu_anechoic.web.grid import AxisDefinition
 from msu_anechoic.web.grid import GridValidationError
 from msu_anechoic.web.grid import QuantizationDefinition
 from msu_anechoic.web.grid import SimpleGridDefinition
+from msu_anechoic.web.grid import _equal_area_pan_coordinate
+from msu_anechoic.web.grid import _pan_from_equal_area_coordinate
 from msu_anechoic.web.grid import axis_values
 from msu_anechoic.web.grid import az_el_to_pan_tilt
 from msu_anechoic.web.grid import design_combined_grid
@@ -100,6 +102,100 @@ def test_corrected_pole_rows_contain_one_centered_azimuth():
     assert len(grid.points) == 2
     assert {point.elevation for point in grid.points} == {-90, 90}
     assert all(point.azimuth == 0 for point in grid.points)
+
+
+@pytest.mark.parametrize("pan", [-270, -180, -90, -30, 0, 30, 90, 180, 270])
+def test_equal_area_pan_coordinate_round_trips_across_singularities(pan):
+    coordinate = _equal_area_pan_coordinate(pan)
+
+    assert _pan_from_equal_area_coordinate(coordinate) == pytest.approx(pan)
+
+
+def test_equal_area_pan_spacing_has_constant_spherical_strip_area():
+    grid = design_grid(
+        input_system="pan_tilt",
+        horizontal=AxisDefinition(0, 60, 10),
+        vertical=AxisDefinition(0, 0, 1),
+        equal_area_pan_spacing=True,
+    )
+    pans = sorted(point.pan for point in grid.points)
+    equal_area_coordinates = [
+        _equal_area_pan_coordinate(pan)
+        for pan in pans
+    ]
+    intervals = [
+        right - left
+        for left, right in zip(
+            equal_area_coordinates,
+            equal_area_coordinates[1:],
+        )
+    ]
+
+    assert pans[0] == 0
+    assert pans[1] == pytest.approx(10)
+    assert all(interval == pytest.approx(intervals[0]) for interval in intervals)
+    assert all(
+        right - left < next_right - right
+        for left, right, next_right in zip(pans, pans[1:], pans[2:])
+    )
+
+
+def test_equal_area_pan_rows_do_not_append_a_short_final_interval():
+    grid = design_grid(
+        input_system="pan_tilt",
+        horizontal=AxisDefinition(0, 25, 10),
+        vertical=AxisDefinition(0, 0, 1),
+        equal_area_pan_spacing=True,
+    )
+
+    assert [point.pan for point in grid.points] == pytest.approx(
+        [0, 10, math.degrees(math.asin(2 * math.sin(math.radians(10))))]
+    )
+
+
+def test_equal_area_staggering_offsets_alternate_tilt_rows_by_half_an_area_step():
+    grid = design_grid(
+        input_system="pan_tilt",
+        horizontal=AxisDefinition(0, 40, 10),
+        vertical=AxisDefinition(0, 20, 10),
+        equal_area_pan_spacing=True,
+        stagger_alternate_tilt_rows=True,
+    )
+    pans_by_tilt = {
+        tilt: sorted(
+            point.pan
+            for point in grid.points
+            if point.tilt == tilt
+        )
+        for tilt in (0, 10, 20)
+    }
+    half_step_pan = math.degrees(
+        math.asin(math.sin(math.radians(10)) / 2)
+    )
+
+    assert pans_by_tilt[20][0] == 0
+    assert pans_by_tilt[10][0] == pytest.approx(half_step_pan)
+    assert pans_by_tilt[0][0] == 0
+
+
+def test_equal_area_pan_singularities_collapse_to_one_centered_tilt_point():
+    grid = design_grid(
+        input_system="pan_tilt",
+        horizontal=AxisDefinition(-90, 90, 90),
+        vertical=AxisDefinition(-10, 10, 10),
+        equal_area_pan_spacing=True,
+    )
+    points_by_pan = {
+        pan: [point for point in grid.points if point.pan == pan]
+        for pan in (-90, 0, 90)
+    }
+
+    assert len(grid.points) == 5
+    assert len(points_by_pan[-90]) == 1
+    assert len(points_by_pan[90]) == 1
+    assert points_by_pan[-90][0].tilt == 0
+    assert points_by_pan[90][0].tilt == 0
+    assert sorted(point.tilt for point in points_by_pan[0]) == [-10, 0, 10]
 
 
 def test_quantization_rounds_to_nearest_origin_plus_integer_step():
@@ -584,6 +680,10 @@ def test_grid_designer_page_loads():
     assert "Stagger alternate elevation rows" in response.text
     assert 'name="cosine_correct_azimuth_spacing_0"' in response.text
     assert 'name="stagger_alternate_elevation_rows_0"' in response.text
+    assert "Equal-area pan spacing" in response.text
+    assert "Stagger alternate tilt rows" in response.text
+    assert 'name="equal_area_pan_spacing_0"' in response.text
+    assert 'name="stagger_alternate_tilt_rows_0"' in response.text
     quantization_markup = response.text.split(
         '<section class="quantization-section"',
         1,
@@ -792,6 +892,27 @@ def test_preview_applies_indexed_az_el_sampling_options():
 
     assert response.status_code == 200
     assert "<strong>4</strong> points" in response.text
+    assert "Check the grid definition" not in response.text
+
+
+def test_preview_applies_indexed_pan_tilt_sampling_options():
+    response = TestClient(app).get(
+        "/grid-designer/preview",
+        params={
+            "input_system": "pan_tilt",
+            "pan_min": 0,
+            "pan_max": 25,
+            "pan_step": 10,
+            "tilt_min": 0,
+            "tilt_max": 0,
+            "tilt_step": 1,
+            "equal_area_pan_spacing_0": "true",
+            "stagger_alternate_tilt_rows_0": "true",
+        },
+    )
+
+    assert response.status_code == 200
+    assert "<strong>3</strong> points" in response.text
     assert "Check the grid definition" not in response.text
 
 

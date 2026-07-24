@@ -50,6 +50,8 @@ class SimpleGridDefinition:
     vertical: AxisDefinition
     cosine_correct_azimuth_spacing: bool = False
     stagger_alternate_elevation_rows: bool = False
+    equal_area_pan_spacing: bool = False
+    stagger_alternate_tilt_rows: bool = False
 
 
 @dataclass(frozen=True)
@@ -221,6 +223,60 @@ def _azimuth_values_for_elevation(
         step=effective_step,
         offset=offset,
     )
+
+
+def _equal_area_pan_coordinate(pan: float) -> float:
+    """Map pan in degrees to a monotonic integral of ``abs(cos(pan))``."""
+    pan_radians = math.radians(pan)
+    segment = math.floor((pan_radians + math.pi / 2.0) / math.pi)
+    remainder = pan_radians + math.pi / 2.0 - segment * math.pi
+    return 2.0 * segment - math.cos(remainder)
+
+
+def _pan_from_equal_area_coordinate(coordinate: float) -> float:
+    """Invert :func:`_equal_area_pan_coordinate`."""
+    segment = math.floor((coordinate + 1.0) / 2.0)
+    cosine_remainder = max(-1.0, min(1.0, 2.0 * segment - coordinate))
+    remainder = math.acos(cosine_remainder)
+    pan_radians = -math.pi / 2.0 + segment * math.pi + remainder
+    return math.degrees(pan_radians)
+
+
+def _pan_values_for_tilt(
+    grid: SimpleGridDefinition,
+    *,
+    row_index: int,
+    validated_values: tuple[float, ...],
+) -> tuple[float, ...]:
+    if not (
+        grid.equal_area_pan_spacing
+        or grid.stagger_alternate_tilt_rows
+    ):
+        return validated_values
+
+    staggered = grid.stagger_alternate_tilt_rows and row_index % 2 == 1
+    if not grid.equal_area_pan_spacing:
+        return _regular_values_within_bounds(
+            grid.horizontal,
+            step=grid.horizontal.step,
+            offset=grid.horizontal.step / 2.0 if staggered else 0.0,
+        )
+
+    minimum = _equal_area_pan_coordinate(grid.horizontal.minimum)
+    maximum = _equal_area_pan_coordinate(grid.horizontal.maximum)
+    step = _equal_area_pan_coordinate(grid.horizontal.step)
+    start = minimum + (step / 2.0 if staggered else 0.0)
+    if start > maximum:
+        return (grid.horizontal.minimum,)
+    count = math.floor((maximum - start) / step + 1e-12)
+    return tuple(
+        _pan_from_equal_area_coordinate(start + step * index)
+        for index in range(count + 1)
+    )
+
+
+def _is_pan_singularity(pan: float) -> bool:
+    return abs(math.cos(math.radians(pan))) < _ZERO_TOLERANCE
 
 
 def quantize_angle(
@@ -400,29 +456,55 @@ def design_combined_grid(
 
     candidates: list[_CandidatePoint] = []
     for grid, validated_horizontal_values, vertical_values in expanded_grids:
+        singular_pan_directions: set[int] = set()
+        pan_sampling_enabled = (
+            grid.equal_area_pan_spacing
+            or grid.stagger_alternate_tilt_rows
+        )
         for row_index, vertical_value in enumerate(reversed(vertical_values)):
-            horizontal_values = (
-                _azimuth_values_for_elevation(
+            if input_system == "az_el":
+                horizontal_values = _azimuth_values_for_elevation(
                     grid,
                     elevation=vertical_value,
                     row_index=row_index,
                     validated_values=validated_horizontal_values,
                 )
-                if input_system == "az_el"
-                else validated_horizontal_values
-            )
+            else:
+                horizontal_values = _pan_values_for_tilt(
+                    grid,
+                    row_index=row_index,
+                    validated_values=validated_horizontal_values,
+                )
             horizontal_value_set.update(horizontal_values)
             for horizontal_value in horizontal_values:
+                point_vertical_value = vertical_value
+                logical_vertical = vertical_value
+                if (
+                    input_system == "pan_tilt"
+                    and pan_sampling_enabled
+                    and _is_pan_singularity(horizontal_value)
+                ):
+                    singular_direction = (
+                        1 if math.sin(math.radians(horizontal_value)) > 0 else -1
+                    )
+                    if singular_direction in singular_pan_directions:
+                        continue
+                    singular_pan_directions.add(singular_direction)
+                    point_vertical_value = (
+                        grid.vertical.minimum + grid.vertical.maximum
+                    ) / 2.0
+                    logical_vertical = point_vertical_value
+
                 if input_system == "az_el":
                     ideal_azimuth = horizontal_value
-                    ideal_elevation = vertical_value
+                    ideal_elevation = point_vertical_value
                     ideal_pan, ideal_tilt = az_el_to_pan_tilt(
                         ideal_azimuth,
                         ideal_elevation,
                     )
                 else:
                     ideal_pan = horizontal_value
-                    ideal_tilt = vertical_value
+                    ideal_tilt = point_vertical_value
                     ideal_azimuth, ideal_elevation = pan_tilt_to_az_el(
                         ideal_pan,
                         ideal_tilt,
@@ -465,7 +547,7 @@ def design_combined_grid(
                             pan=pan,
                             tilt=tilt,
                         ),
-                        logical_vertical=vertical_value,
+                        logical_vertical=logical_vertical,
                     )
                 )
 
@@ -493,6 +575,8 @@ def design_grid(
     vertical: AxisDefinition,
     cosine_correct_azimuth_spacing: bool = False,
     stagger_alternate_elevation_rows: bool = False,
+    equal_area_pan_spacing: bool = False,
+    stagger_alternate_tilt_rows: bool = False,
     reject_inaccessible: bool = False,
     pan_quantization: QuantizationDefinition = QuantizationDefinition(),
     tilt_quantization: QuantizationDefinition = QuantizationDefinition(),
@@ -506,6 +590,8 @@ def design_grid(
                 vertical=vertical,
                 cosine_correct_azimuth_spacing=cosine_correct_azimuth_spacing,
                 stagger_alternate_elevation_rows=stagger_alternate_elevation_rows,
+                equal_area_pan_spacing=equal_area_pan_spacing,
+                stagger_alternate_tilt_rows=stagger_alternate_tilt_rows,
             ),
         ),
         reject_inaccessible=reject_inaccessible,

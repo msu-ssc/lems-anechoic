@@ -170,6 +170,28 @@
                                                 <label>Step size <span class="number-input"><input name="tilt_step" type="number" min="0.000001" step="any" value="{{ simple_grid.tilt_step }}" required><b>°</b></span></label>
                                             </div>
                                         </fieldset>
+                                        <div class="sampling-options">
+                                            <label>
+                                                <input
+                                                    type="checkbox"
+                                                    name="equal_area_pan_spacing_{{ loop.index0 }}"
+                                                    value="true"
+                                                    data-simple-grid-option="equal_area_pan_spacing"
+                                                    {% if simple_grid.equal_area_pan_spacing %}checked{% endif %}
+                                                >
+                                                Equal-area pan spacing
+                                            </label>
+                                            <label>
+                                                <input
+                                                    type="checkbox"
+                                                    name="stagger_alternate_tilt_rows_{{ loop.index0 }}"
+                                                    value="true"
+                                                    data-simple-grid-option="stagger_alternate_tilt_rows"
+                                                    {% if simple_grid.stagger_alternate_tilt_rows %}checked{% endif %}
+                                                >
+                                                Stagger alternate tilt rows
+                                            </label>
+                                        </div>
                                     </div>
                                 </article>
                             {% endfor %}

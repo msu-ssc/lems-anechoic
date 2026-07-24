@@ -49,6 +49,8 @@ DEFAULTS = {
     "tilt_min": -20.0,
     "tilt_max": 20.0,
     "tilt_step": 10.0,
+    "equal_area_pan_spacing": False,
+    "stagger_alternate_tilt_rows": False,
     "quantize_tilt": True,
     "tilt_quantization_origin": 0.0,
     "tilt_quantization_step": 0.5,
@@ -906,6 +908,10 @@ def _simple_grid_definition(
             values["tilt_max"],
             values["tilt_step"],
         ),
+        equal_area_pan_spacing=bool(values["equal_area_pan_spacing"]),
+        stagger_alternate_tilt_rows=bool(
+            values["stagger_alternate_tilt_rows"]
+        ),
     )
 
 
@@ -973,16 +979,23 @@ def _parse_simple_grids(
             )
             for name in names
         }
-        if input_system == "az_el":
-            values.update(
-                {
-                    option: request.query_params.get(f"{option}_{index}") == "true"
-                    for option in (
-                        "cosine_correct_azimuth_spacing",
-                        "stagger_alternate_elevation_rows",
-                    )
-                }
+        options = (
+            (
+                "cosine_correct_azimuth_spacing",
+                "stagger_alternate_elevation_rows",
             )
+            if input_system == "az_el"
+            else (
+                "equal_area_pan_spacing",
+                "stagger_alternate_tilt_rows",
+            )
+        )
+        values.update(
+            {
+                option: request.query_params.get(f"{option}_{index}") == "true"
+                for option in options
+            }
+        )
         grids.append(_simple_grid_definition(input_system, values))
     return tuple(grids)
 
