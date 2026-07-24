@@ -180,12 +180,68 @@ def _flat_topped_lower_hemisphere_mesh(
     )
 
 
+def _spherical_patch_mesh(
+    *,
+    azimuth_min: float,
+    azimuth_max: float,
+    elevation_min: float,
+    elevation_max: float,
+    radius: float = 0.985,
+    azimuth_segments: int = 32,
+    elevation_segments: int = 20,
+) -> tuple[list[float], list[float], list[float], list[int], list[int], list[int]]:
+    """Create a padded rectangular az/el patch just inside the unit sphere."""
+    azimuth_center = (azimuth_min + azimuth_max) / 2
+    azimuth_width = min((azimuth_max - azimuth_min) * 1.10, 360.0)
+    azimuth_min = azimuth_center - azimuth_width / 2
+    azimuth_max = azimuth_center + azimuth_width / 2
+
+    elevation_center = (elevation_min + elevation_max) / 2
+    elevation_width = (elevation_max - elevation_min) * 1.10
+    elevation_min = max(-90.0, elevation_center - elevation_width / 2)
+    elevation_max = min(90.0, elevation_center + elevation_width / 2)
+
+    vertices: list[tuple[float, float, float]] = []
+    for elevation_index in range(elevation_segments + 1):
+        fraction = elevation_index / elevation_segments
+        elevation = elevation_min + (elevation_max - elevation_min) * fraction
+        for azimuth_index in range(azimuth_segments + 1):
+            fraction = azimuth_index / azimuth_segments
+            azimuth = azimuth_min + (azimuth_max - azimuth_min) * fraction
+            unit_vector = _az_el_unit_vector(azimuth, elevation)
+            vertices.append(tuple(radius * component for component in unit_vector))
+
+    faces: list[tuple[int, int, int]] = []
+    row_width = azimuth_segments + 1
+    for elevation_index in range(elevation_segments):
+        lower_start = elevation_index * row_width
+        upper_start = lower_start + row_width
+        for azimuth_index in range(azimuth_segments):
+            lower_left = lower_start + azimuth_index
+            lower_right = lower_left + 1
+            upper_left = upper_start + azimuth_index
+            upper_right = upper_left + 1
+            faces.append((lower_left, lower_right, upper_left))
+            faces.append((lower_right, upper_right, upper_left))
+
+    return (
+        [vertex[0] for vertex in vertices],
+        [vertex[1] for vertex in vertices],
+        [vertex[2] for vertex in vertices],
+        [face[0] for face in faces],
+        [face[1] for face in faces],
+        [face[2] for face in faces],
+    )
+
+
 def _mesh_trace(
     mesh: tuple[list[float], list[float], list[float], list[int], list[int], list[int]],
     *,
     name: str,
     color: str,
     role: str,
+    opacity: float = 1.0,
+    hoverinfo: str = "name",
 ) -> dict:
     x, y, z, i, j, k = mesh
     return {
@@ -198,8 +254,9 @@ def _mesh_trace(
         "k": k,
         "name": name,
         "color": color,
+        "opacity": opacity,
         "flatshading": False,
-        "hoverinfo": "name",
+        "hoverinfo": hoverinfo,
         "lighting": {
             "ambient": 0.55,
             "diffuse": 0.75,
@@ -349,6 +406,8 @@ def _three_dimensional_figure(grid: DesignedGrid) -> dict:
     y = [coordinate[1] for coordinate in coordinates]
     z = [coordinate[2] for coordinate in coordinates]
     point_numbers = [point.traversal_index for point in grid.points]
+    azimuths = [point.azimuth for point in grid.points]
+    elevations = [point.elevation for point in grid.points]
     hover_text = [
         (
             f"<b>Point {point.traversal_index}</b><br>"
@@ -388,6 +447,19 @@ def _three_dimensional_figure(grid: DesignedGrid) -> dict:
             name="Antenna source",
             color="#2ca02c",
             role="source",
+        ),
+        _mesh_trace(
+            _spherical_patch_mesh(
+                azimuth_min=min(azimuths),
+                azimuth_max=max(azimuths),
+                elevation_min=min(elevations),
+                elevation_max=max(elevations),
+            ),
+            name="Grid extent",
+            color="#7a7a7a",
+            role="grid-screen",
+            opacity=0.22,
+            hoverinfo="skip",
         ),
         {
             "type": "scatter3d",

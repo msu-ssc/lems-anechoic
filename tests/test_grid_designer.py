@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from msu_anechoic.web.app import _az_el_unit_vector
 from msu_anechoic.web.app import _figure
 from msu_anechoic.web.app import _flat_topped_lower_hemisphere_mesh
+from msu_anechoic.web.app import _spherical_patch_mesh
 from msu_anechoic.web.app import _three_dimensional_figure
 from msu_anechoic.web.app import app
 from msu_anechoic.web.grid import AxisDefinition
@@ -76,6 +77,72 @@ def test_turntable_mesh_is_a_flat_topped_lower_hemisphere():
     assert len(i) > 0
 
 
+def test_spherical_screen_pads_angular_extents_just_inside_unit_sphere():
+    radius = 0.985
+    x, y, z, i, j, k = _spherical_patch_mesh(
+        azimuth_min=-30,
+        azimuth_max=30,
+        elevation_min=-20,
+        elevation_max=20,
+        radius=radius,
+    )
+    vertices = list(zip(x, y, z))
+    expected_azimuth_min = -33.0
+    expected_azimuth_max = 33.0
+    expected_elevation_min = -22.0
+    expected_elevation_max = 22.0
+
+    assert vertices[0] == pytest.approx(
+        tuple(
+            radius * component
+            for component in _az_el_unit_vector(
+                expected_azimuth_min,
+                expected_elevation_min,
+            )
+        )
+    )
+    assert vertices[-1] == pytest.approx(
+        tuple(
+            radius * component
+            for component in _az_el_unit_vector(
+                expected_azimuth_max,
+                expected_elevation_max,
+            )
+        )
+    )
+    assert all(
+        math.sqrt(x_value**2 + y_value**2 + z_value**2) == pytest.approx(radius)
+        for x_value, y_value, z_value in vertices
+    )
+    assert len(i) == len(j) == len(k) == 32 * 20 * 2
+
+
+def test_spherical_screen_caps_azimuth_at_one_revolution():
+    radius = 0.985
+    azimuth_segments = 32
+    elevation_segments = 20
+    x, y, z, i, j, k = _spherical_patch_mesh(
+        azimuth_min=-179,
+        azimuth_max=179,
+        elevation_min=-20,
+        elevation_max=20,
+        radius=radius,
+        azimuth_segments=azimuth_segments,
+        elevation_segments=elevation_segments,
+    )
+    row_width = azimuth_segments + 1
+
+    for elevation_index in range(elevation_segments + 1):
+        row_start = elevation_index * row_width
+        row_end = row_start + azimuth_segments
+        assert (x[row_start], y[row_start], z[row_start]) == pytest.approx(
+            (x[row_end], y[row_end], z[row_end]),
+            abs=1e-12,
+        )
+
+    assert len(i) == len(j) == len(k) == azimuth_segments * elevation_segments * 2
+
+
 def test_three_dimensional_figure_contains_requested_geometry_and_az_el_grid():
     grid = design_grid(
         input_system="pan_tilt",
@@ -90,6 +157,7 @@ def test_three_dimensional_figure_contains_requested_geometry_and_az_el_grid():
         "boresight",
         "origin",
         "source",
+        "grid-screen",
         "grid-path",
         "grid-start",
         "grid-end",
@@ -99,6 +167,9 @@ def test_three_dimensional_figure_contains_requested_geometry_and_az_el_grid():
     assert traces_by_role["boresight"]["y"] == [0.0, 0.0]
     assert traces_by_role["boresight"]["z"] == [0.0, 0.0]
     assert traces_by_role["boresight"]["line"]["color"] == "#005eb8"
+    assert traces_by_role["grid-screen"]["type"] == "mesh3d"
+    assert traces_by_role["grid-screen"]["opacity"] == pytest.approx(0.22)
+    assert traces_by_role["grid-screen"]["hoverinfo"] == "skip"
     assert figure["layout"]["scene"]["aspectmode"] == "manual"
     assert figure["layout"]["scene"]["aspectratio"] == {
         "x": pytest.approx(4.45),

@@ -53,6 +53,7 @@ function plotColors() {
         origin: value("--plot-origin", "#d62728"),
         source: value("--plot-source", "#2ca02c"),
         boresight: value("--plot-boresight", "#005eb8"),
+        screen: value("--plot-screen", "#7a7a7a"),
     };
 }
 
@@ -73,6 +74,10 @@ function applyTraceColors(trace, colors) {
     }
     if (role === "boresight") {
         trace.line.color = colors.boresight;
+        return;
+    }
+    if (role === "grid-screen") {
+        trace.color = colors.screen;
         return;
     }
     if (role === "grid-path") {

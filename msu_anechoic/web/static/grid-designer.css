@@ -37,6 +37,7 @@
     --plot-origin: #d62728;
     --plot-source: #2ca02c;
     --plot-boresight: #005eb8;
+    --plot-screen: #7a7a7a;
     font-family: "Segoe UI", Arial, sans-serif;
     color: var(--text);
     background: var(--background);
@@ -81,6 +82,7 @@
     --plot-origin: #ff5c5c;
     --plot-source: #45c46a;
     --plot-boresight: #63aee8;
+    --plot-screen: #aab2c0;
 }
 
 * {
