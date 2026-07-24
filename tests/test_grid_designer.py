@@ -3,6 +3,7 @@ import math
 import pytest
 from fastapi.testclient import TestClient
 
+from msu_anechoic.web.app import _figure
 from msu_anechoic.web.app import app
 from msu_anechoic.web.grid import AxisDefinition
 from msu_anechoic.web.grid import axis_values
@@ -109,6 +110,34 @@ def test_grid_designer_uses_msu_palette_for_both_color_modes():
     assert "--accent: #0033a0" in stylesheet.text
     assert "--brand-yellow: #ffcf00" in stylesheet.text
     assert ':root[data-color-mode="dark"]' in stylesheet.text
+
+
+def test_grid_designer_uses_large_high_contrast_type_and_yellow_header_details():
+    client = TestClient(app)
+    stylesheet = client.get("/static/grid-designer.css")
+
+    assert stylesheet.status_code == 200
+    assert "--text: #000000" in stylesheet.text
+    assert "--text-muted: #000000" in stylesheet.text
+    assert "--text: #ffffff" in stylesheet.text
+    assert "--text-muted: #ffffff" in stylesheet.text
+    assert "font-size: 16px" in stylesheet.text
+    assert "font-size: 28px" in stylesheet.text
+    assert "background: var(--brand-yellow)" in stylesheet.text
+    assert "color: var(--brand-yellow)" in stylesheet.text
+    assert "border-left: 1px solid var(--brand-yellow)" in stylesheet.text
+
+    grid = design_grid(
+        input_system="az_el",
+        horizontal=AxisDefinition(-10, 10, 10),
+        vertical=AxisDefinition(-10, 10, 10),
+    )
+    figure = _figure(grid, coordinate_system="az_el")
+    assert figure["layout"]["font"]["color"] == "#000000"
+    assert figure["layout"]["font"]["size"] == 14
+    assert figure["layout"]["title"]["font"]["size"] == 20
+    assert figure["layout"]["xaxis"]["title"]["font"]["size"] == 16
+    assert figure["layout"]["xaxis"]["tickfont"]["size"] == 14
 
 
 def test_preview_accepts_a_range_that_does_not_align_with_step_size():

@@ -125,21 +125,32 @@ def _figure(
     return {
         "data": data,
         "layout": {
-            "title": {"text": title, "x": 0.02, "xanchor": "left"},
+            "title": {
+                "text": title,
+                "x": 0.02,
+                "xanchor": "left",
+                "font": {"size": 20},
+            },
             "paper_bgcolor": "#e6eeff",
             "plot_bgcolor": "#d1e0ff",
-            "font": {"family": "Aptos, Segoe UI, Arial, sans-serif", "color": "#343434"},
+            "font": {
+                "family": "Aptos, Segoe UI, Arial, sans-serif",
+                "color": "#000000",
+                "size": 14,
+            },
             "margin": {"l": 62, "r": 24, "t": 58, "b": 58},
             "hovermode": "closest",
             "showlegend": False,
             "xaxis": {
-                "title": x_title,
+                "title": {"text": x_title, "font": {"size": 16}},
+                "tickfont": {"size": 14},
                 "gridcolor": "#8fa6d2",
                 "zerolinecolor": "#5f79ad",
                 "automargin": True,
             },
             "yaxis": {
-                "title": y_title,
+                "title": {"text": y_title, "font": {"size": 16}},
+                "tickfont": {"size": 14},
                 "gridcolor": "#8fa6d2",
                 "zerolinecolor": "#5f79ad",
                 "automargin": True,
