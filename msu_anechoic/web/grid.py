@@ -329,6 +329,59 @@ def _points_are_duplicates(
     )
 
 
+def count_coincident_points(
+    left_points: tuple[GridPoint, ...],
+    right_points: tuple[GridPoint, ...],
+    input_system: CoordinateSystem,
+) -> int:
+    """Count points shared by two already-deduplicated grids."""
+    buckets: dict[tuple[int, int], list[GridPoint]] = {}
+    horizontal_bin_count = round(360.0 / DUPLICATE_TOLERANCE)
+    for point in right_points:
+        x, y = _specified_coordinates(point, input_system)
+        normalized_x = (x + 180.0) % 360.0
+        x_bin = (
+            math.floor(normalized_x / DUPLICATE_TOLERANCE)
+            % horizontal_bin_count
+        )
+        y_bin = math.floor(y / DUPLICATE_TOLERANCE)
+        buckets.setdefault((x_bin, y_bin), []).append(point)
+
+    coincident_count = 0
+    for point in left_points:
+        x, y = _specified_coordinates(point, input_system)
+        normalized_x = (x + 180.0) % 360.0
+        x_bin = (
+            math.floor(normalized_x / DUPLICATE_TOLERANCE)
+            % horizontal_bin_count
+        )
+        y_bin = math.floor(y / DUPLICATE_TOLERANCE)
+        found_match = False
+        for x_offset in (-1, 0, 1):
+            neighbor_x = (
+                x_bin + x_offset
+            ) % horizontal_bin_count
+            for y_offset in (-1, 0, 1):
+                if any(
+                    _points_are_duplicates(
+                        point,
+                        candidate,
+                        input_system,
+                    )
+                    for candidate in buckets.get(
+                        (neighbor_x, y_bin + y_offset),
+                        (),
+                    )
+                ):
+                    found_match = True
+                    break
+            if found_match:
+                break
+        if found_match:
+            coincident_count += 1
+    return coincident_count
+
+
 def _remove_duplicate_candidates(
     candidates: list[_CandidatePoint],
     input_system: CoordinateSystem,

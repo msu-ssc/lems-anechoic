@@ -8,7 +8,9 @@ from fastapi.testclient import TestClient
 from msu_anechoic import experiment
 from msu_anechoic.web.app import INACCESSIBLE_AZ_EL_REGIONS
 from msu_anechoic.web.app import _az_el_unit_vector
+from msu_anechoic.web.app import _estimate_grid_cost
 from msu_anechoic.web.app import _estimate_grid_travel_time
+from msu_anechoic.web.app import _estimate_move_cost
 from msu_anechoic.web.app import _estimate_move_travel_time
 from msu_anechoic.web.app import _figure
 from msu_anechoic.web.app import _flat_topped_lower_hemisphere_mesh
@@ -485,7 +487,7 @@ def test_spherical_screen_caps_azimuth_at_one_revolution():
     assert len(i) == len(j) == len(k) == azimuth_segments * elevation_segments * 2
 
 
-def test_az_el_grid_routes_are_interpolated_in_pan_and_tilt():
+def test_az_el_grid_routes_are_interpolated_in_azimuth_and_elevation():
     grid = design_combined_grid(
         input_system="az_el",
         grids=(
@@ -501,21 +503,9 @@ def test_az_el_grid_routes_are_interpolated_in_pan_and_tilt():
     )
 
     route = _interpolated_route_coordinates(grid)
-    start, end = grid.points
-    pan_delta = end.pan - start.pan
-    tilt_delta = end.tilt - start.tilt
-    subdivision_count = math.ceil(math.hypot(pan_delta, tilt_delta))
-    midpoint_step = subdivision_count // 2
-    midpoint_fraction = midpoint_step / subdivision_count
-    midpoint_pan = start.pan + pan_delta * midpoint_fraction
-    midpoint_tilt = start.tilt + tilt_delta * midpoint_fraction
-    midpoint_azimuth, midpoint_elevation = pan_tilt_to_az_el(
-        midpoint_pan,
-        midpoint_tilt,
-    )
 
-    assert len(route) == subdivision_count + 1
-    assert route[midpoint_step] == pytest.approx(_az_el_unit_vector(midpoint_azimuth, midpoint_elevation))
+    assert len(route) == 101
+    assert route[50] == pytest.approx(_az_el_unit_vector(40, 30))
     assert all(math.dist(point, (0.0, 0.0, 0.0)) == pytest.approx(1.0) for point in route)
 
 
@@ -565,6 +555,19 @@ def test_sub_degree_routes_remain_straight_cartesian_segments():
 def test_pan_route_uses_long_bounded_move_between_positive_and_negative_limits():
     grid = design_grid(
         input_system="pan_tilt",
+        horizontal=AxisDefinition(-160, 160, 320),
+        vertical=AxisDefinition(0, 0, 1),
+    )
+
+    route = _interpolated_route_coordinates(grid)
+
+    assert len(route) == 321
+    assert route[160] == pytest.approx(_az_el_unit_vector(0, 0))
+
+
+def test_azimuth_route_lerps_directly_between_positive_and_negative_limits():
+    grid = design_grid(
+        input_system="az_el",
         horizontal=AxisDefinition(-160, 160, 320),
         vertical=AxisDefinition(0, 0, 1),
     )
@@ -634,6 +637,23 @@ def test_grid_travel_time_includes_both_origin_legs(monkeypatch):
     ]
 
 
+def test_move_cost_weights_vertical_time_without_changing_real_time(
+    monkeypatch,
+):
+    def fake_estimate_time(angle, *, kind, trace):
+        assert trace is False
+        return angle * (2 if kind == "horizontal" else 3)
+
+    monkeypatch.setattr(experiment, "_estimate_time", fake_estimate_time)
+
+    assert _estimate_move_travel_time((0, 0), (10, 5)) == pytest.approx(20)
+    assert _estimate_move_cost(
+        (0, 0),
+        (10, 5),
+        vertical_movement_multiplier=3.0,
+    ) == pytest.approx(65)
+
+
 def test_two_opt_improves_an_inefficient_pan_tilt_route():
     grid = design_grid(
         input_system="pan_tilt",
@@ -641,16 +661,19 @@ def test_two_opt_improves_an_inefficient_pan_tilt_route():
         vertical=AxisDefinition(0, 0, 1),
     )
     inefficient_grid = _grid_with_order(grid, (0, 2, 1, 3))
-    original_seconds = _estimate_grid_travel_time(inefficient_grid)
+    original_cost = _estimate_grid_cost(
+        inefficient_grid,
+        vertical_movement_multiplier=3.0,
+    )
 
-    optimized_order, optimized_seconds = _optimize_grid_route(
+    optimized_order, optimized_cost = _optimize_grid_route(
         inefficient_grid,
         max_seconds=0.05,
         random_seed=1,
     )
 
     assert sorted(optimized_order) == [0, 1, 2, 3]
-    assert optimized_seconds < original_seconds
+    assert optimized_cost < original_cost
 
 
 def test_optimizer_removes_large_pole_crossing_moves_from_spherical_grid():
@@ -659,9 +682,12 @@ def test_optimizer_removes_large_pole_crossing_moves_from_spherical_grid():
         horizontal=AxisDefinition(-180, 180, 10),
         vertical=AxisDefinition(-90, 40, 10),
     )
-    original_seconds = _estimate_grid_travel_time(grid)
+    original_cost = _estimate_grid_cost(
+        grid,
+        vertical_movement_multiplier=3.0,
+    )
 
-    optimized_order, optimized_seconds = _optimize_grid_route(
+    optimized_order, optimized_cost = _optimize_grid_route(
         grid,
         max_seconds=0.25,
         random_seed=1,
@@ -678,8 +704,8 @@ def test_optimizer_removes_large_pole_crossing_moves_from_spherical_grid():
         for start, end in zip(route, route[1:])
     )
 
-    assert optimized_seconds < original_seconds * 0.5
-    assert maximum_axis_move < 120.0
+    assert optimized_cost < original_cost * 0.5
+    assert maximum_axis_move < 130.0
 
 
 def test_optimizer_neighbors_match_tilt_branches_across_pan_pole():
@@ -1109,10 +1135,13 @@ def test_pan_tilt_preview_contains_three_plot_payloads():
     assert response.text.count("Show ideal") == 2
     assert response.text.count("Show quantized") == 2
     assert response.text.count("Show line segments") == 3
+    assert response.text.count('class="plot-card plot-card--primary"') == 2
     assert "<h2" in response.text
     assert "Grid info" in response.text
     assert "Path optimization" in response.text
     assert 'name="optimization_max_time"' in response.text
+    assert 'name="vertical_movement_multiplier"' in response.text
+    assert 'value="3.0"' in response.text
     assert 'value="1.0"' in response.text
     assert 'hx-get="/grid-designer/optimize"' in response.text
     assert '<th scope="row">Original path</th>' in response.text
@@ -1120,6 +1149,7 @@ def test_pan_tilt_preview_contains_three_plot_payloads():
     assert "Estimated travel time" in response.text
     assert 'class="grid-info-table"' in response.text
     assert ">Grid</th>" in response.text
+    assert ">Cost</th>" in response.text
     assert ">Points</th>" in response.text
     assert ">Rows</th>" in response.text
     assert ">Columns</th>" not in response.text
@@ -1184,18 +1214,31 @@ def test_preview_combines_repeated_simple_grid_parameters():
     assert '<th scope="row">Sparse</th>' in response.text
     assert '<th scope="row">Dense</th>' in response.text
     assert response.text.count('class="grid-info-subgrid"') == 2
+    assert "Sparse and Dense have 1 coincident point." in response.text
 
 
 def test_optimization_endpoint_records_and_loads_previous_paths(monkeypatch):
     starting_orders = []
 
-    def fake_optimize(grid, *, starting_order, max_seconds, random_seed):
+    def fake_optimize(
+        grid,
+        *,
+        starting_order,
+        max_seconds,
+        vertical_movement_multiplier,
+        random_seed,
+    ):
         assert max_seconds == 0.01
+        assert vertical_movement_multiplier in (3.0, 4.0)
         assert random_seed is not None
         starting_orders.append(starting_order)
         return (
             tuple(reversed(starting_order)),
-            _estimate_grid_travel_time(grid) - len(starting_orders),
+            _estimate_grid_cost(
+                grid,
+                vertical_movement_multiplier=(vertical_movement_multiplier),
+            )
+            - len(starting_orders),
         )
 
     app_module = importlib.import_module("msu_anechoic.web.app")
@@ -1217,6 +1260,9 @@ def test_optimization_endpoint_records_and_loads_previous_paths(monkeypatch):
     assert optimized.status_code == 200
     assert '<th scope="row">Original path</th>' in optimized.text
     assert '<th scope="row">Optimized path #1</th>' in optimized.text
+    assert ">Calculation time</th>" in optimized.text
+    assert ">Vertical multiplier</th>" in optimized.text
+    assert "3.0×" in optimized.text
     assert len(re.findall(r">\s*Load\s*</button>", optimized.text)) == 1
     assert '<th scope="row">Grid 1</th>' not in optimized.text
     session_match = re.search(
@@ -1248,7 +1294,23 @@ def test_optimization_endpoint_records_and_loads_previous_paths(monkeypatch):
     )
 
     assert continued.status_code == 200
-    assert starting_orders[1] == tuple(reversed(starting_orders[0]))
     assert '<th scope="row">Original path</th>' in continued.text
     assert '<th scope="row">Optimized path #1</th>' in continued.text
     assert '<th scope="row">Optimized path #2</th>' in continued.text
+
+    changed_multiplier = client.get(
+        "/grid-designer/optimize",
+        params={
+            **params,
+            "vertical_movement_multiplier": 4,
+            "optimization_session_id": session_match.group(1),
+        },
+    )
+
+    assert changed_multiplier.status_code == 200
+    assert '<th scope="row">Original path</th>' in changed_multiplier.text
+    assert '<th scope="row">Optimized path #1</th>' in changed_multiplier.text
+    assert '<th scope="row">Optimized path #2</th>' in changed_multiplier.text
+    assert '<th scope="row">Optimized path #3</th>' in changed_multiplier.text
+    assert "3.0×" in changed_multiplier.text
+    assert "4.0×" in changed_multiplier.text

@@ -35,6 +35,7 @@ from msu_anechoic.web.grid import GridPoint
 from msu_anechoic.web.grid import GridValidationError
 from msu_anechoic.web.grid import QuantizationDefinition
 from msu_anechoic.web.grid import SimpleGridDefinition
+from msu_anechoic.web.grid import count_coincident_points
 from msu_anechoic.web.grid import design_combined_grid
 from msu_anechoic.web.grid import pan_tilt_to_az_el
 
@@ -70,12 +71,15 @@ DEFAULTS = {
     "pan_quantization_origin": 0.0,
     "pan_quantization_step": 0.5,
     "reject_inaccessible": False,
+    "vertical_movement_multiplier": 3.0,
 }
 
 ROUTE_INTERPOLATION_THRESHOLD_DEGREES = 1.0
 ROUTE_MAX_STEP_DEGREES = 1.0
 DEFAULT_OPTIMIZATION_TIME_SECONDS = 1.0
+DEFAULT_VERTICAL_MOVEMENT_MULTIPLIER = 3.0
 MAX_OPTIMIZATION_TIME_SECONDS = 60.0
+MAX_VERTICAL_MOVEMENT_MULTIPLIER = 100.0
 MAX_OPTIMIZATION_SESSIONS = 32
 MAX_OPTIMIZATION_HISTORY = 50
 OPTIMIZATION_NEIGHBOR_COUNT = 48
@@ -121,11 +125,11 @@ def _az_el_unit_vector(azimuth: float, elevation: float) -> tuple[float, float, 
     )
 
 
-def _estimate_move_travel_time(
+def _estimate_move_axis_times(
     start: tuple[float, float],
     end: tuple[float, float],
-) -> float:
-    """Estimate one simultaneous pan/tilt move."""
+) -> tuple[float, float]:
+    """Estimate the horizontal and vertical portions of one move."""
     pan_delta = abs(end[0] - start[0])
     tilt_delta = abs(end[1] - start[1])
     horizontal_seconds = (
@@ -146,7 +150,33 @@ def _estimate_move_travel_time(
         if tilt_delta > 1e-12
         else 0.0
     )
-    return max(0.0, horizontal_seconds, vertical_seconds)
+    return max(0.0, horizontal_seconds), max(0.0, vertical_seconds)
+
+
+def _estimate_move_travel_time(
+    start: tuple[float, float],
+    end: tuple[float, float],
+) -> float:
+    """Estimate elapsed time for one simultaneous pan/tilt move."""
+    horizontal_seconds, vertical_seconds = _estimate_move_axis_times(
+        start,
+        end,
+    )
+    return max(horizontal_seconds, vertical_seconds)
+
+
+def _estimate_move_cost(
+    start: tuple[float, float],
+    end: tuple[float, float],
+    *,
+    vertical_movement_multiplier: float,
+) -> float:
+    """Return horizontal time plus weighted vertical time for one move."""
+    horizontal_seconds, vertical_seconds = _estimate_move_axis_times(
+        start,
+        end,
+    )
+    return horizontal_seconds + vertical_movement_multiplier * vertical_seconds
 
 
 def _ordered_grid_travel_time(
@@ -173,50 +203,58 @@ def _estimate_grid_travel_time(grid: DesignedGrid) -> float:
     )
 
 
-def _two_opt_delta(
+def _ordered_grid_cost(
     points: tuple[GridPoint, ...],
-    order: list[int],
-    start_index: int,
-    end_index: int,
+    order: tuple[int, ...],
+    *,
+    vertical_movement_multiplier: float,
 ) -> float:
-    """Return the travel-time change from reversing one route segment."""
-    before = (
-        (0.0, 0.0)
-        if start_index == 0
-        else (
-            points[order[start_index - 1]].pan,
-            points[order[start_index - 1]].tilt,
+    """Calculate weighted origin-to-route-to-origin movement cost."""
+    total_cost = 0.0
+    previous = (0.0, 0.0)
+    for point_index in order:
+        point = points[point_index]
+        current = (point.pan, point.tilt)
+        total_cost += _estimate_move_cost(
+            previous,
+            current,
+            vertical_movement_multiplier=vertical_movement_multiplier,
         )
+        previous = current
+    total_cost += _estimate_move_cost(
+        previous,
+        (0.0, 0.0),
+        vertical_movement_multiplier=vertical_movement_multiplier,
     )
-    first = (
-        points[order[start_index]].pan,
-        points[order[start_index]].tilt,
+    return total_cost
+
+
+def _estimate_grid_cost(
+    grid: DesignedGrid,
+    *,
+    vertical_movement_multiplier: float,
+) -> float:
+    return _ordered_grid_cost(
+        grid.points,
+        tuple(range(len(grid.points))),
+        vertical_movement_multiplier=vertical_movement_multiplier,
     )
-    last = (
-        points[order[end_index]].pan,
-        points[order[end_index]].tilt,
-    )
-    after = (
-        (0.0, 0.0)
-        if end_index == len(order) - 1
-        else (
-            points[order[end_index + 1]].pan,
-            points[order[end_index + 1]].tilt,
-        )
-    )
-    old_seconds = _estimate_move_travel_time(before, first) + _estimate_move_travel_time(last, after)
-    new_seconds = _estimate_move_travel_time(before, last) + _estimate_move_travel_time(first, after)
-    return new_seconds - old_seconds
 
 
 class _RouteCostModel:
     """Cache symmetric move costs while an optimization run is active."""
 
-    def __init__(self, points: tuple[GridPoint, ...]):
+    def __init__(
+        self,
+        points: tuple[GridPoint, ...],
+        *,
+        vertical_movement_multiplier: float,
+    ):
         self.points = points
+        self.vertical_movement_multiplier = vertical_movement_multiplier
         self._cache: dict[tuple[int, int], float] = {}
 
-    def move_seconds(self, left: int, right: int) -> float:
+    def move_cost(self, left: int, right: int) -> float:
         if left == right:
             return 0.0
         key = (left, right) if left < right else (right, left)
@@ -225,20 +263,21 @@ class _RouteCostModel:
             return cached
         left_coordinates = (0.0, 0.0) if left == -1 else (self.points[left].pan, self.points[left].tilt)
         right_coordinates = (0.0, 0.0) if right == -1 else (self.points[right].pan, self.points[right].tilt)
-        seconds = _estimate_move_travel_time(
+        cost = _estimate_move_cost(
             left_coordinates,
             right_coordinates,
+            vertical_movement_multiplier=self.vertical_movement_multiplier,
         )
-        self._cache[key] = seconds
-        return seconds
+        self._cache[key] = cost
+        return cost
 
-    def route_seconds(self, order: tuple[int, ...] | list[int]) -> float:
-        total_seconds = 0.0
+    def route_cost(self, order: tuple[int, ...] | list[int]) -> float:
+        total_cost = 0.0
         previous = -1
         for point_index in order:
-            total_seconds += self.move_seconds(previous, point_index)
+            total_cost += self.move_cost(previous, point_index)
             previous = point_index
-        return total_seconds + self.move_seconds(previous, -1)
+        return total_cost + self.move_cost(previous, -1)
 
     def two_opt_delta(
         self,
@@ -251,10 +290,10 @@ class _RouteCostModel:
         last = order[end_index]
         after = -1 if end_index == len(order) - 1 else order[end_index + 1]
         return (
-            self.move_seconds(before, last)
-            + self.move_seconds(first, after)
-            - self.move_seconds(before, first)
-            - self.move_seconds(last, after)
+            self.move_cost(before, last)
+            + self.move_cost(first, after)
+            - self.move_cost(before, first)
+            - self.move_cost(last, after)
         )
 
 
@@ -262,6 +301,7 @@ def _pan_tilt_candidate_neighbors(
     points: tuple[GridPoint, ...],
     *,
     neighbor_count: int = OPTIMIZATION_NEIGHBOR_COUNT,
+    vertical_movement_multiplier: float = DEFAULT_VERTICAL_MOVEMENT_MULTIPLIER,
 ) -> tuple[tuple[tuple[int, ...], ...], tuple[int, ...]]:
     """Find local neighbors on the turntable's bounded pan/tilt axes.
 
@@ -276,7 +316,7 @@ def _pan_tilt_candidate_neighbors(
         [
             (
                 point.pan * PAN_TRAVEL_TIME_SCALE,
-                point.tilt * TILT_TRAVEL_TIME_SCALE,
+                point.tilt * TILT_TRAVEL_TIME_SCALE * vertical_movement_multiplier,
             )
             for point in points
         ],
@@ -346,7 +386,7 @@ def _multifragment_route_seed(
                 continue
             edges.append(
                 (
-                    cost_model.move_seconds(point_index, neighbor),
+                    cost_model.move_cost(point_index, neighbor),
                     point_index,
                     neighbor,
                 )
@@ -354,7 +394,7 @@ def _multifragment_route_seed(
     for point_index in range(point_count):
         edges.append(
             (
-                cost_model.move_seconds(-1, point_index),
+                cost_model.move_cost(-1, point_index),
                 origin,
                 point_index,
             )
@@ -411,7 +451,7 @@ def _multifragment_route_seed(
                     continue
                 fallback_edges.append(
                     (
-                        cost_model.move_seconds(
+                        cost_model.move_cost(
                             -1 if left == origin else left,
                             -1 if right == origin else right,
                         ),
@@ -473,7 +513,7 @@ def _long_edge_first_two_opt(
         return -1 if position == len(order) - 1 else order[position + 1]
 
     anchors.sort(
-        key=lambda point_index: cost_model.move_seconds(
+        key=lambda point_index: cost_model.move_cost(
             point_index,
             following_node(point_index),
         ),
@@ -520,8 +560,8 @@ def _long_edge_first_relocate(
         previous = -1 if position == 0 else order[position - 1]
         following = -1 if position == len(order) - 1 else order[position + 1]
         return max(
-            cost_model.move_seconds(previous, point_index),
-            cost_model.move_seconds(point_index, following),
+            cost_model.move_cost(previous, point_index),
+            cost_model.move_cost(point_index, following),
         )
 
     points_by_edge_cost.sort(
@@ -540,15 +580,15 @@ def _long_edge_first_relocate(
                 continue
             anchor_following = -1 if anchor_position == len(order) - 1 else order[anchor_position + 1]
             delta = (
-                cost_model.move_seconds(previous, following)
-                + cost_model.move_seconds(anchor, point_index)
-                + cost_model.move_seconds(
+                cost_model.move_cost(previous, following)
+                + cost_model.move_cost(anchor, point_index)
+                + cost_model.move_cost(
                     point_index,
                     anchor_following,
                 )
-                - cost_model.move_seconds(previous, point_index)
-                - cost_model.move_seconds(point_index, following)
-                - cost_model.move_seconds(anchor, anchor_following)
+                - cost_model.move_cost(previous, point_index)
+                - cost_model.move_cost(point_index, following)
+                - cost_model.move_cost(anchor, anchor_following)
             )
             if delta < -1e-9:
                 order.pop(position)
@@ -564,6 +604,7 @@ def _optimize_grid_route(
     *,
     starting_order: tuple[int, ...] | None = None,
     max_seconds: float = DEFAULT_OPTIMIZATION_TIME_SECONDS,
+    vertical_movement_multiplier: float = DEFAULT_VERTICAL_MOVEMENT_MULTIPLIER,
     random_seed: int | None = None,
 ) -> tuple[tuple[int, ...], float]:
     """Improve a route with local seeding, 2-opt, and randomized 3-opt kicks."""
@@ -574,22 +615,30 @@ def _optimize_grid_route(
         raise ValueError("The starting route must contain every grid point exactly once.")
     if not math.isfinite(max_seconds) or max_seconds <= 0.0:
         raise ValueError("Optimization time must be greater than zero.")
+    if not math.isfinite(vertical_movement_multiplier) or vertical_movement_multiplier <= 0.0:
+        raise ValueError("Vertical movement multiplier must be greater than zero.")
 
     started = time.perf_counter()
     deadline = started + max_seconds
     randomizer = random.Random(random_seed)
-    cost_model = _RouteCostModel(grid.points)
+    cost_model = _RouteCostModel(
+        grid.points,
+        vertical_movement_multiplier=vertical_movement_multiplier,
+    )
     best_order = list(starting_order)
-    best_seconds = cost_model.route_seconds(best_order)
+    best_cost = cost_model.route_cost(best_order)
     working_order = list(best_order)
-    working_seconds = best_seconds
+    working_cost = best_cost
     if point_count < 2:
-        return tuple(best_order), best_seconds
+        return tuple(best_order), best_cost
 
     candidate_neighbors: tuple[tuple[int, ...], ...] = ()
     origin_neighbors: tuple[int, ...] = ()
     if max_seconds >= 0.05 and time.perf_counter() < deadline:
-        candidate_neighbors, origin_neighbors = _pan_tilt_candidate_neighbors(grid.points)
+        candidate_neighbors, origin_neighbors = _pan_tilt_candidate_neighbors(
+            grid.points,
+            vertical_movement_multiplier=vertical_movement_multiplier,
+        )
         if starting_order == tuple(range(point_count)):
             seed = _multifragment_route_seed(
                 grid.points,
@@ -598,12 +647,12 @@ def _optimize_grid_route(
                 deadline=deadline,
             )
             if seed is not None:
-                seed_seconds = cost_model.route_seconds(seed)
-                if seed_seconds < best_seconds - 1e-9:
+                seed_cost = cost_model.route_cost(seed)
+                if seed_cost < best_cost - 1e-9:
                     best_order = list(seed)
-                    best_seconds = seed_seconds
+                    best_cost = seed_cost
                     working_order = list(seed)
-                    working_seconds = seed_seconds
+                    working_cost = seed_cost
 
     exhaustive_search = point_count <= 250
     while time.perf_counter() < deadline:
@@ -615,10 +664,10 @@ def _optimize_grid_route(
                 cost_model=cost_model,
                 deadline=deadline,
             ):
-                working_seconds = cost_model.route_seconds(working_order)
-                if working_seconds < best_seconds - 1e-9:
+                working_cost = cost_model.route_cost(working_order)
+                if working_cost < best_cost - 1e-9:
                     best_order = list(working_order)
-                    best_seconds = working_seconds
+                    best_cost = working_cost
                 continue
             if _long_edge_first_relocate(
                 working_order,
@@ -626,10 +675,10 @@ def _optimize_grid_route(
                 cost_model=cost_model,
                 deadline=deadline,
             ):
-                working_seconds = cost_model.route_seconds(working_order)
-                if working_seconds < best_seconds - 1e-9:
+                working_cost = cost_model.route_cost(working_order)
+                if working_cost < best_cost - 1e-9:
                     best_order = list(working_order)
-                    best_seconds = working_seconds
+                    best_cost = working_cost
                 continue
 
         best_delta = -1e-9
@@ -659,10 +708,10 @@ def _optimize_grid_route(
         if best_move is not None:
             start_index, end_index = best_move
             working_order[start_index : end_index + 1] = reversed(working_order[start_index : end_index + 1])
-            working_seconds = cost_model.route_seconds(working_order)
-            if working_seconds < best_seconds - 1e-9:
+            working_cost = cost_model.route_cost(working_order)
+            if working_cost < best_cost - 1e-9:
                 best_order = list(working_order)
-                best_seconds = working_seconds
+                best_cost = working_cost
             continue
 
         if point_count < 6:
@@ -677,10 +726,10 @@ def _optimize_grid_route(
             + best_order[first_cut:second_cut]
             + best_order[third_cut:]
         )
-        working_seconds = cost_model.route_seconds(working_order)
+        working_cost = cost_model.route_cost(working_order)
 
     best_result = tuple(best_order)
-    return best_result, cost_model.route_seconds(best_result)
+    return best_result, cost_model.route_cost(best_result)
 
 
 def _grid_with_order(
@@ -705,6 +754,9 @@ class _OptimizationPath:
     name: str
     order: tuple[int, ...]
     estimated_seconds: float
+    cost: float
+    vertical_movement_multiplier: float
+    calculation_seconds: float | None
 
 
 @dataclass
@@ -729,7 +781,11 @@ def _grid_fingerprint(grid: DesignedGrid) -> str:
     return digest.hexdigest()
 
 
-def _new_optimization_session(grid: DesignedGrid) -> tuple[str, _OptimizationSession]:
+def _new_optimization_session(
+    grid: DesignedGrid,
+    *,
+    vertical_movement_multiplier: float,
+) -> tuple[str, _OptimizationSession]:
     session_id = secrets.token_urlsafe(18)
     original_order = tuple(range(len(grid.points)))
     session = _OptimizationSession(
@@ -742,6 +798,13 @@ def _new_optimization_session(grid: DesignedGrid) -> tuple[str, _OptimizationSes
                     grid.points,
                     original_order,
                 ),
+                cost=_ordered_grid_cost(
+                    grid.points,
+                    original_order,
+                    vertical_movement_multiplier=(vertical_movement_multiplier),
+                ),
+                vertical_movement_multiplier=(vertical_movement_multiplier),
+                calculation_seconds=None,
             )
         ],
     )
@@ -773,6 +836,7 @@ def _optimization_context(
     session_id: str = "",
     session: _OptimizationSession | None = None,
     max_time_seconds: float = DEFAULT_OPTIMIZATION_TIME_SECONDS,
+    vertical_movement_multiplier: float = DEFAULT_VERTICAL_MOVEMENT_MULTIPLIER,
     status: str | None = None,
 ) -> dict:
     if session is None:
@@ -781,6 +845,12 @@ def _optimization_context(
                 name="Original path",
                 order=tuple(range(len(grid.points))),
                 estimated_seconds=_estimate_grid_travel_time(grid),
+                cost=_estimate_grid_cost(
+                    grid,
+                    vertical_movement_multiplier=(vertical_movement_multiplier),
+                ),
+                vertical_movement_multiplier=(vertical_movement_multiplier),
+                calculation_seconds=None,
             )
         ]
         active_path_index = 0
@@ -791,6 +861,7 @@ def _optimization_context(
     return {
         "optimization_session_id": session_id,
         "optimization_max_time_seconds": max_time_seconds,
+        "vertical_movement_multiplier": vertical_movement_multiplier,
         "optimization_status": status,
         "optimization_paths": [
             {
@@ -798,6 +869,11 @@ def _optimization_context(
                 "name": path.name,
                 "estimated_travel_time_seconds": path.estimated_seconds,
                 "estimated_travel_time_label": _format_duration(path.estimated_seconds),
+                "cost": path.cost,
+                "cost_label": _format_duration(path.cost),
+                "vertical_movement_multiplier": (path.vertical_movement_multiplier),
+                "calculation_seconds": path.calculation_seconds,
+                "calculation_time_label": _format_calculation_time(path.calculation_seconds),
                 "is_active": index == active_path_index,
             }
             for index, path in enumerate(paths)
@@ -819,22 +895,56 @@ def _format_duration(seconds: float) -> str:
     return " ".join(parts)
 
 
+def _format_calculation_time(seconds: float | None) -> str:
+    if seconds is None:
+        return "—"
+    if seconds < 0.01:
+        return "<0.01 sec"
+    if seconds < 10:
+        return f"{seconds:.2f} sec"
+    return _format_duration(seconds)
+
+
 def _interpolated_route_coordinates(
     grid: DesignedGrid,
 ) -> list[tuple[float, float, float]]:
-    """Render the turntable's bounded, linear pan/tilt motion."""
+    """Interpolate long route segments in the grid's input coordinates."""
     if not grid.points:
         return []
 
-    def unit_vector(pan: float, tilt: float) -> tuple[float, float, float]:
-        azimuth, elevation = pan_tilt_to_az_el(pan, tilt)
-        return _az_el_unit_vector(azimuth, elevation)
+    if grid.input_system == "az_el":
 
-    route = [unit_vector(grid.points[0].pan, grid.points[0].tilt)]
+        def coordinates(point: GridPoint) -> tuple[float, float]:
+            return point.azimuth, point.elevation
+
+        def unit_vector(
+            azimuth: float,
+            elevation: float,
+        ) -> tuple[float, float, float]:
+            return _az_el_unit_vector(azimuth, elevation)
+
+    else:
+
+        def coordinates(point: GridPoint) -> tuple[float, float]:
+            return point.pan, point.tilt
+
+        def unit_vector(
+            pan: float,
+            tilt: float,
+        ) -> tuple[float, float, float]:
+            azimuth, elevation = pan_tilt_to_az_el(pan, tilt)
+            return _az_el_unit_vector(azimuth, elevation)
+
+    route = [unit_vector(*coordinates(grid.points[0]))]
     for start, end in zip(grid.points, grid.points[1:]):
-        pan_delta = end.pan - start.pan
-        tilt_delta = end.tilt - start.tilt
-        coordinate_distance = math.hypot(pan_delta, tilt_delta)
+        start_horizontal, start_vertical = coordinates(start)
+        end_horizontal, end_vertical = coordinates(end)
+        horizontal_delta = end_horizontal - start_horizontal
+        vertical_delta = end_vertical - start_vertical
+        coordinate_distance = math.hypot(
+            horizontal_delta,
+            vertical_delta,
+        )
         subdivision_count = (
             math.ceil(coordinate_distance / ROUTE_MAX_STEP_DEGREES)
             if coordinate_distance > ROUTE_INTERPOLATION_THRESHOLD_DEGREES + 1e-9
@@ -844,8 +954,8 @@ def _interpolated_route_coordinates(
             fraction = step / subdivision_count
             route.append(
                 unit_vector(
-                    start.pan + pan_delta * fraction,
-                    start.tilt + tilt_delta * fraction,
+                    start_horizontal + horizontal_delta * fraction,
+                    start_vertical + vertical_delta * fraction,
                 )
             )
     return route
@@ -1509,12 +1619,27 @@ def _three_dimensional_figure(grid: DesignedGrid) -> dict:
     }
 
 
-def _grid_info_row(name: str, grid: DesignedGrid | None) -> dict:
+def _grid_info_row(
+    name: str,
+    grid: DesignedGrid | None,
+    *,
+    vertical_movement_multiplier: float = DEFAULT_VERTICAL_MOVEMENT_MULTIPLIER,
+) -> dict:
     estimated_seconds = _estimate_grid_travel_time(grid) if grid else 0.0
+    cost = (
+        _estimate_grid_cost(
+            grid,
+            vertical_movement_multiplier=vertical_movement_multiplier,
+        )
+        if grid
+        else 0.0
+    )
     return {
         "name": name,
         "estimated_travel_time_seconds": estimated_seconds,
         "estimated_travel_time_label": _format_duration(estimated_seconds),
+        "cost": cost,
+        "cost_label": _format_duration(cost),
         "point_count": len(grid.points) if grid else 0,
         "row_count": grid.row_count if grid else 0,
         "column_count": grid.column_count if grid else 0,
@@ -1526,12 +1651,28 @@ def _preview_context(
     *,
     grid_info_rows: list[dict] | None = None,
     optimization_context: dict | None = None,
+    vertical_movement_multiplier: float = DEFAULT_VERTICAL_MOVEMENT_MULTIPLIER,
+    coincident_point_summaries: list[str] | None = None,
 ) -> dict:
     estimated_travel_time_seconds = _estimate_grid_travel_time(grid)
     return {
         "grid": grid,
-        "grid_info_rows": grid_info_rows or [_grid_info_row("Grid 1", grid)],
-        **(optimization_context or _optimization_context(grid)),
+        "grid_info_rows": grid_info_rows
+        or [
+            _grid_info_row(
+                "Grid 1",
+                grid,
+                vertical_movement_multiplier=(vertical_movement_multiplier),
+            )
+        ],
+        "coincident_point_summaries": (coincident_point_summaries or []),
+        **(
+            optimization_context
+            or _optimization_context(
+                grid,
+                vertical_movement_multiplier=(vertical_movement_multiplier),
+            )
+        ),
         "estimated_travel_time_seconds": estimated_travel_time_seconds,
         "estimated_travel_time_label": _format_duration(estimated_travel_time_seconds),
         "az_el_figure_json": json.dumps(_figure(grid, coordinate_system="az_el"), allow_nan=False),
@@ -1590,11 +1731,28 @@ def _build_grid_info_rows(
     pan_quantization_origin: float,
     pan_quantization_step: float,
     reject_inaccessible: bool,
-) -> list[dict]:
+    vertical_movement_multiplier: float,
+) -> tuple[list[dict], list[str]]:
     if len(grids) == 1:
-        return [_grid_info_row(grids[0].name or "Grid 1", combined_grid)]
+        return (
+            [
+                _grid_info_row(
+                    grids[0].name or "Grid 1",
+                    combined_grid,
+                    vertical_movement_multiplier=(vertical_movement_multiplier),
+                )
+            ],
+            [],
+        )
 
-    rows = [_grid_info_row("Combined grid", combined_grid)]
+    rows = [
+        _grid_info_row(
+            "Combined grid",
+            combined_grid,
+            vertical_movement_multiplier=(vertical_movement_multiplier),
+        )
+    ]
+    simple_grids: list[DesignedGrid | None] = []
     for index, definition in enumerate(grids):
         try:
             simple_grid = _build_grid(
@@ -1610,13 +1768,37 @@ def _build_grid_info_rows(
             )
         except GridValidationError:
             simple_grid = None
+        simple_grids.append(simple_grid)
         rows.append(
             _grid_info_row(
                 definition.name or f"Grid {index + 1}",
                 simple_grid,
+                vertical_movement_multiplier=(vertical_movement_multiplier),
             )
         )
-    return rows
+
+    coincident_point_summaries = []
+    for left_index, left_grid in enumerate(simple_grids[:-1]):
+        if left_grid is None:
+            continue
+        for right_index in range(left_index + 1, len(simple_grids)):
+            right_grid = simple_grids[right_index]
+            if right_grid is None:
+                continue
+            count = count_coincident_points(
+                left_grid.points,
+                right_grid.points,
+                input_system,
+            )
+            if count == 0:
+                continue
+            left_name = grids[left_index].name or (f"Grid {left_index + 1}")
+            right_name = grids[right_index].name or (f"Grid {right_index + 1}")
+            point_word = "point" if count == 1 else "points"
+            coincident_point_summaries.append(f"{left_name} and {right_name} have {count:,} coincident {point_word}.")
+    if not coincident_point_summaries:
+        coincident_point_summaries.append("No coincident points were found between simple grids.")
+    return rows, coincident_point_summaries
 
 
 def _simple_grid_definition(
@@ -1741,7 +1923,7 @@ def _requested_grid(
     request: Request,
     *,
     include_info_rows: bool = True,
-) -> tuple[DesignedGrid, list[dict]]:
+) -> tuple[DesignedGrid, list[dict], list[str], float]:
     input_system = request.query_params.get("input_system", "az_el")
     if input_system not in ("az_el", "pan_tilt"):
         raise GridValidationError("Select either azimuth/elevation or pan/tilt input.")
@@ -1777,6 +1959,7 @@ def _requested_grid(
     quantize_tilt = request.query_params.get("quantize_tilt") == "true"
     quantize_pan = request.query_params.get("quantize_pan") == "true"
     reject_inaccessible = request.query_params.get("reject_inaccessible") == "true"
+    vertical_movement_multiplier = _parse_vertical_movement_multiplier(request)
     grid = _build_grid(
         input_system=input_system,
         grids=grids,
@@ -1788,7 +1971,7 @@ def _requested_grid(
         pan_quantization_step=pan_step,
         reject_inaccessible=reject_inaccessible,
     )
-    grid_info_rows = (
+    grid_info_rows, coincident_point_summaries = (
         _build_grid_info_rows(
             combined_grid=grid,
             input_system=input_system,
@@ -1800,11 +1983,17 @@ def _requested_grid(
             pan_quantization_origin=pan_origin,
             pan_quantization_step=pan_step,
             reject_inaccessible=reject_inaccessible,
+            vertical_movement_multiplier=(vertical_movement_multiplier),
         )
         if include_info_rows
-        else []
+        else ([], [])
     )
-    return grid, grid_info_rows
+    return (
+        grid,
+        grid_info_rows,
+        coincident_point_summaries,
+        vertical_movement_multiplier,
+    )
 
 
 def _parse_optimization_time(request: Request) -> float:
@@ -1820,6 +2009,21 @@ def _parse_optimization_time(request: Request) -> float:
     if max_seconds > MAX_OPTIMIZATION_TIME_SECONDS:
         raise GridValidationError("Maximum optimization time cannot exceed 60 seconds.")
     return max_seconds
+
+
+def _parse_vertical_movement_multiplier(request: Request) -> float:
+    multiplier = _parse_number(
+        request.query_params.get(
+            "vertical_movement_multiplier",
+            str(DEFAULT_VERTICAL_MOVEMENT_MULTIPLIER),
+        ),
+        label="vertical movement multiplier",
+    )
+    if multiplier <= 0.0:
+        raise GridValidationError("Vertical movement multiplier must be greater than zero.")
+    if multiplier > MAX_VERTICAL_MOVEMENT_MULTIPLIER:
+        raise GridValidationError("Vertical movement multiplier cannot exceed 100.")
+    return multiplier
 
 
 @app.get("/", include_in_schema=False)
@@ -1846,7 +2050,10 @@ def grid_designer(request: Request) -> HTMLResponse:
         pan_quantization_step=DEFAULTS["pan_quantization_step"],
         reject_inaccessible=DEFAULTS["reject_inaccessible"],
     )
-    grid_info_rows = _build_grid_info_rows(
+    (
+        grid_info_rows,
+        coincident_point_summaries,
+    ) = _build_grid_info_rows(
         combined_grid=grid,
         input_system=DEFAULTS["input_system"],
         grids=simple_grids,
@@ -1857,6 +2064,7 @@ def grid_designer(request: Request) -> HTMLResponse:
         pan_quantization_origin=DEFAULTS["pan_quantization_origin"],
         pan_quantization_step=DEFAULTS["pan_quantization_step"],
         reject_inaccessible=DEFAULTS["reject_inaccessible"],
+        vertical_movement_multiplier=(DEFAULT_VERTICAL_MOVEMENT_MULTIPLIER),
     )
     return templates.TemplateResponse(
         request=request,
@@ -1864,7 +2072,12 @@ def grid_designer(request: Request) -> HTMLResponse:
         context={
             **DEFAULTS,
             "simple_grids": [dict(DEFAULTS)],
-            **_preview_context(grid, grid_info_rows=grid_info_rows),
+            **_preview_context(
+                grid,
+                grid_info_rows=grid_info_rows,
+                vertical_movement_multiplier=(DEFAULT_VERTICAL_MOVEMENT_MULTIPLIER),
+                coincident_point_summaries=(coincident_point_summaries),
+            ),
         },
     )
 
@@ -1872,8 +2085,18 @@ def grid_designer(request: Request) -> HTMLResponse:
 @app.get("/grid-designer/preview", response_class=HTMLResponse)
 def grid_designer_preview(request: Request) -> HTMLResponse:
     try:
-        grid, grid_info_rows = _requested_grid(request)
-        context = _preview_context(grid, grid_info_rows=grid_info_rows)
+        (
+            grid,
+            grid_info_rows,
+            coincident_point_summaries,
+            vertical_movement_multiplier,
+        ) = _requested_grid(request)
+        context = _preview_context(
+            grid,
+            grid_info_rows=grid_info_rows,
+            vertical_movement_multiplier=(vertical_movement_multiplier),
+            coincident_point_summaries=(coincident_point_summaries),
+        )
     except GridValidationError as exc:
         context = {"grid": None, "error": str(exc)}
 
@@ -1887,7 +2110,12 @@ def grid_designer_preview(request: Request) -> HTMLResponse:
 @app.get("/grid-designer/optimize", response_class=HTMLResponse)
 def optimize_grid_path(request: Request) -> HTMLResponse:
     try:
-        grid, _ = _requested_grid(request, include_info_rows=False)
+        (
+            grid,
+            _,
+            _,
+            vertical_movement_multiplier,
+        ) = _requested_grid(request, include_info_rows=False)
         max_seconds = _parse_optimization_time(request)
         requested_session_id = request.query_params.get(
             "optimization_session_id",
@@ -1895,23 +2123,59 @@ def optimize_grid_path(request: Request) -> HTMLResponse:
         )
         session = _get_optimization_session(requested_session_id, grid)
         if session is None:
-            session_id, session = _new_optimization_session(grid)
+            session_id, session = _new_optimization_session(
+                grid,
+                vertical_movement_multiplier=(vertical_movement_multiplier),
+            )
         else:
             session_id = requested_session_id
 
-        starting_path = session.paths[-1]
-        optimized_order, optimized_seconds = _optimize_grid_route(
+        evaluated_paths = [
+            (
+                index,
+                path,
+                _ordered_grid_cost(
+                    grid.points,
+                    path.order,
+                    vertical_movement_multiplier=(vertical_movement_multiplier),
+                ),
+            )
+            for index, path in enumerate(session.paths)
+        ]
+        (
+            starting_path_index,
+            starting_path,
+            starting_cost,
+        ) = min(evaluated_paths, key=lambda item: item[2])
+        calculation_started = time.perf_counter()
+        optimized_order, optimized_cost = _optimize_grid_route(
             grid,
             starting_order=starting_path.order,
             max_seconds=max_seconds,
+            vertical_movement_multiplier=(vertical_movement_multiplier),
             random_seed=secrets.randbits(64),
         )
+        calculation_seconds = time.perf_counter() - calculation_started
+        estimated_seconds = _ordered_grid_travel_time(
+            grid.points,
+            optimized_order,
+        )
 
-        if optimized_seconds < starting_path.estimated_seconds - 1e-6:
+        cost_improved = optimized_cost < starting_cost - 1e-6
+        multiplier_changed = not math.isclose(
+            starting_path.vertical_movement_multiplier,
+            vertical_movement_multiplier,
+            rel_tol=0.0,
+            abs_tol=1e-12,
+        )
+        if cost_improved or multiplier_changed:
             path = _OptimizationPath(
                 name=(f"Optimized path #{session.next_optimization_number}"),
                 order=optimized_order,
-                estimated_seconds=optimized_seconds,
+                estimated_seconds=estimated_seconds,
+                cost=optimized_cost,
+                vertical_movement_multiplier=(vertical_movement_multiplier),
+                calculation_seconds=calculation_seconds,
             )
             with _optimization_sessions_lock:
                 session.next_optimization_number += 1
@@ -1922,23 +2186,38 @@ def optimize_grid_path(request: Request) -> HTMLResponse:
                         *session.paths[-(MAX_OPTIMIZATION_HISTORY - 1) :],
                     ]
                 session.active_path_index = len(session.paths) - 1
-            improvement = starting_path.estimated_seconds - optimized_seconds
-            status = f"Found a path {_format_duration(improvement)} faster than the previous best."
+            if cost_improved:
+                improvement = starting_cost - optimized_cost
+                status = f"Found a path with {_format_duration(improvement)} lower cost."
+            else:
+                status = (
+                    "Saved the best known path with a "
+                    f"{vertical_movement_multiplier:g}× vertical "
+                    "movement multiplier; no lower-cost route was found."
+                )
         else:
             with _optimization_sessions_lock:
-                session.active_path_index = len(session.paths) - 1
-            path = session.paths[session.active_path_index]
-            status = f"No faster path found in {max_seconds:g} seconds."
+                session.active_path_index = starting_path_index
+            path = starting_path
+            status = f"No lower-cost path found in {max_seconds:g} seconds."
 
         optimized_grid = _grid_with_order(grid, path.order)
         context = _preview_context(
             optimized_grid,
-            grid_info_rows=[_grid_info_row(path.name, optimized_grid)],
+            grid_info_rows=[
+                _grid_info_row(
+                    path.name,
+                    optimized_grid,
+                    vertical_movement_multiplier=(vertical_movement_multiplier),
+                )
+            ],
+            vertical_movement_multiplier=(vertical_movement_multiplier),
             optimization_context=_optimization_context(
                 optimized_grid,
                 session_id=session_id,
                 session=session,
                 max_time_seconds=max_seconds,
+                vertical_movement_multiplier=(vertical_movement_multiplier),
                 status=status,
             ),
         )
@@ -1955,7 +2234,12 @@ def optimize_grid_path(request: Request) -> HTMLResponse:
 @app.get("/grid-designer/optimization/load", response_class=HTMLResponse)
 def load_optimized_grid_path(request: Request) -> HTMLResponse:
     try:
-        grid, _ = _requested_grid(request, include_info_rows=False)
+        (
+            grid,
+            _,
+            _,
+            vertical_movement_multiplier,
+        ) = _requested_grid(request, include_info_rows=False)
         max_seconds = _parse_optimization_time(request)
         session_id = request.query_params.get(
             "optimization_session_id",
@@ -1979,12 +2263,20 @@ def load_optimized_grid_path(request: Request) -> HTMLResponse:
         loaded_grid = _grid_with_order(grid, path.order)
         context = _preview_context(
             loaded_grid,
-            grid_info_rows=[_grid_info_row(path.name, loaded_grid)],
+            grid_info_rows=[
+                _grid_info_row(
+                    path.name,
+                    loaded_grid,
+                    vertical_movement_multiplier=(vertical_movement_multiplier),
+                )
+            ],
+            vertical_movement_multiplier=(vertical_movement_multiplier),
             optimization_context=_optimization_context(
                 loaded_grid,
                 session_id=session_id,
                 session=session,
                 max_time_seconds=max_seconds,
+                vertical_movement_multiplier=(vertical_movement_multiplier),
                 status=f"Loaded {path.name}.",
             ),
         )

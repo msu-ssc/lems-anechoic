@@ -17,6 +17,7 @@
                             <tr>
                                 <th scope="col">Grid</th>
                                 <th scope="col">Estimated travel time</th>
+                                <th scope="col">Cost</th>
                                 <th scope="col">Points</th>
                                 <th scope="col">Rows</th>
                             </tr>
@@ -28,6 +29,9 @@
                                     <td title="{{ '%.1f' | format(info.estimated_travel_time_seconds) }} seconds">
                                         {{ info.estimated_travel_time_label }}
                                     </td>
+                                    <td title="{{ '%.1f' | format(info.cost) }} weighted seconds">
+                                        {{ info.cost_label }}
+                                    </td>
                                     <td>{{ "{:,}".format(info.point_count) }}</td>
                                     <td>{{ info.row_count }}</td>
                                 </tr>
@@ -35,6 +39,13 @@
                         </tbody>
                     </table>
                 </div>
+                {% if coincident_point_summaries %}
+                    <ul class="coincident-point-summaries">
+                        {% for summary in coincident_point_summaries %}
+                            <li>{{ summary }}</li>
+                        {% endfor %}
+                    </ul>
+                {% endif %}
             </article>
         </section>
 
@@ -66,6 +77,21 @@
                                 <b>s</b>
                             </span>
                         </label>
+                        <label>
+                            Vertical movement multiplier
+                            <span class="number-input optimization-multiplier-input">
+                                <input
+                                    type="number"
+                                    name="vertical_movement_multiplier"
+                                    value="{{ vertical_movement_multiplier }}"
+                                    min="0.01"
+                                    max="100"
+                                    step="any"
+                                    required
+                                >
+                                <b>×</b>
+                            </span>
+                        </label>
                         <button
                             type="button"
                             class="primary-button"
@@ -93,7 +119,10 @@
                         <thead>
                             <tr>
                                 <th scope="col">Path</th>
+                                <th scope="col">Cost</th>
                                 <th scope="col">Estimated travel time</th>
+                                <th scope="col">Calculation time</th>
+                                <th scope="col">Vertical multiplier</th>
                                 <th scope="col"><span class="visually-hidden">Action</span></th>
                             </tr>
                         </thead>
@@ -101,9 +130,16 @@
                             {% for path in optimization_paths %}
                                 <tr{% if path.is_active %} class="active-optimization-path"{% endif %}>
                                     <th scope="row">{{ path.name }}</th>
+                                    <td title="{{ '%.1f' | format(path.cost) }} weighted seconds">
+                                        {{ path.cost_label }}
+                                    </td>
                                     <td title="{{ '%.1f' | format(path.estimated_travel_time_seconds) }} seconds">
                                         {{ path.estimated_travel_time_label }}
                                     </td>
+                                    <td{% if path.calculation_seconds is not none %} title="{{ '%.3f' | format(path.calculation_seconds) }} seconds"{% endif %}>
+                                        {{ path.calculation_time_label }}
+                                    </td>
+                                    <td>{{ path.vertical_movement_multiplier }}×</td>
                                     <td>
                                         <button
                                             type="button"
@@ -140,7 +176,7 @@
         </div>
 
         <div class="plot-grid">
-            <article class="plot-card">
+            <article class="plot-card plot-card--primary">
                 <header class="plot-card-heading">
                     <h3>Azimuth / elevation</h3>
                     <div
@@ -156,7 +192,7 @@
                 <div class="plot" data-plot-source="az-el-figure"></div>
                 <script id="az-el-figure" type="application/json">{{ az_el_figure_json | safe }}</script>
             </article>
-            <article class="plot-card">
+            <article class="plot-card plot-card--primary">
                 <header class="plot-card-heading">
                     <h3>Pan / tilt</h3>
                     <div

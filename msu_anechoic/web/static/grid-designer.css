@@ -385,6 +385,18 @@ h2 {
     font-weight: 400;
 }
 
+.coincident-point-summaries {
+    margin: 12px 0 0;
+    padding: 10px 0 0 20px;
+    border-top: 1px solid var(--border);
+    color: var(--text);
+    font-size: 14px;
+}
+
+.coincident-point-summaries li + li {
+    margin-top: 4px;
+}
+
 .path-optimization-section {
     margin-bottom: 26px;
 }
@@ -426,7 +438,15 @@ h2 {
     width: 120px;
 }
 
+.optimization-multiplier-input {
+    width: 150px;
+}
+
 .optimization-time-input input {
+    height: 34px;
+}
+
+.optimization-multiplier-input input {
     height: 34px;
 }
 
@@ -470,7 +490,7 @@ h2 {
 
 .optimization-history-table {
     width: 100%;
-    min-width: 480px;
+    min-width: 920px;
     border-collapse: collapse;
     font-variant-numeric: tabular-nums;
 }
@@ -954,6 +974,7 @@ legend span {
     padding: 4px;
 }
 
+.plot-card--primary,
 .plot-card--3d {
     grid-column: 1 / -1;
 }
