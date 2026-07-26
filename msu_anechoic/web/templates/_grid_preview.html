@@ -1,0 +1,263 @@
+<section id="grid-preview" class="preview-section" aria-live="polite">
+    {% if error %}
+        <div class="validation-message" role="alert">
+            <span aria-hidden="true">!</span>
+            <div>
+                <strong>Check the grid definition</strong>
+                <p>{{ error }}</p>
+            </div>
+        </div>
+    {% else %}
+        <section class="grid-info-section" aria-labelledby="grid-info-heading">
+            <article class="grid-info-card">
+                <h2 id="grid-info-heading">Grid info</h2>
+                <div class="grid-info-table-wrap">
+                    <table class="grid-info-table">
+                        <thead>
+                            <tr>
+                                <th scope="col">Grid</th>
+                                <th scope="col">Estimated travel time</th>
+                                <th scope="col">Cost</th>
+                                <th scope="col">Points</th>
+                                <th scope="col">Rows</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for info in grid_info_rows %}
+                                <tr{% if grid_info_rows | length > 1 and not loop.first %} class="grid-info-subgrid"{% endif %}>
+                                    <th scope="row">{{ info.name }}</th>
+                                    <td title="{{ '%.1f' | format(info.estimated_travel_time_seconds) }} seconds">
+                                        {{ info.estimated_travel_time_label }}
+                                    </td>
+                                    <td title="{{ '%.1f' | format(info.cost) }} weighted seconds">
+                                        {{ info.cost_label }}
+                                    </td>
+                                    <td>{{ "{:,}".format(info.point_count) }}</td>
+                                    <td>{{ info.row_count }}</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% if coincident_point_summaries %}
+                    <ul class="coincident-point-summaries">
+                        {% for summary in coincident_point_summaries %}
+                            <li>{{ summary }}</li>
+                        {% endfor %}
+                    </ul>
+                {% endif %}
+            </article>
+        </section>
+
+        <section class="path-optimization-section" aria-labelledby="path-optimization-heading">
+            <article class="path-optimization-card">
+                <div class="path-optimization-heading">
+                    <div>
+                        <h2 id="path-optimization-heading">Path optimization</h2>
+                        <p>Optimize the origin-to-grid-to-origin route in pan/tilt space.</p>
+                    </div>
+                    <form id="path-optimization-form" class="path-optimization-form">
+                        <input
+                            type="hidden"
+                            name="optimization_session_id"
+                            value="{{ optimization_session_id }}"
+                        >
+                        <label>
+                            Max time
+                            <span class="number-input optimization-time-input">
+                                <input
+                                    type="number"
+                                    name="optimization_max_time"
+                                    value="{{ optimization_max_time_seconds }}"
+                                    min="0.01"
+                                    max="60"
+                                    step="any"
+                                    required
+                                >
+                                <b>s</b>
+                            </span>
+                        </label>
+                        <label>
+                            Vertical movement multiplier
+                            <span class="number-input optimization-multiplier-input">
+                                <input
+                                    type="number"
+                                    name="vertical_movement_multiplier"
+                                    value="{{ vertical_movement_multiplier }}"
+                                    min="0.01"
+                                    max="100"
+                                    step="any"
+                                    required
+                                >
+                                <b>×</b>
+                            </span>
+                        </label>
+                        <button
+                            type="button"
+                            class="primary-button"
+                            hx-get="/grid-designer/optimize"
+                            hx-include="#grid-form, #path-optimization-form"
+                            hx-target="#grid-preview"
+                            hx-swap="outerHTML"
+                            hx-indicator="#optimization-indicator"
+                            hx-disabled-elt="this"
+                        >
+                            Calculate
+                        </button>
+                        <span id="optimization-indicator" class="htmx-indicator">
+                            Calculating…
+                        </span>
+                    </form>
+                </div>
+
+                {% if optimization_status %}
+                    <p class="optimization-status" role="status">{{ optimization_status }}</p>
+                {% endif %}
+
+                <div class="optimization-history-table-wrap">
+                    <table class="optimization-history-table">
+                        <thead>
+                            <tr>
+                                <th scope="col">Path</th>
+                                <th scope="col">Cost</th>
+                                <th scope="col">Estimated travel time</th>
+                                <th scope="col">Calculation time</th>
+                                <th scope="col">Vertical multiplier</th>
+                                <th scope="col"><span class="visually-hidden">Action</span></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for path in optimization_paths %}
+                                <tr{% if path.is_active %} class="active-optimization-path"{% endif %}>
+                                    <th scope="row">{{ path.name }}</th>
+                                    <td title="{{ '%.1f' | format(path.cost) }} weighted seconds">
+                                        {{ path.cost_label }}
+                                    </td>
+                                    <td title="{{ '%.1f' | format(path.estimated_travel_time_seconds) }} seconds">
+                                        {{ path.estimated_travel_time_label }}
+                                    </td>
+                                    <td{% if path.calculation_seconds is not none %} title="{{ '%.3f' | format(path.calculation_seconds) }} seconds"{% endif %}>
+                                        {{ path.calculation_time_label }}
+                                    </td>
+                                    <td>{{ path.vertical_movement_multiplier }}×</td>
+                                    <td>
+                                        <button
+                                            type="button"
+                                            class="text-button"
+                                            hx-get="/grid-designer/optimization/load"
+                                            hx-include="#grid-form, #path-optimization-form"
+                                            hx-vals='{"optimization_path": {{ path.index }}}'
+                                            hx-target="#grid-preview"
+                                            hx-swap="outerHTML"
+                                            hx-indicator="#optimization-indicator"
+                                            hx-disabled-elt="this"
+                                            {% if path.is_active or not optimization_session_id %}disabled{% endif %}
+                                        >
+                                            {% if path.is_active %}Loaded{% else %}Load{% endif %}
+                                        </button>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </article>
+        </section>
+
+        <div class="preview-heading">
+            <h2>Grid preview</h2>
+            <div class="grid-summary">
+                <span><strong>{{ "{:,}".format(grid.points | length) }}</strong> points</span>
+                <span><strong>{{ grid.row_count }}</strong> rows</span>
+                <span><strong>{{ grid.column_count }}</strong> columns</span>
+                <span><i class="start-key"></i> start</span>
+                <span><i class="end-key"></i> end</span>
+            </div>
+        </div>
+
+        <div class="plot-grid">
+            <article class="plot-card plot-card--primary">
+                <header class="plot-card-heading">
+                    <h3>Azimuth / elevation</h3>
+                    <div
+                        class="plot-visibility-controls"
+                        data-plot-visibility-controls="az-el-figure"
+                        aria-label="Azimuth and elevation plot visibility"
+                    >
+                        <label><input type="checkbox" value="ideal" checked> Show ideal</label>
+                        <label><input type="checkbox" value="quantized" checked> Show quantized</label>
+                        <label><input type="checkbox" value="path" checked> Show line segments</label>
+                    </div>
+                </header>
+                <div class="plot" data-plot-source="az-el-figure"></div>
+                <script id="az-el-figure" type="application/json">{{ az_el_figure_json | safe }}</script>
+            </article>
+            <article class="plot-card plot-card--primary">
+                <header class="plot-card-heading">
+                    <h3>Pan / tilt</h3>
+                    <div
+                        class="plot-visibility-controls"
+                        data-plot-visibility-controls="pan-tilt-figure"
+                        aria-label="Pan and tilt plot visibility"
+                    >
+                        <label><input type="checkbox" value="ideal" checked> Show ideal</label>
+                        <label><input type="checkbox" value="quantized" checked> Show quantized</label>
+                        <label><input type="checkbox" value="path" checked> Show line segments</label>
+                    </div>
+                </header>
+                <div class="plot" data-plot-source="pan-tilt-figure"></div>
+                <script id="pan-tilt-figure" type="application/json">{{ pan_tilt_figure_json | safe }}</script>
+            </article>
+            <article class="plot-card plot-card--3d">
+                <header class="plot-card-heading">
+                    <h3>3D pointing geometry</h3>
+                    <div class="three-dimensional-controls">
+                        <div
+                            class="plot-visibility-controls"
+                            data-plot-visibility-controls="three-dimensional-figure"
+                            aria-label="3D plot visibility"
+                        >
+                            <label><input type="checkbox" value="path" checked> Show line segments</label>
+                        </div>
+                        <div class="rotation-controls" aria-label="3D view rotation controls">
+                        <button type="button" data-rotation-toggle>Play</button>
+                        <label>
+                            <span>Rotation speed</span>
+                            <input
+                                type="range"
+                                min="0.25"
+                                max="10"
+                                step="0.25"
+                                value="1"
+                                data-rotation-speed
+                            >
+                            <output data-rotation-speed-output>1×</output>
+                        </label>
+                        </div>
+                    </div>
+                </header>
+                <div class="plot plot--3d" data-plot-source="three-dimensional-figure"></div>
+                <script id="three-dimensional-figure" type="application/json">{{ three_dimensional_figure_json | safe }}</script>
+            </article>
+            <article class="plot-card">
+                <header class="plot-card-heading">
+                    <h3>Azimuth / elevation quantization error</h3>
+                </header>
+                <div class="plot" data-plot-source="az-el-error-figure"></div>
+                <script id="az-el-error-figure" type="application/json">{{ az_el_error_figure_json | safe }}</script>
+            </article>
+            <article class="plot-card">
+                <header class="plot-card-heading">
+                    <h3>Pan / tilt quantization error</h3>
+                </header>
+                <div class="plot" data-plot-source="pan-tilt-error-figure"></div>
+                <script id="pan-tilt-error-figure" type="application/json">{{ pan_tilt_error_figure_json | safe }}</script>
+            </article>
+        </div>
+
+        <p class="path-note">
+            Traversal starts at the top-left corner in the selected input system. Each following
+            row starts from the endpoint closest to the preceding row.
+        </p>
+    {% endif %}
+</section>
