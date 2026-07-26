@@ -1,6 +1,12 @@
 # lems-anechoic
 LEMS anechoic chamber test scripts
 
+## Branches
+
+`main` has the `current` version. It should only ever be modified by PRs from feature branches.
+
+`turntable-revamp` is a long-term project to make a sort of "version 2.0". It should usually be modified by PRs from feature branches, but simple pushes straight to the branch are fine.
+
 > [!CAUTION]  
 > Remember, CUI/ITAR/etc. data (including code/config files/design docs) does not belong on GitHub at all.
 
