@@ -59,13 +59,11 @@ class Turntable:
         logger: "logging.Logger | None" = None,
         csv_file_path: str | Path | None = None,
         show_move_debug: bool = False,
-        neutral_elevation: float = 0.0,
     ):
         self.port = port
         self.baudrate = baudrate
         self.timeout = timeout
         self._show_move_debug = show_move_debug
-        self.neutral_elevation = neutral_elevation
         self.logger = logger or create_null_logger()
         self._serial = serial.Serial(
             port=self.port,
@@ -107,7 +105,6 @@ class Turntable:
         logger: "logging.Logger | None" = None,
         csv_file_path: str | Path | None = None,
         show_move_debug: bool = False,
-        neutral_elevation: float = 0.0,
     ) -> "Turntable":
         """Attempt to find a turntable by iterating over all available serial ports.
 
@@ -120,7 +117,6 @@ class Turntable:
             logger (logging.Logger | None, optional): _description_. Defaults to None.
             csv_file_path (str | Path | None, optional): _description_. Defaults to None.
             show_move_debug (bool, optional): _description_. Defaults to False.
-            neutral_elevation (float, optional): _description_. Defaults to 0.0.
 
         Returns:
             Turntable: _description_
@@ -141,7 +137,6 @@ class Turntable:
                     logger=logger,
                     csv_file_path=csv_file_path,
                     show_move_debug=show_move_debug,
-                    neutral_elevation=neutral_elevation,
                 )
                 for _ in range(10):
                     position = rv.get_position()
@@ -332,7 +327,6 @@ class Turntable:
         rv = Coordinate.from_turntable(
             azimuth=actual_position.azimuth,
             elevation=actual_position.elevation,
-            neutral_elevation=self.neutral_elevation,
         )
         return rv
 
@@ -386,10 +380,6 @@ class Turntable:
         Approximately -90 to +45 elevation and -175 to +175 azimuth."""
         if absolute_elevation is None:
             absolute_elevation = self._convert_from_regime_elevation(within_regime_elevation)
-
-        # Handle the absolute elevation offset
-        if self.neutral_elevation:
-            absolute_elevation += self.neutral_elevation
 
         # Validate azimuth within bounds
         if not self.ABSOLUTE_AZIMUTH_BOUNDS[0] <= absolute_azimuth <= self.ABSOLUTE_AZIMUTH_BOUNDS[1]:

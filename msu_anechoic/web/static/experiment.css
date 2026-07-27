@@ -9,6 +9,18 @@
     max-width: 52rem;
 }
 
+.experiment-page-heading .heading-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.75rem;
+}
+
+.heading-actions .secondary-button {
+    text-decoration: none;
+    white-space: nowrap;
+}
+
 .experiment-state {
     flex: 0 0 auto;
     border: 1px solid var(--border);
@@ -200,11 +212,37 @@
     gap: 1rem;
 }
 
+.progress-stack {
+    display: grid;
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+}
+
+.progress-summary small {
+    display: block;
+    margin-top: -0.75rem;
+    color: var(--text-muted);
+}
+
 .progress-summary progress {
     width: 100%;
     height: 0.7rem;
     margin: 0.75rem 0 1.1rem;
     accent-color: var(--accent);
+}
+
+.graph-workspace {
+    grid-template-columns: 1fr;
+}
+
+.path-plot-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+}
+
+.graph-feedback {
+    grid-column: 1 / -1;
 }
 
 .output-mode {
@@ -299,8 +337,11 @@
 }
 
 .polar-plot {
+    min-width: 0;
     width: 100%;
     min-height: 430px;
+    overflow: hidden;
+    contain: layout paint;
 }
 
 .path-plot {
@@ -315,6 +356,10 @@
 
     .plan-panel {
         grid-row: auto;
+    }
+
+    .path-plot-grid {
+        grid-template-columns: 1fr;
     }
 }
 

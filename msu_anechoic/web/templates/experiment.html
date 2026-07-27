@@ -21,7 +21,6 @@
         </script>
         <link rel="stylesheet" href="{{ url_for('static', path='grid-designer.css') }}">
         <link rel="stylesheet" href="{{ url_for('static', path='experiment.css') }}">
-        <script src="/vendor/plotly.min.js" defer></script>
         <script src="{{ url_for('static', path='experiment.js') }}" defer></script>
     </head>
     <body>
@@ -76,7 +75,10 @@
                     <h1>Experiment</h1>
                     <p>Load a JSON experiment definition, review its measurement plan, and run it with the shared turntable controller.</p>
                 </div>
-                <span class="experiment-state" data-experiment-state>NO EXPERIMENT</span>
+                <div class="heading-actions">
+                    <a class="secondary-button" href="/experiment/graphs">Open graphs</a>
+                    <span class="experiment-state" data-experiment-state>NO EXPERIMENT</span>
+                </div>
             </div>
 
             <div class="experiment-workspace">
@@ -126,7 +128,7 @@
                     </p>
                     <dl class="experiment-facts">
                         <div><dt>Points</dt><dd data-total-points>—</dd></div>
-                        <div><dt>Neutral elevation</dt><dd data-neutral-elevation>—</dd></div>
+                        <div><dt>Total travel</dt><dd data-total-travel>—</dd></div>
                         <div><dt>Output</dt><dd data-output-folder>—</dd></div>
                         <div><dt>Data</dt><dd data-data-products>—</dd></div>
                     </dl>
@@ -140,10 +142,11 @@
                                     <th>Range</th>
                                     <th>Step</th>
                                     <th>Points</th>
+                                    <th>Travel</th>
                                 </tr>
                             </thead>
                             <tbody data-cut-list>
-                                <tr><td colspan="6">No cuts loaded.</td></tr>
+                                <tr><td colspan="7">No cuts loaded.</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -157,12 +160,22 @@
                         </div>
                     </div>
 
-                    <div class="progress-summary" aria-live="polite">
-                        <div>
-                            <span data-progress-label>Waiting for an experiment.</span>
-                            <strong data-progress-count>—</strong>
+                    <div class="progress-stack" aria-live="polite">
+                        <div class="progress-summary">
+                            <div><span>Overall points visited</span><strong data-points-progress-count>—</strong></div>
+                            <progress data-points-progress-bar max="1" value="0">0%</progress>
+                            <small data-points-time>Waiting for an experiment.</small>
                         </div>
-                        <progress data-progress-bar max="1" value="0">0%</progress>
+                        <div class="progress-summary">
+                            <div><span>Overall cuts</span><strong data-cuts-progress-count>—</strong></div>
+                            <progress data-cuts-progress-bar max="1" value="0">0%</progress>
+                            <small data-cuts-time>—</small>
+                        </div>
+                        <div class="progress-summary">
+                            <div><span>Points within current cut</span><strong data-cut-points-progress-count>—</strong></div>
+                            <progress data-cut-points-progress-bar max="1" value="0">0%</progress>
+                            <small data-cut-points-time>—</small>
+                        </div>
                     </div>
 
                     <form data-start-form>
@@ -186,33 +199,6 @@
                     <p class="experiment-feedback" data-feedback role="status" aria-live="polite">Load an experiment definition to begin.</p>
                 </section>
 
-                <section class="experiment-panel path-panel" aria-labelledby="path-heading" data-path-panel hidden>
-                    <div class="experiment-panel-heading">
-                        <div>
-                            <p class="section-kicker">Live route</p>
-                            <h2 id="path-heading">Defined pan / tilt coordinates</h2>
-                        </div>
-                        <span data-path-position>Actual position unavailable</span>
-                    </div>
-                    <p class="results-description">
-                        Light gray points are pending; visited points and route segments turn dark gray. The current target is red and the measured position is green.
-                    </p>
-                    <div class="path-plot" data-path-plot aria-label="Experiment pan and tilt route"></div>
-                </section>
-
-                <section class="experiment-panel results-panel" aria-labelledby="results-heading" data-results-panel hidden>
-                    <div class="experiment-panel-heading">
-                        <div>
-                            <p class="section-kicker">Measured response</p>
-                            <h2 id="results-heading">Polar cuts</h2>
-                        </div>
-                        <span data-results-path>—</span>
-                    </div>
-                    <p class="results-description">
-                        Amplitudes are normalized independently so each trace peaks at 0 dB. Hover a point for its measured angle and absolute dBm value.
-                    </p>
-                    <div class="polar-plot-grid" data-polar-plots></div>
-                </section>
             </div>
         </main>
     </body>

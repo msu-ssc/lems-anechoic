@@ -118,6 +118,9 @@ class ExperimentWebService:
                 )
 
             parameters = self._parameters.model_copy(deep=True)
+            estimates = experiment.measurement_plan_estimates(
+                parameters.cuts or {},
+            )
             cancel_event = threading.Event()
             self._cancel_event = cancel_event
             self._active_turntable = turntable
@@ -126,6 +129,9 @@ class ExperimentWebService:
             self._progress = {
                 "completed_points": 0,
                 "total_points": _total_points(parameters),
+                "completed_cuts": 0,
+                "cut_count": len(parameters.cuts or {}),
+                "estimated_total_travel_seconds": estimates["travel_seconds"],
             }
             self._started_at = datetime.datetime.now(tz=UTC)
             self._finished_at = None
@@ -293,13 +299,6 @@ class ExperimentWebService:
     def _validate_for_run(parameters: experiment.ExperimentParameters) -> None:
         if not parameters.cuts:
             raise ValueError("The loaded experiment must define at least one cut")
-        missing_neutral = [
-            cut_id
-            for cut_id, cut in parameters.cuts.items()
-            if cut.neutral_elevation is None and parameters.neutral_elevation is None
-        ]
-        if missing_neutral:
-            raise ValueError(f"Set neutral_elevation for cuts: {', '.join(map(str, missing_neutral))}")
 
 
 def _total_points(parameters: experiment.ExperimentParameters) -> int:
@@ -314,6 +313,10 @@ def _cut_point_count(cut: experiment.CutDefinition) -> int:
 
 
 def _parameters_summary(parameters: experiment.ExperimentParameters) -> dict[str, Any]:
+    estimates = experiment.measurement_plan_estimates(
+        parameters.cuts or {},
+    )
+    estimates_by_id = {item["id"]: item for item in estimates["cuts"]}
     cuts = []
     if parameters.cuts:
         for cut_id, cut in parameters.cuts.items():
@@ -326,15 +329,17 @@ def _parameters_summary(parameters: experiment.ExperimentParameters) -> dict[str
                     "end_angle": cut.end_angle,
                     "step_size": cut.step_size,
                     "point_count": _cut_point_count(cut),
+                    **estimates_by_id[str(cut_id)],
                 }
             )
     return {
         "short_description": parameters.short_description,
         "long_description": parameters.long_description,
         "output_folder": str(parameters.relative_folder_path),
-        "neutral_elevation": parameters.neutral_elevation,
         "cuts": cuts,
         "total_points": _total_points(parameters),
+        "travel_seconds": estimates["travel_seconds"],
+        "return_home_seconds": estimates["return_home_seconds"],
         "collect_center_frequency_data": parameters.collect_center_frequency_data,
         "collect_peak_data": parameters.collect_peak_data,
         "collect_trace_data": parameters.collect_trace_data,
@@ -356,25 +361,20 @@ def _plan_cuts(parameters: experiment.ExperimentParameters) -> list[dict[str, An
     plan_cuts = []
     point_index = 0
     for cut_id, cut in (parameters.cuts or {}).items():
-        neutral_elevation = (
-            cut.neutral_elevation
-            if cut.neutral_elevation is not None
-            else parameters.neutral_elevation
-        )
         points = []
-        if neutral_elevation is not None:
-            resolved_cut = cut.model_copy(update={"neutral_elevation": neutral_elevation})
-            for point_in_cut, coordinate in enumerate(resolved_cut.coordinates, start=1):
-                point_index += 1
-                points.append(
-                    {
-                        "cut_id": str(cut_id),
-                        "point_index": point_index,
-                        "point_in_cut": point_in_cut,
-                        "pan": coordinate.absolute_turntable_azimuth,
-                        "tilt": coordinate.absolute_turntable_elevation,
-                    }
-                )
+        for point_in_cut, coordinate in enumerate(cut.coordinates, start=1):
+            point_index += 1
+            points.append(
+                {
+                    "cut_id": str(cut_id),
+                    "point_index": point_index,
+                    "point_in_cut": point_in_cut,
+                    "pan": coordinate.pan,
+                    "tilt": coordinate.tilt,
+                    "azimuth": coordinate.antenna_azimuth,
+                    "elevation": coordinate.antenna_elevation,
+                }
+            )
         plan_cuts.append(
             {
                 "id": str(cut_id),
@@ -437,10 +437,21 @@ def _polar_results(
                 visited_points.add((cut_id, int(point_index)))
             definition = cut_definitions.get(cut_id)
             direction = definition.direction if definition is not None else _infer_cut_direction(row)
-            angle = _cut_angle(row, direction)
+            pan = _position_value(row, "pan")
+            tilt = _position_value(row, "tilt")
+            if pan is None or tilt is None:
+                continue
+            converted = experiment.Coordinate.from_turntable(
+                azimuth=pan,
+                elevation=tilt,
+            )
+            azimuth = _position_value(row, "azimuth")
+            elevation = _position_value(row, "elevation")
+            azimuth = converted.antenna_azimuth if azimuth is None else azimuth
+            elevation = converted.antenna_elevation if elevation is None else elevation
             center_amplitude = _finite_float(row.get("center_amplitude"))
             peak_amplitude = _finite_float(row.get("peak_amplitude"))
-            if angle is None or (center_amplitude is None and peak_amplitude is None):
+            if center_amplitude is None and peak_amplitude is None:
                 continue
             cut = cuts.setdefault(
                 cut_id,
@@ -448,13 +459,19 @@ def _polar_results(
                     "id": cut_id,
                     "direction": direction,
                     "fixed_angle": definition.fixed_angle if definition is not None else None,
-                    "angles": [],
+                    "pan_angles": [],
+                    "tilt_angles": [],
+                    "azimuth_angles": [],
+                    "elevation_angles": [],
                     "point_indexes": [],
                     "center_amplitudes_dbm": [],
                     "peak_amplitudes_dbm": [],
                 },
             )
-            cut["angles"].append(angle)
+            cut["pan_angles"].append(pan)
+            cut["tilt_angles"].append(tilt)
+            cut["azimuth_angles"].append(azimuth)
+            cut["elevation_angles"].append(elevation)
             cut["point_indexes"].append(_finite_float(row.get("point_index")))
             cut["center_amplitudes_dbm"].append(center_amplitude)
             cut["peak_amplitudes_dbm"].append(peak_amplitude)
@@ -497,12 +514,9 @@ def _infer_cut_direction(row: dict[str, str | None]) -> str:
     return "vertical"
 
 
-def _cut_angle(row: dict[str, str | None], direction: str) -> float | None:
-    if direction == "horizontal":
-        actual = _finite_float(row.get("actual_azimuth"))
-        return actual if actual is not None else _finite_float(row.get("commanded_azimuth"))
-    actual = _finite_float(row.get("actual_elevation"))
-    return actual if actual is not None else _finite_float(row.get("commanded_elevation"))
+def _position_value(row: dict[str, str | None], axis: str) -> float | None:
+    actual = _finite_float(row.get(f"actual_{axis}"))
+    return actual if actual is not None else _finite_float(row.get(f"commanded_{axis}"))
 
 
 def _finite_float(value: str | None) -> float | None:

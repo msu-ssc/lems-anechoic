@@ -2119,6 +2119,14 @@ def experiment_control(request: Request) -> HTMLResponse:
     )
 
 
+@app.get("/experiment/graphs", response_class=HTMLResponse)
+def experiment_graphs(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request=request,
+        name="experiment_graphs.html",
+    )
+
+
 @app.get("/experiment/status")
 def experiment_status() -> dict:
     return experiment_service.snapshot()

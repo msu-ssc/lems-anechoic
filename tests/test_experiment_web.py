@@ -15,6 +15,7 @@ from msu_anechoic.web.app import WEB_ROOT
 from msu_anechoic.web.app import _ExperimentLoadRequest
 from msu_anechoic.web.app import app
 from msu_anechoic.web.app import experiment_control
+from msu_anechoic.web.app import experiment_graphs
 from msu_anechoic.web.app import load_experiment
 from msu_anechoic.web.experiment import ExperimentWebService
 from msu_anechoic.web.experiment import experiment_service
@@ -44,7 +45,6 @@ def experiment_definition(**updates):
         "short_description": "web-test",
         "long_description": "A test loaded through the web interface.",
         "relative_folder_path": "experiments/web-test",
-        "neutral_elevation": 5,
         "cuts": {
             "AZIMUTH": {
                 "direction": "horizontal",
@@ -75,11 +75,21 @@ def test_experiment_page_has_load_run_and_abort_controls():
     assert 'data-file-load-form' in body
     assert 'data-start-form' in body
     assert 'data-abort' in body
-    assert 'data-path-panel' in body
-    assert 'data-results-panel' in body
+    assert 'href="/experiment/graphs"' in body
     assert 'name="output_mode" value="continue"' in body
-    assert '<script src="/vendor/plotly.min.js" defer></script>' in body
+    assert "Overall points visited" in body
+    assert "Overall cuts" in body
+    assert "Points within current cut" in body
     assert any(getattr(route, "path", None) == "/experiment" for route in app.routes)
+
+    graph_response = experiment_graphs(page_request("/experiment/graphs"))
+    graph_body = graph_response.body.decode()
+    assert graph_response.status_code == 200
+    assert "<h1>Experiment Graphs</h1>" in graph_body
+    assert 'data-path-plot="pan-tilt"' in graph_body
+    assert 'data-path-plot="az-el"' in graph_body
+    assert 'data-polar-group="horizontal"' in graph_body
+    assert 'data-polar-group="vertical"' in graph_body
 
 
 def test_load_endpoint_validates_and_summarizes_definition():
@@ -95,6 +105,43 @@ def test_load_endpoint_validates_and_summarizes_definition():
     assert payload["experiment"]["short_description"] == "web-test"
     assert payload["experiment"]["total_points"] == 3
     assert payload["experiment"]["cuts"][0]["point_count"] == 3
+    assert payload["experiment"]["travel_seconds"] > 0
+    assert payload["experiment"]["cuts"][0]["travel_seconds"] > 0
+
+
+def test_measurement_plan_travel_connects_cuts_and_returns_home():
+    cuts = {
+        "first": experiment.CutDefinition(
+            direction="horizontal",
+            start_angle=-10,
+            end_angle=10,
+            step_size=10,
+            fixed_angle=0,
+        ),
+        "second": experiment.CutDefinition(
+            direction="vertical",
+            start_angle=-5,
+            end_angle=5,
+            step_size=5,
+            fixed_angle=20,
+        ),
+    }
+
+    estimates = experiment.measurement_plan_estimates(
+        cuts,
+    )
+
+    first, second = estimates["cuts"]
+    transition = experiment.estimate_move_time((10, 0), (20, -5))
+    assert second["travel_seconds"] >= transition
+    assert estimates["return_home_seconds"] == pytest.approx(
+        experiment.estimate_move_time((20, 5), (0, 0))
+    )
+    assert estimates["travel_seconds"] == pytest.approx(
+        first["travel_seconds"]
+        + second["travel_seconds"]
+        + estimates["return_home_seconds"]
+    )
 
 
 def test_load_endpoint_rejects_output_outside_experiments_folder():
@@ -129,9 +176,44 @@ def test_available_definitions_and_server_load(tmp_path):
     assert Path(payload["experiment"]["output_folder"]) == definition_path.parent
 
 
-def test_sample_results_are_returned_as_normalized_polar_cuts():
+def test_results_are_returned_in_both_coordinate_frames(tmp_path):
+    root = tmp_path / "experiments"
+    folder = root / "sample"
+    folder.mkdir(parents=True)
+    (folder / "parameters.json").write_text(
+        json.dumps(
+            experiment_definition(
+                relative_folder_path=None,
+                cuts={
+                    "horizontal": {
+                        "direction": "horizontal",
+                        "start_angle": -10,
+                        "end_angle": 10,
+                        "step_size": 10,
+                        "fixed_angle": 0,
+                    },
+                    "vertical": {
+                        "direction": "vertical",
+                        "start_angle": -10,
+                        "end_angle": 10,
+                        "step_size": 10,
+                        "fixed_angle": 0,
+                    },
+                },
+            )
+        )
+    )
+    csv_path = folder / "raw_data" / "data.csv"
+    csv_path.parent.mkdir()
+    csv_path.write_text(
+        "point_index,cut_id,actual_pan,actual_tilt,center_amplitude,peak_amplitude\n"
+        "1,horizontal,-10,0,-42,-40\n"
+        "2,horizontal,0,0,-39,-38\n"
+        "4,vertical,0,-10,-43,-41\n"
+        "5,vertical,0,0,-40,-39\n"
+    )
     service = ExperimentWebService(
-        experiments_root=Path("experiments").resolve(),
+        experiments_root=root,
         turntable_provider=lambda: None,
     )
     loaded = service.load_server_definition("sample/parameters.json")
@@ -143,27 +225,29 @@ def test_sample_results_are_returned_as_normalized_polar_cuts():
     plan_cuts = {cut["id"]: cut for cut in plan["cuts"]}
     assert set(cuts) == {"horizontal", "vertical"}
     assert set(plan_cuts) == {"horizontal", "vertical"}
-    assert len(cuts["horizontal"]["angles"]) == 21
-    assert len(cuts["vertical"]["angles"]) == 11
-    assert len(plan_cuts["horizontal"]["points"]) == 21
-    assert len(plan_cuts["vertical"]["points"]) == 11
+    assert cuts["horizontal"]["pan_angles"] == [-10.0, 0.0]
+    assert cuts["vertical"]["tilt_angles"] == [-10.0, 0.0]
+    assert cuts["horizontal"]["azimuth_angles"][0] == pytest.approx(-10)
+    assert cuts["vertical"]["elevation_angles"][0] == pytest.approx(-10)
+    assert len(plan_cuts["horizontal"]["points"]) == 3
+    assert len(plan_cuts["vertical"]["points"]) == 3
     assert plan_cuts["horizontal"]["points"][0] == {
         "cut_id": "horizontal",
         "point_index": 1,
         "point_in_cut": 1,
-        "pan": -50,
+        "pan": -10,
         "tilt": 0,
+        "azimuth": -10,
+        "elevation": 0,
     }
-    assert plan_cuts["vertical"]["points"][0]["point_index"] == 22
+    assert plan_cuts["vertical"]["points"][0]["point_index"] == 4
     assert plan_cuts["vertical"]["points"][0]["pan"] == 0
-    assert plan_cuts["vertical"]["points"][0]["tilt"] == -25
-    assert cuts["horizontal"]["angles"][0] == pytest.approx(-49.89)
-    assert cuts["vertical"]["angles"][-1] == pytest.approx(24.9, abs=0.01)
+    assert plan_cuts["vertical"]["points"][0]["tilt"] == -10
     assert max(cuts["horizontal"]["peak"]["normalized_db"]) == 0
     assert max(cuts["vertical"]["center"]["normalized_db"]) == 0
-    assert cuts["horizontal"]["peak"]["absolute_dbm"][0] == pytest.approx(-119)
+    assert cuts["horizontal"]["peak"]["absolute_dbm"][0] == pytest.approx(-40)
     assert payload["visited_points"][0] == {"cut_id": "horizontal", "point_index": 1}
-    assert payload["visited_points"][-1] == {"cut_id": "vertical", "point_index": 32}
+    assert payload["visited_points"][-1] == {"cut_id": "vertical", "point_index": 5}
 
 
 def test_server_load_uses_selected_folder_for_results_and_output(tmp_path):
@@ -242,7 +326,6 @@ def test_experiment_point_uses_turntable2_pan_tilt_and_observed_position(tmp_pat
     parameters = experiment.ExperimentParameters(
         short_description="point",
         relative_folder_path=tmp_path,
-        neutral_elevation=5,
     )
     runner = experiment.Experiment(parameters=parameters)
     runner.turntable = FakeExperimentTurntable()
@@ -250,13 +333,13 @@ def test_experiment_point_uses_turntable2_pan_tilt_and_observed_position(tmp_pat
     runner.results = experiment.ExperimentResults()
     runner.cancel_event = threading.Event()
     runner.progress_callback = None
-    point = Coordinate.from_absolute_turntable(azimuth=12, elevation=-7, neutral_elevation=5)
+    point = Coordinate.from_turntable(azimuth=12, elevation=-7)
 
     runner._run_experiment_at_point(point=point, cut_id="cut", point_index=1)
 
     assert runner.turntable.commands == [(12, -7, 120.0)]
-    assert runner.results.datapoints[0].actual_coordinate.absolute_turntable_azimuth == 12
-    assert runner.results.datapoints[0].actual_coordinate.absolute_turntable_elevation == -7
+    assert runner.results.datapoints[0].actual_coordinate.pan == 12
+    assert runner.results.datapoints[0].actual_coordinate.tilt == -7
     assert parameters.raw_data_csv_path.is_file()
 
 
@@ -354,7 +437,6 @@ def test_experiment_continue_skips_existing_cut_point_pairs(monkeypatch, tmp_pat
     parameters = experiment.ExperimentParameters(
         short_description="resume",
         relative_folder_path=tmp_path,
-        neutral_elevation=0,
         cuts={
             "AZIMUTH": experiment.CutDefinition(
                 direction="horizontal",
@@ -426,21 +508,22 @@ def test_background_service_aborts_cooperatively():
 
 def test_experiment_script_loads_json_and_polls_status():
     script = (WEB_ROOT / "static" / "experiment.js").read_text()
+    graph_script = (WEB_ROOT / "static" / "experiment-graphs.js").read_text()
 
     assert 'requestJson("/experiment/load"' in script
     assert 'requestJson("/experiment/start"' in script
     assert 'requestJson("/experiment/abort"' in script
-    assert 'requestJson("/experiment/results"' in script
-    assert 'requestJson("/experiment/plan"' in script
-    assert 'requestJson("/turntable/status?max_time=1&max_points=1"' in script
-    assert 'type: "scatterpolar"' in script
-    assert 'name: "Travelling to"' in script
-    assert 'name: "Actual position"' in script
-    assert 'name: "Pending points"' in script
-    assert 'name: "Visited points"' in script
-    assert 'const pendingPlots = payload.cuts.map' in script
-    assert 'window.requestAnimationFrame' in script
-    assert 'window.Plotly?.purge(plot)' in script
-    assert 'expectedResultsKey === desiredResultsKey' in script
-    assert "`${payload.results.path}:${payload.results.version}`" in script
     assert 'window.setInterval(refreshStatus, 1000)' in script
+    assert 'requestJson("/experiment/results"' in graph_script
+    assert 'requestJson("/experiment/plan"' in graph_script
+    assert 'requestJson("/turntable/status?max_time=1&max_points=1"' in graph_script
+    assert 'type: "scatterpolar"' in graph_script
+    assert 'name: "Travelling to"' in graph_script
+    assert 'name: "Actual position"' in graph_script
+    assert 'name: "Pending points"' in graph_script
+    assert 'name: "Visited points"' in graph_script
+    assert 'pan_angles' in graph_script
+    assert 'azimuth_angles' in graph_script
+    assert "const pendingPlots = POLAR_DEFINITIONS[direction].map" in graph_script
+    assert graph_script.count("window.requestAnimationFrame") >= 2
+    assert "width: plot.clientWidth" in graph_script
