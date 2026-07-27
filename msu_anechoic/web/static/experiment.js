@@ -2,9 +2,18 @@
 
 let statusTimer = null;
 let statusRequestInFlight = false;
+let turntableRequestInFlight = false;
 let resultsRequestInFlight = false;
+let planRequestInFlight = false;
 let desiredResultsKey = null;
+let desiredResultsPath = null;
 let displayedResultsKey = null;
+let desiredPlanVersion = null;
+let displayedPlanVersion = null;
+let pathPlan = null;
+let latestExperimentStatus = null;
+let latestTurntableStatus = null;
+let visitedPointKeys = new Set();
 let polarRenderGeneration = 0;
 
 function setMenuOpen(isOpen) {
@@ -127,12 +136,230 @@ function polarTrace(cut, seriesName, label, color, floor) {
     };
 }
 
+function pointKey(cutId, pointIndex) {
+    return `${cutId}:${pointIndex}`;
+}
+
+function pathPointHover(point) {
+    return [
+        point.cut_id,
+        point.point_index,
+        point.point_in_cut,
+        point.pan,
+        point.tilt,
+    ];
+}
+
+function routeLineCoordinates(cuts, isVisitedSegment) {
+    const x = [];
+    const y = [];
+    cuts.forEach((cut) => {
+        for (let index = 1; index < cut.points.length; index += 1) {
+            const previous = cut.points[index - 1];
+            const current = cut.points[index];
+            const visited = visitedPointKeys.has(pointKey(current.cut_id, current.point_index));
+            if (visited !== isVisitedSegment) continue;
+            x.push(previous.pan, current.pan, null);
+            y.push(previous.tilt, current.tilt, null);
+        }
+    });
+    return { x, y };
+}
+
+function pathPointCoordinates(cuts, isVisited) {
+    const x = [];
+    const y = [];
+    const customdata = [];
+    cuts.forEach((cut) => {
+        cut.points.forEach((point) => {
+            const visited = visitedPointKeys.has(pointKey(point.cut_id, point.point_index));
+            if (visited !== isVisited) return;
+            x.push(point.pan);
+            y.push(point.tilt);
+            customdata.push(pathPointHover(point));
+        });
+    });
+    return { x, y, customdata };
+}
+
+function renderPathPlot() {
+    const panel = document.querySelector("[data-path-panel]");
+    const plot = document.querySelector("[data-path-plot]");
+    const loaded = Boolean(latestExperimentStatus?.loaded);
+    panel.hidden = !loaded;
+    if (!loaded || !pathPlan || !window.Plotly) {
+        if (!loaded) {
+            window.Plotly?.purge(plot);
+            plot.replaceChildren();
+        }
+        return;
+    }
+
+    const pendingColor = "#aeb6c2";
+    const visitedColor = "#555e6b";
+    const targetColor = cssColor("--plot-origin", "#d62728");
+    const actualColor = cssColor("--plot-source", "#2ca02c");
+    const pendingLines = routeLineCoordinates(pathPlan.cuts, false);
+    const visitedLines = routeLineCoordinates(pathPlan.cuts, true);
+    const pendingPoints = pathPointCoordinates(pathPlan.cuts, false);
+    const visitedPoints = pathPointCoordinates(pathPlan.cuts, true);
+    const traces = [
+        {
+            type: "scatter",
+            mode: "lines",
+            name: "Pending route",
+            ...pendingLines,
+            line: { color: pendingColor, width: 2 },
+            hoverinfo: "skip",
+        },
+        {
+            type: "scatter",
+            mode: "lines",
+            name: "Visited route",
+            ...visitedLines,
+            line: { color: visitedColor, width: 3 },
+            hoverinfo: "skip",
+        },
+        {
+            type: "scatter",
+            mode: "markers",
+            name: "Pending points",
+            ...pendingPoints,
+            marker: { color: pendingColor, size: 6 },
+            hovertemplate:
+                "Pending point %{customdata[1]:.0f}" +
+                "<br>Cut %{customdata[0]}" +
+                "<br>Cut point %{customdata[2]:.0f}" +
+                "<br>Pan %{x:.2f}°" +
+                "<br>Tilt %{y:.2f}°<extra></extra>",
+        },
+        {
+            type: "scatter",
+            mode: "markers",
+            name: "Visited points",
+            ...visitedPoints,
+            marker: { color: visitedColor, size: 7 },
+            hovertemplate:
+                "Visited point %{customdata[1]:.0f}" +
+                "<br>Cut %{customdata[0]}" +
+                "<br>Cut point %{customdata[2]:.0f}" +
+                "<br>Pan %{x:.2f}°" +
+                "<br>Tilt %{y:.2f}°<extra></extra>",
+        },
+    ];
+
+    const target =
+        latestExperimentStatus.state === "running"
+            ? latestExperimentStatus.progress.target
+            : null;
+    if (target && Number.isFinite(target.pan) && Number.isFinite(target.tilt)) {
+        traces.push({
+            type: "scatter",
+            mode: "markers",
+            name: "Travelling to",
+            x: [target.pan],
+            y: [target.tilt],
+            marker: {
+                color: targetColor,
+                size: 16,
+                symbol: "diamond",
+                line: { color: cssColor("--text", "#ffffff"), width: 2 },
+            },
+            hovertemplate: "Travelling to<br>Pan %{x:.2f}°<br>Tilt %{y:.2f}°<extra></extra>",
+        });
+    }
+
+    const actual = latestTurntableStatus?.state?.corrected_position;
+    const positionLabel = document.querySelector("[data-path-position]");
+    if (actual && Number.isFinite(actual.pan) && Number.isFinite(actual.tilt)) {
+        positionLabel.textContent = `Actual pan ${angle(actual.pan)} · tilt ${angle(actual.tilt)}`;
+        traces.push({
+            type: "scatter",
+            mode: "markers",
+            name: "Actual position",
+            x: [actual.pan],
+            y: [actual.tilt],
+            marker: {
+                color: actualColor,
+                size: 15,
+                symbol: "circle",
+                line: { color: cssColor("--text", "#ffffff"), width: 2 },
+            },
+            hovertemplate: "Actual position<br>Pan %{x:.2f}°<br>Tilt %{y:.2f}°<extra></extra>",
+        });
+    } else {
+        positionLabel.textContent = "Actual position unavailable";
+    }
+
+    window.requestAnimationFrame(() => {
+        if (!plot.isConnected || panel.hidden) return;
+        window.Plotly.react(
+            plot,
+            traces,
+            {
+                margin: { t: 20, r: 35, b: 70, l: 70 },
+                paper_bgcolor: "rgba(0,0,0,0)",
+                plot_bgcolor: cssColor("--plot-background", "#d1e0ff"),
+                font: { color: cssColor("--text", "#000000") },
+                hovermode: "closest",
+                uirevision: `experiment-plan-${pathPlan.version}`,
+                legend: { orientation: "h", x: 0.5, xanchor: "center", y: -0.16 },
+                xaxis: {
+                    title: "Pan (degrees)",
+                    zeroline: true,
+                    gridcolor: cssColor("--plot-grid", "#8fa6d2"),
+                    zerolinecolor: cssColor("--plot-zero", "#5f79ad"),
+                },
+                yaxis: {
+                    title: "Tilt (degrees)",
+                    zeroline: true,
+                    gridcolor: cssColor("--plot-grid", "#8fa6d2"),
+                    zerolinecolor: cssColor("--plot-zero", "#5f79ad"),
+                    scaleanchor: "x",
+                    scaleratio: 1,
+                },
+            },
+            {
+                responsive: true,
+                displaylogo: false,
+                modeBarButtonsToRemove: ["select2d", "lasso2d"],
+            },
+        );
+    });
+}
+
+async function refreshPlan(expectedVersion = desiredPlanVersion) {
+    if (planRequestInFlight) return;
+    planRequestInFlight = true;
+    try {
+        const payload = await requestJson("/experiment/plan");
+        if (expectedVersion === desiredPlanVersion) {
+            pathPlan = payload;
+            displayedPlanVersion = expectedVersion;
+            renderPathPlot();
+        }
+    } catch (error) {
+        if (expectedVersion === desiredPlanVersion) {
+            setFeedback(error.message, { error: true });
+        }
+    } finally {
+        planRequestInFlight = false;
+        if (desiredPlanVersion && desiredPlanVersion !== displayedPlanVersion) {
+            window.queueMicrotask(() => refreshPlan(desiredPlanVersion));
+        }
+    }
+}
+
 function renderPolarResults(payload, resultsKey) {
     const container = document.querySelector("[data-polar-plots]");
     container.querySelectorAll(".polar-plot").forEach((plot) => window.Plotly?.purge(plot));
     container.replaceChildren();
     document.querySelector("[data-results-path]").textContent = payload.source_path;
     displayedResultsKey = resultsKey;
+    visitedPointKeys = new Set(
+        (payload.visited_points || []).map((point) => pointKey(point.cut_id, point.point_index)),
+    );
+    renderPathPlot();
     const renderGeneration = ++polarRenderGeneration;
 
     if (!payload.cuts.length) {
@@ -251,6 +478,7 @@ async function refreshResults(expectedResultsKey = desiredResultsKey) {
 }
 
 function renderStatus(payload) {
+    latestExperimentStatus = payload;
     const state = document.querySelector("[data-experiment-state]");
     state.textContent = humanize(payload.state).toUpperCase();
     state.dataset.state = payload.state;
@@ -275,12 +503,31 @@ function renderStatus(payload) {
     document.querySelector("[data-data-products]").textContent = products.length ? products.join(", ") : "none";
     renderCuts(definition?.cuts || []);
 
+    const nextPlanVersion = payload.plan.available ? payload.plan.version : null;
+    if (nextPlanVersion !== desiredPlanVersion) {
+        desiredPlanVersion = nextPlanVersion;
+        displayedPlanVersion = null;
+        pathPlan = null;
+    }
+    if (desiredPlanVersion && desiredPlanVersion !== displayedPlanVersion) {
+        refreshPlan(desiredPlanVersion);
+    }
+
     const resultsPanel = document.querySelector("[data-results-panel]");
     resultsPanel.hidden = !payload.results.available;
     document.querySelector("[data-results-path]").textContent = payload.results.path || "—";
-    desiredResultsKey = payload.results.available
+    const nextResultsPath = payload.results.available ? payload.results.path : null;
+    const nextResultsKey = payload.results.available
         ? `${payload.results.path}:${payload.results.version}`
         : null;
+    if (nextResultsPath !== desiredResultsPath) {
+        desiredResultsPath = nextResultsPath;
+        visitedPointKeys = new Set();
+    }
+    if (nextResultsKey !== desiredResultsKey) {
+        desiredResultsKey = nextResultsKey;
+        displayedResultsKey = null;
+    }
     if (desiredResultsKey && desiredResultsKey !== displayedResultsKey) {
         refreshResults(desiredResultsKey);
     } else if (!payload.results.available) {
@@ -320,17 +567,32 @@ function renderStatus(payload) {
     } else if (payload.loaded) {
         setFeedback("Definition loaded. Confirm readiness to start.");
     }
+    renderPathPlot();
 }
 
 async function refreshStatus() {
     if (statusRequestInFlight) return;
     statusRequestInFlight = true;
+    refreshTurntableStatus();
     try {
         renderStatus(await requestJson("/experiment/status"));
     } catch (error) {
         setFeedback(error.message, { error: true });
     } finally {
         statusRequestInFlight = false;
+    }
+}
+
+async function refreshTurntableStatus() {
+    if (turntableRequestInFlight) return;
+    turntableRequestInFlight = true;
+    try {
+        latestTurntableStatus = await requestJson("/turntable/status?max_time=1&max_points=1");
+    } catch {
+        latestTurntableStatus = null;
+    } finally {
+        turntableRequestInFlight = false;
+        renderPathPlot();
     }
 }
 
@@ -356,6 +618,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 displayedResultsKey = null;
                 refreshResults(desiredResultsKey);
             }
+            renderPathPlot();
         });
     });
 

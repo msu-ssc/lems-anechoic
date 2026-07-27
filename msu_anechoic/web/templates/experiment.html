@@ -186,6 +186,20 @@
                     <p class="experiment-feedback" data-feedback role="status" aria-live="polite">Load an experiment definition to begin.</p>
                 </section>
 
+                <section class="experiment-panel path-panel" aria-labelledby="path-heading" data-path-panel hidden>
+                    <div class="experiment-panel-heading">
+                        <div>
+                            <p class="section-kicker">Live route</p>
+                            <h2 id="path-heading">Defined pan / tilt coordinates</h2>
+                        </div>
+                        <span data-path-position>Actual position unavailable</span>
+                    </div>
+                    <p class="results-description">
+                        Light gray points are pending; visited points and route segments turn dark gray. The current target is red and the measured position is green.
+                    </p>
+                    <div class="path-plot" data-path-plot aria-label="Experiment pan and tilt route"></div>
+                </section>
+
                 <section class="experiment-panel results-panel" aria-labelledby="results-heading" data-results-panel hidden>
                     <div class="experiment-panel-heading">
                         <div>

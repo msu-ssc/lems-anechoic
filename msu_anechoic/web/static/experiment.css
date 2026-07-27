@@ -50,10 +50,12 @@
     grid-row: span 2;
 }
 
+.path-panel,
 .results-panel {
     grid-column: 1 / -1;
 }
 
+.path-panel[hidden],
 .results-panel[hidden] {
     display: none;
 }
@@ -299,6 +301,11 @@
 .polar-plot {
     width: 100%;
     min-height: 430px;
+}
+
+.path-plot {
+    width: 100%;
+    min-height: 480px;
 }
 
 @media (max-width: 900px) {

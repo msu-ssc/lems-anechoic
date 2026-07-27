@@ -75,6 +75,7 @@ def test_experiment_page_has_load_run_and_abort_controls():
     assert 'data-file-load-form' in body
     assert 'data-start-form' in body
     assert 'data-abort' in body
+    assert 'data-path-panel' in body
     assert 'data-results-panel' in body
     assert 'name="output_mode" value="continue"' in body
     assert '<script src="/vendor/plotly.min.js" defer></script>' in body
@@ -137,15 +138,32 @@ def test_sample_results_are_returned_as_normalized_polar_cuts():
 
     assert loaded["results"]["available"] is True
     payload = service.results_payload()
+    plan = service.plan_payload()
     cuts = {cut["id"]: cut for cut in payload["cuts"]}
+    plan_cuts = {cut["id"]: cut for cut in plan["cuts"]}
     assert set(cuts) == {"horizontal", "vertical"}
+    assert set(plan_cuts) == {"horizontal", "vertical"}
     assert len(cuts["horizontal"]["angles"]) == 21
     assert len(cuts["vertical"]["angles"]) == 11
+    assert len(plan_cuts["horizontal"]["points"]) == 21
+    assert len(plan_cuts["vertical"]["points"]) == 11
+    assert plan_cuts["horizontal"]["points"][0] == {
+        "cut_id": "horizontal",
+        "point_index": 1,
+        "point_in_cut": 1,
+        "pan": -50,
+        "tilt": 0,
+    }
+    assert plan_cuts["vertical"]["points"][0]["point_index"] == 22
+    assert plan_cuts["vertical"]["points"][0]["pan"] == 0
+    assert plan_cuts["vertical"]["points"][0]["tilt"] == -25
     assert cuts["horizontal"]["angles"][0] == pytest.approx(-49.89)
     assert cuts["vertical"]["angles"][-1] == pytest.approx(24.9, abs=0.01)
     assert max(cuts["horizontal"]["peak"]["normalized_db"]) == 0
     assert max(cuts["vertical"]["center"]["normalized_db"]) == 0
     assert cuts["horizontal"]["peak"]["absolute_dbm"][0] == pytest.approx(-119)
+    assert payload["visited_points"][0] == {"cut_id": "horizontal", "point_index": 1}
+    assert payload["visited_points"][-1] == {"cut_id": "vertical", "point_index": 32}
 
 
 def test_server_load_uses_selected_folder_for_results_and_output(tmp_path):
@@ -351,7 +369,8 @@ def test_experiment_continue_skips_existing_cut_point_pairs(monkeypatch, tmp_pat
     runner.recorded_point_indexes = []
     runner.assume_ready = True
     runner.cancel_event = threading.Event()
-    runner.progress_callback = None
+    progress_updates = []
+    runner.progress_callback = progress_updates.append
     runner.logger = SimpleNamespace(
         info=lambda *args, **kwargs: None,
         warning=lambda *args, **kwargs: None,
@@ -368,6 +387,11 @@ def test_experiment_continue_skips_existing_cut_point_pairs(monkeypatch, tmp_pat
     runner._run_cuts_experiment(existing_data=existing_data)
 
     assert runner.recorded_point_indexes == [2]
+    assert any(
+        update.get("point_index") == 2
+        and update.get("target") == {"pan": 0.0, "tilt": 0.0}
+        for update in progress_updates
+    )
 
 
 def test_background_service_aborts_cooperatively():
@@ -407,7 +431,13 @@ def test_experiment_script_loads_json_and_polls_status():
     assert 'requestJson("/experiment/start"' in script
     assert 'requestJson("/experiment/abort"' in script
     assert 'requestJson("/experiment/results"' in script
+    assert 'requestJson("/experiment/plan"' in script
+    assert 'requestJson("/turntable/status?max_time=1&max_points=1"' in script
     assert 'type: "scatterpolar"' in script
+    assert 'name: "Travelling to"' in script
+    assert 'name: "Actual position"' in script
+    assert 'name: "Pending points"' in script
+    assert 'name: "Visited points"' in script
     assert 'const pendingPlots = payload.cuts.map' in script
     assert 'window.requestAnimationFrame' in script
     assert 'window.Plotly?.purge(plot)' in script

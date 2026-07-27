@@ -36,6 +36,7 @@ class ExperimentWebService:
         self._experiment_factory = experiment_factory
         self._experiments_root = (experiments_root or experiment.EXPERIMENTS_FOLDER_PATH).resolve()
         self._parameters: experiment.ExperimentParameters | None = None
+        self._definition_version = 0
         self._source_name: str | None = None
         self._state = "empty"
         self._error: str | None = None
@@ -55,6 +56,7 @@ class ExperimentWebService:
             if self._state in {"running", "cancelling"}:
                 raise RuntimeError("Cannot load another definition while an experiment is running")
             self._parameters = parameters
+            self._definition_version += 1
             self._source_name = source_name
             self._state = "ready"
             self._error = None
@@ -164,12 +166,27 @@ class ExperimentWebService:
                 "can_abort": self._state in {"running", "cancelling"},
                 "source_name": self._source_name,
                 "experiment": _parameters_summary(parameters) if parameters is not None else None,
+                "plan": {
+                    "available": parameters is not None,
+                    "version": self._definition_version if parameters is not None else None,
+                },
                 "results": _results_summary(parameters),
                 "progress": dict(self._progress),
                 "error": self._error,
                 "started_at": self._started_at.isoformat() if self._started_at is not None else None,
                 "finished_at": self._finished_at.isoformat() if self._finished_at is not None else None,
             }
+
+    def plan_payload(self) -> dict[str, Any]:
+        with self._lock:
+            parameters = self._parameters.model_copy(deep=True) if self._parameters is not None else None
+            version = self._definition_version
+        if parameters is None:
+            raise RuntimeError("Load an experiment definition before viewing its path")
+        return {
+            "version": version,
+            "cuts": _plan_cuts(parameters),
+        }
 
     def results_payload(self) -> dict[str, Any]:
         with self._lock:
@@ -187,6 +204,7 @@ class ExperimentWebService:
             if self._state in {"running", "cancelling"}:
                 raise RuntimeError("Cannot reset while an experiment is running")
             self._parameters = None
+            self._definition_version = 0
             self._source_name = None
             self._state = "empty"
             self._error = None
@@ -334,6 +352,39 @@ def _parameters_summary(parameters: experiment.ExperimentParameters) -> dict[str
     }
 
 
+def _plan_cuts(parameters: experiment.ExperimentParameters) -> list[dict[str, Any]]:
+    plan_cuts = []
+    point_index = 0
+    for cut_id, cut in (parameters.cuts or {}).items():
+        neutral_elevation = (
+            cut.neutral_elevation
+            if cut.neutral_elevation is not None
+            else parameters.neutral_elevation
+        )
+        points = []
+        if neutral_elevation is not None:
+            resolved_cut = cut.model_copy(update={"neutral_elevation": neutral_elevation})
+            for point_in_cut, coordinate in enumerate(resolved_cut.coordinates, start=1):
+                point_index += 1
+                points.append(
+                    {
+                        "cut_id": str(cut_id),
+                        "point_index": point_index,
+                        "point_in_cut": point_in_cut,
+                        "pan": coordinate.absolute_turntable_azimuth,
+                        "tilt": coordinate.absolute_turntable_elevation,
+                    }
+                )
+        plan_cuts.append(
+            {
+                "id": str(cut_id),
+                "direction": cut.direction,
+                "points": points,
+            }
+        )
+    return plan_cuts
+
+
 def _results_summary(parameters: experiment.ExperimentParameters | None) -> dict[str, Any]:
     if parameters is None:
         return {"available": False, "path": None, "version": None}
@@ -377,9 +428,13 @@ def _polar_results(
 ) -> dict[str, Any]:
     cut_definitions = parameters.cuts or {}
     cuts: dict[str, dict[str, Any]] = {}
+    visited_points: set[tuple[str, int]] = set()
     with csv_path.open("r", encoding="utf-8", newline="") as file:
         for row in csv.DictReader(file):
             cut_id = str(row.get("cut_id") or "Unlabeled")
+            point_index = _finite_float(row.get("point_index"))
+            if point_index is not None and point_index.is_integer():
+                visited_points.add((cut_id, int(point_index)))
             definition = cut_definitions.get(cut_id)
             direction = definition.direction if definition is not None else _infer_cut_direction(row)
             angle = _cut_angle(row, direction)
@@ -426,6 +481,10 @@ def _polar_results(
     return {
         "source_path": str(csv_path),
         "version": f"{stat.st_mtime_ns}:{stat.st_size}",
+        "visited_points": [
+            {"cut_id": cut_id, "point_index": point_index}
+            for cut_id, point_index in sorted(visited_points, key=lambda item: item[1])
+        ],
         "cuts": payload_cuts,
     }
 

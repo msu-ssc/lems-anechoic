@@ -2132,6 +2132,14 @@ def experiment_results() -> dict:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@app.get("/experiment/plan")
+def experiment_plan() -> dict:
+    try:
+        return experiment_service.plan_payload()
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.post("/experiment/load")
 def load_experiment(command: _ExperimentLoadRequest) -> dict:
     try:

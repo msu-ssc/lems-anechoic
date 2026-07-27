@@ -737,6 +737,10 @@ class Experiment(pydantic.BaseModel):
                         point_index=point_index,
                         point_in_cut=coordinate_index + 1,
                         points_in_cut=len(cut),
+                        target={
+                            "pan": coordinate.absolute_turntable_azimuth,
+                            "tilt": coordinate.absolute_turntable_elevation,
+                        },
                     )
 
                     if point_index in indexes_to_skip:
@@ -795,6 +799,11 @@ class Experiment(pydantic.BaseModel):
         finally:
             if not self.cancel_event.is_set():
                 say(f"Resetting turntable to 0, 0.")
+                self._notify_progress(
+                    state="running",
+                    cut_id="Return to origin",
+                    target={"pan": 0.0, "tilt": 0.0},
+                )
                 self._move_turntable_and_wait(pan=0, tilt=0)
 
     def _run_grid_experiment(
