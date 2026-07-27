@@ -3,7 +3,8 @@
 let statusTimer = null;
 let statusRequestInFlight = false;
 let resultsRequestInFlight = false;
-let resultsVersion = null;
+let desiredResultsKey = null;
+let displayedResultsKey = null;
 
 function setMenuOpen(isOpen) {
     const toggle = document.getElementById("menu-toggle");
@@ -125,11 +126,11 @@ function polarTrace(cut, seriesName, label, color, floor) {
     };
 }
 
-function renderPolarResults(payload) {
+function renderPolarResults(payload, resultsKey) {
     const container = document.querySelector("[data-polar-plots]");
     container.replaceChildren();
     document.querySelector("[data-results-path]").textContent = payload.source_path;
-    resultsVersion = payload.version;
+    displayedResultsKey = resultsKey;
 
     if (!payload.cuts.length) {
         const message = document.createElement("p");
@@ -213,12 +214,16 @@ function renderPolarResults(payload) {
     });
 }
 
-async function refreshResults() {
+async function refreshResults(expectedResultsKey = desiredResultsKey) {
     if (resultsRequestInFlight) return;
     resultsRequestInFlight = true;
     try {
-        renderPolarResults(await requestJson("/experiment/results"));
+        const payload = await requestJson("/experiment/results");
+        if (expectedResultsKey === desiredResultsKey) {
+            renderPolarResults(payload, expectedResultsKey);
+        }
     } catch (error) {
+        if (expectedResultsKey !== desiredResultsKey) return;
         const container = document.querySelector("[data-polar-plots]");
         container.replaceChildren();
         const message = document.createElement("p");
@@ -227,6 +232,9 @@ async function refreshResults() {
         container.append(message);
     } finally {
         resultsRequestInFlight = false;
+        if (desiredResultsKey && desiredResultsKey !== displayedResultsKey) {
+            window.queueMicrotask(() => refreshResults(desiredResultsKey));
+        }
     }
 }
 
@@ -258,10 +266,13 @@ function renderStatus(payload) {
     const resultsPanel = document.querySelector("[data-results-panel]");
     resultsPanel.hidden = !payload.results.available;
     document.querySelector("[data-results-path]").textContent = payload.results.path || "—";
-    if (payload.results.available && payload.results.version !== resultsVersion) {
-        refreshResults();
+    desiredResultsKey = payload.results.available
+        ? `${payload.results.path}:${payload.results.version}`
+        : null;
+    if (desiredResultsKey && desiredResultsKey !== displayedResultsKey) {
+        refreshResults(desiredResultsKey);
     } else if (!payload.results.available) {
-        resultsVersion = null;
+        displayedResultsKey = null;
         document.querySelector("[data-polar-plots]").replaceChildren();
     }
 
@@ -329,7 +340,10 @@ document.addEventListener("DOMContentLoaded", () => {
     document.querySelectorAll('input[name="color_mode"]').forEach((input) => {
         input.addEventListener("change", () => {
             setColorMode(input.value);
-            if (resultsVersion) refreshResults();
+            if (desiredResultsKey) {
+                displayedResultsKey = null;
+                refreshResults(desiredResultsKey);
+            }
         });
     });
 

@@ -61,10 +61,11 @@ class ExperimentWebService:
 
     def load_server_definition(self, relative_path: str) -> dict[str, Any]:
         path = self._resolve_definition_path(relative_path)
+        parameters = experiment.ExperimentParameters.model_validate_json(path.read_text(encoding="utf-8"))
+        definition = parameters.model_dump(mode="json")
+        definition["relative_folder_path"] = str(path.parent.relative_to(self._experiments_root))
         return self.load_definition(
-            experiment.ExperimentParameters.model_validate_json(path.read_text(encoding="utf-8")).model_dump(
-                mode="json"
-            ),
+            definition,
             source_name=str(path.relative_to(self._experiments_root)),
         )
 

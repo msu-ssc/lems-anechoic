@@ -110,7 +110,7 @@ def test_available_definitions_and_server_load(tmp_path):
     root = tmp_path / "experiments"
     definition_path = root / "saved" / "metadata.json"
     definition_path.parent.mkdir(parents=True)
-    definition = experiment_definition(relative_folder_path="saved")
+    definition = experiment_definition(relative_folder_path="experiments/wrong-folder")
     definition_path.write_text(experiment.ExperimentParameters(**definition).model_dump_json())
     service = ExperimentWebService(
         experiments_root=root,
@@ -122,6 +122,7 @@ def test_available_definitions_and_server_load(tmp_path):
 
     assert payload["state"] == "ready"
     assert payload["source_name"] == "saved/metadata.json"
+    assert Path(payload["experiment"]["output_folder"]) == definition_path.parent
 
 
 def test_sample_results_are_returned_as_normalized_polar_cuts():
@@ -142,6 +143,27 @@ def test_sample_results_are_returned_as_normalized_polar_cuts():
     assert max(cuts["horizontal"]["peak"]["normalized_db"]) == 0
     assert max(cuts["vertical"]["center"]["normalized_db"]) == 0
     assert cuts["horizontal"]["peak"]["absolute_dbm"][0] == pytest.approx(-119)
+
+
+def test_server_load_uses_selected_folder_for_results_and_output():
+    service = ExperimentWebService(
+        experiments_root=Path("experiments").resolve(),
+        turntable_provider=lambda: None,
+    )
+    sample = service.load_server_definition("sample/parameters.json")
+    assert sample["results"]["available"] is True
+    assert sample["results"]["path"] == "experiments/sample/raw_data/data.csv"
+
+    sample2 = service.load_server_definition("sample2/parameters.json")
+    assert sample2["source_name"] == "sample2/parameters.json"
+    assert sample2["experiment"]["output_folder"] == "experiments/sample2"
+    assert sample2["results"] == {
+        "available": False,
+        "path": "experiments/sample2/raw_data/data.csv",
+        "version": None,
+    }
+    with pytest.raises(RuntimeError, match="does not have result data"):
+        service.results_payload()
 
 
 class FakeExperimentTurntable:
@@ -270,4 +292,6 @@ def test_experiment_script_loads_json_and_polls_status():
     assert 'requestJson("/experiment/abort"' in script
     assert 'requestJson("/experiment/results"' in script
     assert 'type: "scatterpolar"' in script
+    assert 'expectedResultsKey === desiredResultsKey' in script
+    assert "`${payload.results.path}:${payload.results.version}`" in script
     assert 'window.setInterval(refreshStatus, 1000)' in script
