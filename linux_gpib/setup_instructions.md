@@ -15,7 +15,7 @@ The procedure was verified on:
 - Ubuntu 24.04.3 LTS, x86-64
 - kernel `7.0.0-28-generic`
 - UEFI Secure Boot enabled
-- Keysight IO Libraries Suite for Linux `21.1.185` (2025)
+- Keysight IO Libraries Suite for Linux `21.3.94` (2026)
 - IVI VISA shared components `7.0.0`
 - Keysight 82357B, USB ID `0957:0718`
 - HP 8563E at GPIB primary address 18
@@ -67,7 +67,22 @@ page:
 Keysight's current releases may use one unified installer. Follow the release
 notes accompanying the downloaded Linux build.
 
-The exact working version retained on the test computer uses two installers:
+As of 2026-07-27, Keysight's current Linux release is IO Libraries Suite 2026,
+build `21.3.94`, released 2026-07-10. It uses a unified Linux x64 installer.
+Keysight lists support for CentOS 7.4-9.4, Red Hat Enterprise Linux 7.4-10.1,
+selected Ubuntu releases from 18.04 through 26.04, and Debian 12.x.
+
+The exact tested unified installer and its SHA-256 are:
+
+```text
+cafad1e017a5fa03a81e8dc7cbbad160ede55532ea2c456d89be5f3f31ab30ab
+  IOLibrariesSuite-21.3.94-linux-x64.run
+```
+
+This locally calculated hash matches the checksum published by Keysight.
+
+The previous working version retained on the test computer uses two
+installers:
 
 ```text
 IOLSPrerequisites-21.1.185-linux-x64.run
@@ -86,7 +101,51 @@ e58a7766cf5215216983525baa8fc04d1e580cdb5f724509d2b763b8d1680d3b
 Use these hashes only for build `21.1.185`. A newer official build will have
 different filenames and hashes.
 
-### Install
+Build `21.1.185` is a general Linux x64 release rather than an Ubuntu-specific
+package. Its published support list includes CentOS, Red Hat Enterprise Linux,
+and Ubuntu, but not Debian. Debian 12 support was added in IO Libraries Suite
+2025 Update 1, which also replaced the two-installer layout with one unified
+installer.
+
+### Install the current unified release
+
+For Linux build `21.3.94`:
+
+```bash
+sha256sum IOLibrariesSuite-21.3.94-linux-x64.run
+chmod +x IOLibrariesSuite-21.3.94-linux-x64.run
+sudo ./IOLibrariesSuite-21.3.94-linux-x64.run
+```
+
+The graphical setup wizard opens.
+
+1. Disconnect the 82357B from USB and close instrument-control software.
+2. On the welcome screen, click **Forward**.
+3. On **Select Components**, leave the default selections enabled.
+4. Expand **IO Interfaces** and verify that **USB-GPIB** is checked. This is
+   the essential interface for the Keysight 82357B.
+5. The default GUI utilities—Connection Expert, Interactive IO, IO Monitor,
+   and Direct Connect—may remain selected. Connection Expert and Interactive
+   IO are particularly useful for discovery and manual verification.
+6. Click **Forward** and continue through the ordinary confirmation screens.
+7. When upgrading, allow the unified installer to remove the previous IO
+   Libraries Suite before it installs the new suite.
+8. If an information dialog says that some settings require a reboot, click
+   **OK** to acknowledge it. Do not reboot while the main installer is still
+   running.
+9. Wait for the main wizard to report that setup has finished, then click
+   **Finish**.
+10. Reboot the computer.
+11. After login, reconnect the 82357B and verify the installation as described
+    below.
+
+The default interface selection also includes interfaces not required for this
+proof of concept, such as LAN, USBTMC/USB, remote interfaces, ASRL, and
+PCI-GPIB. Leaving the defaults selected is the tested upgrade procedure and
+avoids accidentally omitting a dependency. A future clean-install experiment
+may establish a smaller supported selection.
+
+### Install the verified older two-installer release
 
 1. Disconnect the 82357B from USB. Leave the analyzer powered on or off; it
    does not matter during software installation.
@@ -96,7 +155,7 @@ different filenames and hashes.
 5. Reboot, as directed by Keysight.
 6. Reconnect the 82357B after the reboot.
 
-For the verified two-installer build, a text-mode installation is:
+For the verified `21.1.185` two-installer build, a text-mode installation is:
 
 ```bash
 chmod +x IOLSPrerequisites-21.1.185-linux-x64.run
@@ -126,7 +185,10 @@ lsusb -d 0957:0718
 lsusb -t
 lsmod | grep -E 'kt82357(Run|Boot)'
 dkms status | grep -E 'kt82357(Run|Boot)'
-systemctl is-active KeysightInstrumentIoService.service
+systemctl is-active \
+  io-ds.service \
+  KeysightDistributedInfrastructureService.service \
+  KeysightIOControlService.service
 id -nG
 ```
 
@@ -138,8 +200,13 @@ Driver=Kt82357Run
 kt82357Run
 kt82357Boot
 active
+active
+active
 kt-iols
 ```
+
+These are the three Keysight services directly observed as active with build
+`21.3.94`.
 
 Also verify the VISA library:
 

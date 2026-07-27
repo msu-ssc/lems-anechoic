@@ -401,3 +401,251 @@ Host system changes made during this experiment: **none**.
 
 Workspace-local changes consist of the `linux_gpib/` experiment files, compiled
 probe, Python virtual environment, and download cache.
+
+### Follow-up — VISA discovery compatibility
+
+The application does not open only a known hard-coded resource:
+`SpectrumAnalyzerHP8563E.find()` first calls `ResourceManager.list_resources()`.
+Tested that specific discovery behavior with the installed Keysight library:
+
+```text
+linux_gpib/.venv/bin/python -c \
+  'import pyvisa; rm = pyvisa.ResourceManager("/opt/keysight/iolibs/libvisa.so"); print(rm.list_resources()); rm.close()'
+```
+
+Result:
+
+```text
+('GPIB0::18::INSTR',)
+```
+
+This confirms that the existing application's discovery loop can see the HP
+8563E when it uses the Keysight VISA library. No host state or configuration
+was changed.
+
+### Follow-up — Installer platform and current-version check
+
+Checked Keysight's current official Linux release pages on 2026-07-27.
+
+- The retained `21.1.185` `.run` files are generic Linux x86-64 installers,
+  not Ubuntu/Debian-specific packages.
+- Keysight's support list for that exact 2025 release includes CentOS
+  7.4-9.4, Red Hat Enterprise Linux 7.4-9.4, and selected Ubuntu releases
+  through 24.04. Debian is not listed for that release.
+- IO Libraries Suite 2025 Update 1 added Debian 12 support and changed from a
+  prerequisite-plus-main pair to one unified Linux installer.
+- Search-index text initially made build `21.3.293`, released 2026-04-30,
+  appear to be the current Linux release. The live platform tabs later showed
+  that this is the Windows build; the Linux build is recorded in the
+  correction below.
+- The 2026 published support list includes CentOS 7.4-9.4, Red Hat Enterprise
+  Linux 7.4-10.1, selected Ubuntu releases through 26.04, and Debian 12.x.
+- Keysight publishes SHA-256
+  `CAFAD1E017A5FA03A81E8DC7CBBAD160EDE55532EA2C456D89BE5F3F31AB30AB`
+  for the current Linux x64 installer.
+
+Sources:
+
+- <https://www.keysight.com/find/iosuite>
+- <https://www.keysight.com/br/pt/lib/software-detail/computer-software/io-libraries-suite-downloads-2175637/keysight-io-libraries-suite-2026-for-linux.html>
+- <https://www.keysight.com/de/de/lib/software-detail/computer-software/io-libraries-suite-downloads-2175637/keysight-io-libraries-suite-2025-for-linux.html>
+- <https://www.keysight.com/de/de/lib/software-detail/computer-software/io-libraries-suite-downloads-2175637/keysight-io-libraries-suite-2025-update-1-for-linux.html>
+
+No files were downloaded and no host state or configuration was changed during
+this version check.
+
+### Follow-up — Correct current Keysight download
+
+Verified that the Keysight "Instrument Control Bundle Download" is not the
+correct Linux download. Keysight marks that bundle as no longer up to date,
+Windows-only, and retained for legacy support; its last release contains IO
+Libraries Suite 2023 Update 1 plus BenchVue and Command Expert.
+
+For this GPIB setup, the correct current selection is:
+
+```text
+IO Libraries Suite Downloads
+  -> Linux
+  -> Keysight IO Libraries Suite 2026 for Linux
+  -> Download Linux x64 IOLS
+```
+
+Sources:
+
+- <https://www.keysight.com/zz/en/lib/software-detail/computer-software/keysight-instrument-control-bundle-download-1184883.html>
+- <https://www.keysight.com/find/iosuite>
+- <https://www.keysight.com/de/de/lib/software-detail/computer-software/io-libraries-suite-downloads-2175637/keysight-io-libraries-suite-2026-for-linux.html>
+
+No file was downloaded and no system state or configuration was changed.
+
+### Follow-up — Live upgrade to IO Libraries Suite 2026
+
+The user downloaded the current Linux installer:
+
+```text
+~/Downloads/iols-new/IOLibrariesSuite-21.3.94-linux-x64.run
+```
+
+The live Keysight page clarified a platform-tab ambiguity in indexed web
+results:
+
+- Linux: build `21.3.94`, released 2026-07-10
+- Windows: build `21.3.293`, released 2026-04-30
+
+The Linux filename is therefore correct.
+
+The user launched the installer with the 82357B disconnected. The graphical
+wizard displayed:
+
+1. **Setup - Keysight IO Libraries Suite 2026** welcome screen.
+2. **Select Components**, with the default selections enabled.
+
+Observed default component tree:
+
+- New GUI
+  - Connection Expert
+  - Interactive IO
+  - IO Monitor
+  - Direct Connect
+- IO Interfaces
+  - LAN
+  - USB
+  - Remote Interfaces, including ASRL, USB, and GPIB
+  - ASRL
+  - PCI-GPIB
+  - USB-GPIB
+- VXI, VXI-GPIB, and PXI were not selected/available.
+
+Decision: retain the default selections and explicitly verify that
+**USB-GPIB** remains checked. USB-GPIB is the essential interface for the
+82357B; the extra default components are acceptable for this guinea-pig
+upgrade and provide useful discovery/diagnostic tools.
+
+At this checkpoint, the assistant had run no command and the user had not yet
+advanced beyond component selection.
+
+### Follow-up — Upgrade completed and reboot requested
+
+The user continued through ordinary confirmation screens without recording
+each one. The unified installer then:
+
+1. automatically uninstalled the previous IO Libraries Suite;
+2. installed IO Libraries Suite Main;
+3. displayed a 100% progress dialog recommending a system reboot;
+4. displayed an information dialog explaining that some system settings do
+   not take effect immediately; and
+5. reached the completion screen stating that setup had finished.
+
+The reboot information dialog's **OK** button only acknowledged the message;
+the user waited for the main installer to finish before clicking **Finish**.
+The user then rebooted the computer.
+
+These observed steps have been incorporated into `setup_instructions.md`.
+
+### Follow-up — IO Libraries Suite 2026 post-upgrade proof
+
+The user explicitly authorized read-only post-reboot commands and repeating
+the non-mutating `CF?` query.
+
+Read-only commands covered:
+
+```text
+uname -a
+lsusb
+lsusb -t
+systemctl list-units / is-active
+lsmod
+dkms status
+dpkg-query
+find /opt/keysight/iolibs
+version.txt and manifest.json inspection
+id -nG mayo
+readlink -f /opt/keysight/iolibs/libvisa.so
+modinfo kt82357Run
+journalctl -k -b
+PyVISA list_resources()
+sha256sum of the downloaded unified installer
+the standalone PyVISA CF? probe
+git diff validation for linux_gpib/
+```
+
+Some initial commands were intentionally attempted inside the restricted
+workspace sandbox. In that environment, `lsusb` reported
+`unable to initialize libusb: -99`, `systemctl` could not connect to the
+system bus, and VISA/device access was unavailable. Those read-only checks
+were repeated with explicit host access after the user authorized them and
+then succeeded. This confirms that the earlier libusb error was a sandbox
+artifact rather than a host USB problem.
+
+An initial `dpkg-query` used package globs that did not match the actual IVI
+package names. A subsequent filtered full package query correctly found the
+installed `libivivisa*` and `visa-shared` packages.
+
+After reboot, read-only inspection confirmed:
+
+- `/opt/keysight/iolibs/version.txt` reports `21.3.94`;
+- the locally calculated installer SHA-256 is
+  `cafad1e017a5fa03a81e8dc7cbbad160ede55532ea2c456d89be5f3f31ab30ab`,
+  matching Keysight's published checksum;
+- `lsusb` identifies `0957:0718 Agilent Technologies, Inc. 82357B`;
+- `lsusb -t` shows the adapter bound to `Kt82357Run`;
+- `kt82357Run` and `kt82357Boot` are loaded;
+- DKMS reports both Keysight modules installed for the running
+  `7.0.0-28-generic` kernel;
+- `kt82357Run` has matching `7.0.0-28-generic` version metadata and a PKCS#7
+  signature from this computer's enrolled Secure Boot module-signing key;
+- IVI VISA shared components remain at version `7.0.0`;
+- `/opt/keysight/iolibs/libvisa.so` resolves to
+  `/opt/keysight/iolibs/libktvisa32.so`;
+- the host user remains in `kt-iols` and `usbtmc`; and
+- the Keysight discovery, distributed-infrastructure, and IO-control services
+  are active.
+
+`dkms status` also printed deprecated-configuration warnings for the Keysight
+DKMS files and an unrelated missing-source error for an old NVIDIA DKMS entry.
+The relevant results were nevertheless unambiguous: both `kt82357Boot/1.0`
+and `kt82357Run/1.0` are installed for `7.0.0-28-generic`.
+
+The current boot's kernel journal shows a clean adapter attachment:
+
+```text
+usb 3-6: New USB device found, idVendor=0957, idProduct=0718
+usb 3-6: Product: 82357B ()
+usb 3-6: Manufacturer: Agilent Technologies, Inc.
+usb 3-6: SerialNumber: MY55153510
+Kt82357Run 3-6:1.0: Kt82357Run now attached to Kt82357Run-0
+```
+
+Keysight VISA resource discovery returned:
+
+```text
+('GPIB0::18::INSTR',)
+```
+
+The isolated PyVISA probe was then run against the upgraded installation:
+
+```text
+linux_gpib/.venv/bin/python linux_gpib/pyvisa_cf_query.py
+```
+
+Complete result:
+
+```text
+Loading VISA library: /opt/keysight/iolibs/libvisa.so
+resource='GPIB0::18::INSTR'
+Opening resource: GPIB0::18::INSTR
+instrument=<'GPIBInstrument'('GPIB0::18::INSTR')>
+type(instrument)=<class 'pyvisa.resources.gpib.GPIBInstrument'>
+Sending query: CF?
+Raw response: '3.90000000E8\n'
+Parsed center frequency: 3.9e+08 Hz
+PASS: GPIB query returned the expected center frequency
+```
+
+Result: **success**. The current Keysight IO Libraries Suite 2026 Linux build
+`21.3.94` works with the 82357B and HP 8563E on this Ubuntu 24.04 / kernel 7.0
+/ Secure Boot configuration.
+
+The installer and reboot changed host system state under the user's direct
+control. The assistant's post-reboot commands were read-only and the final
+query was non-mutating.
