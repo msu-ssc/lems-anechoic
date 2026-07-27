@@ -18,6 +18,7 @@ from typing import Literal
 
 import numpy as np
 from fastapi import FastAPI
+from fastapi import HTTPException
 from fastapi import Request
 from fastapi.responses import HTMLResponse
 from fastapi.responses import RedirectResponse
@@ -25,9 +26,11 @@ from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from plotly.offline import get_plotlyjs
+from pydantic import BaseModel
 from scipy.spatial import cKDTree
 
 from msu_anechoic import experiment
+from msu_anechoic.turntable2 import TurntableError
 from msu_anechoic.web.grid import MAX_TURNTABLE_TILT
 from msu_anechoic.web.grid import AxisDefinition
 from msu_anechoic.web.grid import DesignedGrid
@@ -38,6 +41,10 @@ from msu_anechoic.web.grid import SimpleGridDefinition
 from msu_anechoic.web.grid import count_coincident_points
 from msu_anechoic.web.grid import design_combined_grid
 from msu_anechoic.web.grid import pan_tilt_to_az_el
+from msu_anechoic.web.turntable import DEFAULT_HISTORY_MAX_POINTS
+from msu_anechoic.web.turntable import DEFAULT_HISTORY_MAX_TIME
+from msu_anechoic.web.turntable import DEFAULT_REFRESH_INTERVAL
+from msu_anechoic.web.turntable import turntable_service
 
 WEB_ROOT = Path(__file__).parent
 templates = Jinja2Templates(directory=WEB_ROOT / "templates")
@@ -2080,6 +2087,62 @@ def grid_designer(request: Request) -> HTMLResponse:
             ),
         },
     )
+
+
+class _TurntablePositionCommand(BaseModel):
+    pan: float
+    tilt: float
+
+
+@app.get("/turntable", response_class=HTMLResponse)
+def turntable_control(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request=request,
+        name="turntable.html",
+        context={
+            "history_max_time": DEFAULT_HISTORY_MAX_TIME,
+            "history_max_points": DEFAULT_HISTORY_MAX_POINTS,
+            "refresh_interval": DEFAULT_REFRESH_INTERVAL,
+        },
+    )
+
+
+@app.get("/turntable/status")
+def turntable_status(
+    max_time: float = DEFAULT_HISTORY_MAX_TIME,
+    max_points: int = DEFAULT_HISTORY_MAX_POINTS,
+) -> dict:
+    try:
+        return turntable_service.status_payload(max_time=max_time, max_points=max_points)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/turntable/set")
+def set_turntable_position(command: _TurntablePositionCommand) -> dict:
+    try:
+        turntable_service.set_position(pan=command.pan, tilt=command.tilt)
+    except (RuntimeError, TurntableError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "message": f"Queued SET for pan={command.pan:g}°, tilt={command.tilt:g}°."}
+
+
+@app.post("/turntable/move")
+def move_turntable(command: _TurntablePositionCommand) -> dict:
+    try:
+        turntable_service.move_to(pan=command.pan, tilt=command.tilt)
+    except (RuntimeError, TurntableError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "message": f"Queued move to pan={command.pan:g}°, tilt={command.tilt:g}°."}
+
+
+@app.post("/turntable/abort")
+def abort_turntable() -> dict:
+    try:
+        turntable_service.abort()
+    except (RuntimeError, TurntableError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "message": "Emergency stop sent."}
 
 
 @app.get("/grid-designer/preview", response_class=HTMLResponse)

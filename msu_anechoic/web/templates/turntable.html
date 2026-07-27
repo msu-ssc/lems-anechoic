@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="description" content="Monitor and control the MSU anechoic chamber turntable.">
+        <title>Turntable · MSU Anechoic Chamber</title>
+        <script>
+            (() => {
+                let mode = null;
+                try {
+                    mode = window.localStorage.getItem("grid-designer-color-mode");
+                } catch {
+                    // Use the system preference when storage is unavailable.
+                }
+                if (mode !== "light" && mode !== "dark") {
+                    mode = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+                }
+                document.documentElement.dataset.colorMode = mode;
+            })();
+        </script>
+        <link rel="stylesheet" href="{{ url_for('static', path='grid-designer.css') }}">
+        <link rel="stylesheet" href="{{ url_for('static', path='turntable.css') }}">
+        <script src="/vendor/plotly.min.js" defer></script>
+        <script src="{{ url_for('static', path='turntable.js') }}" defer></script>
+    </head>
+    <body>
+        <header class="site-header">
+            <button
+                id="menu-toggle"
+                class="menu-toggle"
+                type="button"
+                aria-label="Open navigation menu"
+                aria-controls="application-menu"
+                aria-expanded="false"
+            >
+                <span></span>
+                <span></span>
+                <span></span>
+            </button>
+            <a class="application-name" href="/grid-designer">MSU Anechoic Chamber</a>
+            <span class="current-page">Turntable</span>
+            <nav id="application-menu" class="application-menu" aria-label="Application navigation" hidden>
+                <p>Tools</p>
+                <a href="/grid-designer">
+                    <span>Grid Designer</span>
+                    <small>Plan azimuth/elevation and pan/tilt grids</small>
+                </a>
+                <a href="/turntable" aria-current="page">
+                    <span>Turntable</span>
+                    <small>Monitor and control the chamber positioner</small>
+                </a>
+                <fieldset class="appearance-control">
+                    <legend>Appearance</legend>
+                    <div class="color-mode-switch" role="radiogroup" aria-label="Color mode">
+                        <label>
+                            <input id="color-mode-light" type="radio" name="color_mode" value="light">
+                            <span>Light</span>
+                        </label>
+                        <label>
+                            <input id="color-mode-dark" type="radio" name="color_mode" value="dark">
+                            <span>Dark</span>
+                        </label>
+                    </div>
+                </fieldset>
+            </nav>
+        </header>
+
+        <main>
+            <div class="page-heading turntable-page-heading">
+                <div>
+                    <h1>Turntable</h1>
+                    <p>Live position, controller diagnostics, and direct chamber positioner controls.</p>
+                </div>
+                <div class="connection-summary" aria-live="polite">
+                    <span class="connection-dot" data-connection-dot></span>
+                    <strong data-connection-label>Connecting…</strong>
+                </div>
+            </div>
+
+            <div class="turntable-workspace">
+                <section class="turntable-panel status-panel" aria-labelledby="status-heading">
+                    <div class="turntable-panel-heading">
+                        <div>
+                            <p class="section-kicker">Live controller</p>
+                            <h2 id="status-heading">Status</h2>
+                        </div>
+                        <span class="state-badge" data-state-badge>DISCONNECTED</span>
+                    </div>
+
+                    <div class="status-grid" aria-live="polite">
+                        <div><span>Activity</span><strong data-status="activity">—</strong></div>
+                        <div><span>Pan / tilt</span><strong data-status="pan-tilt">—</strong></div>
+                        <div><span>Yaw / pitch</span><strong data-status="yaw-pitch">—</strong></div>
+                        <div><span>Tilt regime</span><strong data-status="regime">—</strong></div>
+                        <div><span>Regime offset</span><strong data-status="offset">—</strong></div>
+                        <div><span>Target</span><strong data-status="target">—</strong></div>
+                        <div><span>Internal target</span><strong data-status="internal-target">—</strong></div>
+                        <div><span>Last position</span><strong data-status="last-position">—</strong></div>
+                        <div><span>Last communication</span><strong data-status="last-communication">—</strong></div>
+                        <div><span>Communication age</span><strong data-status="communication-age">—</strong></div>
+                        <div><span>Communication timeout</span><strong data-status="communication-timeout">—</strong></div>
+                        <div><span>Activity timeout</span><strong data-status="timeout">—</strong></div>
+                        <div><span>Queued commands</span><strong data-status="queued">0</strong></div>
+                        <div><span>Position set</span><strong data-status="set-status">—</strong></div>
+                        <div><span>Recorded events</span><strong data-status="event-count">0</strong></div>
+                        <div class="status-error"><span>Latest error</span><strong data-status="error">None</strong></div>
+                    </div>
+
+                    <fieldset class="history-controls">
+                        <legend>History</legend>
+                        <label>
+                            Max time
+                            <span class="number-input">
+                                <input
+                                    id="history-max-time"
+                                    type="number"
+                                    min="1"
+                                    max="86400"
+                                    step="1"
+                                    value="{{ history_max_time | int }}"
+                                >
+                                <b>sec</b>
+                            </span>
+                        </label>
+                        <label>
+                            Max points
+                            <span class="number-input">
+                                <input
+                                    id="history-max-points"
+                                    type="number"
+                                    min="1"
+                                    max="50000"
+                                    step="1"
+                                    value="{{ history_max_points }}"
+                                >
+                            </span>
+                        </label>
+                        <label>
+                            Refresh interval
+                            <span class="number-input">
+                                <input
+                                    id="refresh-interval"
+                                    type="number"
+                                    min="0.1"
+                                    max="60"
+                                    step="0.1"
+                                    value="{{ refresh_interval }}"
+                                >
+                                <b>sec</b>
+                            </span>
+                        </label>
+                    </fieldset>
+
+                    <div class="position-plot-grid">
+                        <article class="turntable-plot-card">
+                            <header>
+                                <div>
+                                    <p class="section-kicker">Physical coordinates</p>
+                                    <h3>Pan / tilt</h3>
+                                </div>
+                                <span data-history-count>0 points</span>
+                            </header>
+                            <div id="pan-tilt-plot" class="turntable-plot" aria-label="Pan and tilt position history"></div>
+                        </article>
+                        <article class="turntable-plot-card">
+                            <header>
+                                <div>
+                                    <p class="section-kicker">Firmware coordinates</p>
+                                    <h3>Yaw / pitch</h3>
+                                </div>
+                                <span>Raw position</span>
+                            </header>
+                            <div id="yaw-pitch-plot" class="turntable-plot" aria-label="Yaw and pitch position history"></div>
+                        </article>
+                    </div>
+                </section>
+
+                <section class="turntable-panel control-panel" aria-labelledby="control-heading">
+                    <div class="turntable-panel-heading">
+                        <div>
+                            <p class="section-kicker">Direct commands</p>
+                            <h2 id="control-heading">Control</h2>
+                        </div>
+                    </div>
+
+                    <div class="command-grid">
+                        <form class="command-card" data-command-form="set">
+                            <header>
+                                <span class="command-number">01</span>
+                                <div>
+                                    <h3>Set position</h3>
+                                    <p>Declare the current physical position. Firmware currently accepts zero only.</p>
+                                </div>
+                            </header>
+                            <div class="command-fields">
+                                <label>Pan <span><input name="pan" type="text" inputmode="decimal" value="0"><b>°</b></span></label>
+                                <label>Tilt <span><input name="tilt" type="text" inputmode="decimal" value="0"><b>°</b></span></label>
+                            </div>
+                            <button class="command-button" type="submit" data-control="set" disabled>Set position</button>
+                        </form>
+
+                        <form class="command-card" data-command-form="move">
+                            <header>
+                                <span class="command-number">02</span>
+                                <div>
+                                    <h3>Move</h3>
+                                    <p>Queue a safe move in physical, regime-compensated pan and tilt coordinates.</p>
+                                </div>
+                            </header>
+                            <div class="command-fields">
+                                <label>Pan <span><input name="pan" type="text" inputmode="decimal" value="0"><b>°</b></span></label>
+                                <label>Tilt <span><input name="tilt" type="text" inputmode="decimal" value="0"><b>°</b></span></label>
+                            </div>
+                            <button class="command-button" type="submit" data-control="move" disabled>Move to position</button>
+                        </form>
+                    </div>
+
+                    <div class="emergency-card">
+                        <div>
+                            <p class="section-kicker">Immediate safety action</p>
+                            <h3>Emergency stop</h3>
+                            <p>Bypasses the queue, invalidates pending commands, and writes the stop command immediately.</p>
+                        </div>
+                        <button class="emergency-stop-button" type="button" data-control="abort" disabled>
+                            <span aria-hidden="true">■</span>
+                            Emergency stop
+                        </button>
+                    </div>
+
+                    <p class="command-feedback" data-command-feedback role="status" aria-live="polite">
+                        Waiting for controller status.
+                    </p>
+                </section>
+            </div>
+        </main>
+    </body>
+</html>
