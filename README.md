@@ -64,6 +64,12 @@ The non-blocking turntable interface is available as
 `msu_anechoic.turntable2`. See [the threaded controller
 documentation](docs/turntable2.md) for its API and state model.
 
+`turntable2` uses **yaw/pitch** for the relative coordinates reported by the
+firmware and **pan/tilt** for physical, regime-compensated coordinates. Its
+public movement methods therefore accept `pan=` and `tilt=`. This terminology
+change applies only to `turntable2`; the legacy controller retains its existing
+API.
+
 ## Changelog
 
 ### v0.1.0 - Before March 2025

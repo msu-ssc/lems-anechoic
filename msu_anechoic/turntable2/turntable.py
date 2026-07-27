@@ -10,13 +10,14 @@ from typing import overload
 
 import serial
 
-from msu_anechoic import AzEl
 from msu_anechoic import create_null_logger
 from msu_anechoic.turntable2.controller import ControllerThread
+from msu_anechoic.turntable2.controller import TurntableCompleteState
 from msu_anechoic.turntable2.controller import TurntableError
 from msu_anechoic.turntable2.controller import TurntableState
 from msu_anechoic.turntable2.messages import ReceivedMessage
 from msu_anechoic.turntable2.messages import ReceivedMessagePosition
+from msu_anechoic.turntable2.positions import PanTilt
 from msu_anechoic.turntable2.serial_listener import SerialConnection
 from msu_anechoic.turntable2.serial_listener import SerialListener
 
@@ -127,8 +128,8 @@ class Turntable:
     def set_position(
         self,
         *,
-        azimuth: float,
-        elevation: float,
+        pan: float,
+        tilt: float,
         timeout: float = 5.0,
     ) -> None:
         """Queue a SET command.
@@ -137,18 +138,18 @@ class Turntable:
         them instead of providing a false impression that they were applied.
         """
 
-        self._controller.submit_set(azimuth=azimuth, elevation=elevation, timeout=timeout)
+        self._controller.submit_set(pan=pan, tilt=tilt, timeout=timeout)
 
     def move_to(
         self,
         *,
-        azimuth: float,
-        elevation: float,
+        pan: float,
+        tilt: float,
         move_timeout: float = 120.0,
     ) -> None:
         """Queue a safe move and return immediately."""
 
-        self._controller.submit_move(azimuth=azimuth, elevation=elevation, timeout=move_timeout)
+        self._controller.submit_move(pan=pan, tilt=tilt, timeout=move_timeout)
 
     def abort(self) -> None:
         """Immediately stop movement and invalidate all queued commands."""
@@ -158,10 +159,15 @@ class Turntable:
     def current_state(self) -> TurntableState:
         return self._controller.current_state()
 
-    def current_position(self) -> AzEl | None:
-        """Return the most recently reported absolute position."""
+    def current_position(self) -> PanTilt | None:
+        """Return the most recently reported, regime-compensated position."""
 
         return self._controller.current_position()
+
+    def get_complete_state(self) -> TurntableCompleteState:
+        """Return a detailed, immutable diagnostic snapshot."""
+
+        return self._controller.get_complete_state()
 
     @overload
     def most_recent_event(self, *, kind: Literal["position"]) -> ReceivedMessagePosition | None: ...
@@ -173,7 +179,7 @@ class Turntable:
     def most_recent_event(self, *, kind: None = None) -> ReceivedMessage | None: ...
 
     def most_recent_event(self, *, kind: str | None = None) -> ReceivedMessage | None:
-        """Return the newest event, optionally filtered by event kind."""
+        """Return the newest raw receive event, optionally filtered by kind."""
 
         return self._controller.most_recent_event(kind=kind)
 

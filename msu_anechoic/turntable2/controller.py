@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import datetime
 import enum
 import logging
 import math
@@ -13,16 +14,19 @@ from collections import deque
 from typing import Literal
 from typing import overload
 
-from msu_anechoic import AzEl
-from msu_anechoic import _turn_table_elevation_regime as _regime
 from msu_anechoic.turntable2.messages import ReceivedMessage
 from msu_anechoic.turntable2.messages import ReceivedMessagePosition
+from msu_anechoic.turntable2.positions import PanTilt
+from msu_anechoic.turntable2.positions import YawPitch
+from msu_anechoic.turntable2.regimes import TiltRegime
+from msu_anechoic.turntable2.regimes import find_best_regime
+from msu_anechoic.turntable2.regimes import find_next_regime
 from msu_anechoic.turntable2.serial_listener import SerialConnection
 
 ALLOWABLE_DISCREPANCY_DEG = 0.11
-ABSOLUTE_AZIMUTH_BOUNDS = (-180.0, 180.0)
-ABSOLUTE_ELEVATION_BOUNDS = (-90.0, 45.0)
-REGIME_ELEVATION_BOUNDS = (-29.5, 29.5)
+ABSOLUTE_PAN_BOUNDS = (-180.0, 180.0)
+ABSOLUTE_TILT_BOUNDS = (-90.0, 45.0)
+REGIME_PITCH_BOUNDS = (-29.5, 29.5)
 
 
 class TurntableError(Exception):
@@ -41,19 +45,55 @@ class TurntableState(str, enum.Enum):
     CLOSED = "closed"
 
 
+class TurntableActivity(str, enum.Enum):
+    """The work represented by a complete-state snapshot."""
+
+    IDLE = "idle"
+    QUEUED = "queued"
+    SETTING_POSITION = "setting_position"
+    MOVING = "moving"
+    CHANGING_REGIME = "changing_regime"
+
+
+@dataclasses.dataclass(frozen=True)
+class TurntableCompleteState:
+    """An immutable diagnostic snapshot of controller state."""
+
+    captured_at: datetime.datetime
+    state: TurntableState
+    activity: TurntableActivity
+    activity_phase: str | None
+    uncorrected_position: YawPitch | None
+    corrected_position: PanTilt | None
+    current_regime: TiltRegime | None
+    regime_offset: PanTilt | None
+    most_recent_position_event: ReceivedMessagePosition | None
+    most_recent_event: ReceivedMessage | None
+    last_communication_at: datetime.datetime | None
+    seconds_since_last_communication: float
+    communication_timeout: float
+    activity_timeout_at: datetime.datetime | None
+    target_position: PanTilt | None
+    internal_target: YawPitch | None
+    queued_command_count: int
+    has_been_set: bool
+    last_error: str | None
+    event_count: int
+
+
 @dataclasses.dataclass(frozen=True)
 class _SetCommand:
     generation: int
-    azimuth: float
-    elevation: float
+    pan: float
+    tilt: float
     timeout: float
 
 
 @dataclasses.dataclass(frozen=True)
 class _MoveCommand:
     generation: int
-    azimuth: float
-    elevation: float
+    pan: float
+    tilt: float
     timeout: float
 
 
@@ -63,24 +103,26 @@ _Command = _SetCommand | _MoveCommand
 @dataclasses.dataclass
 class _SetOperation:
     deadline: float
+    timeout_at: datetime.datetime
 
 
 @dataclasses.dataclass
 class _MoveOperation:
-    azimuth: float
-    elevation: float
+    pan: float
+    tilt: float
     deadline: float
+    timeout_at: datetime.datetime
     phase: Literal["starting", "regime_move", "regime_set", "final"] = "starting"
-    raw_target: AzEl | None = None
-    next_regime: _regime.TurnTableElevationRegime | None = None
-    next_offset: float | None = None
+    internal_target: YawPitch | None = None
+    next_regime: TiltRegime | None = None
+    next_offset: PanTilt | None = None
 
 
 _Operation = _SetOperation | _MoveOperation
 
 
 class ControllerThread(threading.Thread):
-    """Consume receive events and commands, and own all serial writes."""
+    """Consume receive events and commands, and serialize all device writes."""
 
     def __init__(
         self,
@@ -111,7 +153,7 @@ class ControllerThread(threading.Thread):
         self._logger = logger or logging.getLogger(__name__)
 
         self._command_queue: "queue.Queue[_Command]" = queue.Queue()
-        self._queued_commands: "deque[_SetCommand | _MoveCommand]" = deque()
+        self._queued_commands: "deque[_Command]" = deque()
         self._operation: _Operation | None = None
         self._stop_event = threading.Event()
         self._lock = threading.RLock()
@@ -120,19 +162,20 @@ class ControllerThread(threading.Thread):
         self._state = TurntableState.NOT_SET
         self._has_been_set = False
         self._set_requested = False
-        self._current_regime: _regime.TurnTableElevationRegime | None = None
-        self._regime_elevation_offset: float | None = None
-        self._raw_position: AzEl | None = None
-        self._current_position: AzEl | None = None
+        self._current_regime: TiltRegime | None = None
+        self._regime_offset: PanTilt | None = None
+        self._internal_position: YawPitch | None = None
+        self._corrected_position: PanTilt | None = None
         self._most_recent_communication = float("-inf")
+        self._last_communication_at: datetime.datetime | None = None
         self._started_at = time.monotonic()
         self._events: "deque[ReceivedMessage]" = deque(maxlen=event_history_size)
         self._most_recent_by_kind: dict[str, ReceivedMessage] = {}
         self._last_error: Exception | None = None
 
-    def submit_set(self, *, azimuth: float, elevation: float, timeout: float) -> None:
-        if azimuth != 0 or elevation != 0:
-            raise ValueError("The turntable firmware only supports setting azimuth=0 and elevation=0")
+    def submit_set(self, *, pan: float, tilt: float, timeout: float) -> None:
+        if pan != 0 or tilt != 0:
+            raise ValueError("The turntable firmware only supports setting pan=0 and tilt=0")
         _validate_timeout(timeout)
         with self._lock:
             self._ensure_open()
@@ -140,14 +183,14 @@ class ControllerThread(threading.Thread):
             self._command_queue.put(
                 _SetCommand(
                     generation=self._command_generation,
-                    azimuth=azimuth,
-                    elevation=elevation,
+                    pan=pan,
+                    tilt=tilt,
                     timeout=timeout,
                 )
             )
 
-    def submit_move(self, *, azimuth: float, elevation: float, timeout: float) -> None:
-        _validate_position(azimuth=azimuth, elevation=elevation)
+    def submit_move(self, *, pan: float, tilt: float, timeout: float) -> None:
+        _validate_position(pan=pan, tilt=tilt)
         _validate_timeout(timeout)
         with self._lock:
             self._ensure_open()
@@ -156,8 +199,8 @@ class ControllerThread(threading.Thread):
             self._command_queue.put(
                 _MoveCommand(
                     generation=self._command_generation,
-                    azimuth=azimuth,
-                    elevation=elevation,
+                    pan=pan,
+                    tilt=tilt,
                     timeout=timeout,
                 )
             )
@@ -172,8 +215,6 @@ class ControllerThread(threading.Thread):
             self._set_requested = self._has_been_set
             if self._state != TurntableState.NO_COMMUNICATION:
                 self._state = TurntableState.STOPPED if self._has_been_set else TurntableState.NOT_SET
-            # ABORT is the safety exception to normal command queuing. Holding
-            # the controller lock ensures no SET/MOV write can race after it.
             self._write_command(b"p", repetitions=1)
 
     def stop(self) -> None:
@@ -183,9 +224,70 @@ class ControllerThread(threading.Thread):
         with self._lock:
             return self._state
 
-    def current_position(self) -> AzEl | None:
+    def current_position(self) -> PanTilt | None:
         with self._lock:
-            return self._current_position
+            return self._corrected_position
+
+    def get_complete_state(self) -> TurntableCompleteState:
+        """Return an immutable, internally consistent diagnostic snapshot."""
+
+        with self._lock:
+            operation = self._operation
+            position_event = self._most_recent_by_kind.get("position")
+            if not isinstance(position_event, ReceivedMessagePosition):
+                position_event = None
+
+            timeout_at: datetime.datetime | None = None
+            target_position: PanTilt | None = None
+            internal_target: YawPitch | None = None
+            activity_phase: str | None = None
+            if isinstance(operation, _SetOperation):
+                activity = TurntableActivity.SETTING_POSITION
+                activity_phase = "set"
+                timeout_at = operation.timeout_at
+                target_position = PanTilt(0.0, 0.0)
+                internal_target = YawPitch(0.0, 0.0)
+            elif isinstance(operation, _MoveOperation):
+                activity = (
+                    TurntableActivity.CHANGING_REGIME
+                    if operation.phase in {"regime_move", "regime_set"}
+                    else TurntableActivity.MOVING
+                )
+                activity_phase = operation.phase
+                timeout_at = operation.timeout_at
+                target_position = PanTilt(operation.pan, operation.tilt)
+                internal_target = operation.internal_target
+            elif self._queued_commands or not self._command_queue.empty():
+                activity = TurntableActivity.QUEUED
+            else:
+                activity = TurntableActivity.IDLE
+
+            error = None
+            if self._last_error is not None:
+                error = f"{type(self._last_error).__name__}: {self._last_error}"
+
+            return TurntableCompleteState(
+                captured_at=_utc_now(),
+                state=self._state,
+                activity=activity,
+                activity_phase=activity_phase,
+                uncorrected_position=self._internal_position,
+                corrected_position=self._corrected_position,
+                current_regime=self._current_regime,
+                regime_offset=self._regime_offset,
+                most_recent_position_event=position_event,
+                most_recent_event=self._events[-1] if self._events else None,
+                last_communication_at=self._last_communication_at,
+                seconds_since_last_communication=time.monotonic() - self._most_recent_communication,
+                communication_timeout=self._communication_timeout,
+                activity_timeout_at=timeout_at,
+                target_position=target_position,
+                internal_target=internal_target,
+                queued_command_count=len(self._queued_commands) + self._command_queue.qsize(),
+                has_been_set=self._has_been_set,
+                last_error=error,
+                event_count=len(self._events),
+            )
 
     @overload
     def most_recent_event(self, *, kind: Literal["position"]) -> ReceivedMessagePosition | None: ...
@@ -240,12 +342,11 @@ class ControllerThread(threading.Thread):
 
     def _drain_commands(self) -> None:
         while True:
-            try:
-                command = self._command_queue.get_nowait()
-            except queue.Empty:
-                return
-
             with self._lock:
+                try:
+                    command = self._command_queue.get_nowait()
+                except queue.Empty:
+                    return
                 if command.generation == self._command_generation:
                     self._queued_commands.append(command)
 
@@ -258,42 +359,29 @@ class ControllerThread(threading.Thread):
             self._handle_received_message(event)
 
     def _handle_received_message(self, event: ReceivedMessage) -> None:
+        self._record_event(event)
         if not isinstance(event, ReceivedMessagePosition):
-            self._record_event(event)
             return
-        if event.azimuth is None or event.elevation is None:
-            self._record_event(event)
+        if event.yaw is None or event.pitch is None:
             return
 
-        raw_position = AzEl(azimuth=event.azimuth, elevation=event.elevation)
+        internal_position = YawPitch(yaw=event.yaw, pitch=event.pitch)
         with self._lock:
             self._most_recent_communication = time.monotonic()
-            self._raw_position = raw_position
-            offset = self._regime_elevation_offset or 0.0
-            actual_position = AzEl(
-                azimuth=raw_position.azimuth,
-                elevation=raw_position.elevation + offset,
-            )
-            self._current_position = actual_position
+            self._last_communication_at = event.timestamp
+            self._internal_position = internal_position
+            offset = self._regime_offset or PanTilt(0.0, 0.0)
+            self._corrected_position = _apply_offset(internal_position, offset)
 
-        actual_event = ReceivedMessagePosition(
-            message=event.message,
-            timestamp=event.timestamp,
-            azimuth=actual_position.azimuth,
-            elevation=actual_position.elevation,
-        )
-        self._record_event(actual_event)
-
-        with self._lock:
             if isinstance(self._operation, _SetOperation):
-                if _position_matches(raw_position, AzEl(0.0, 0.0)):
+                if _position_matches(internal_position, YawPitch(0.0, 0.0)):
                     self._has_been_set = True
                     self._set_requested = any(isinstance(command, _SetCommand) for command in self._queued_commands)
-                    self._current_regime = _regime.find_best_regime(0.0)
-                    self._regime_elevation_offset = 0.0
-                    self._current_position = raw_position
+                    self._current_regime = find_best_regime(0.0)
+                    self._regime_offset = PanTilt(0.0, 0.0)
+                    self._corrected_position = PanTilt(internal_position.yaw, internal_position.pitch)
                     self._operation = None
-                    self._state = TurntableState.STOPPED
+                    self._state = TurntableState.MOVING if self._has_pending_commands() else TurntableState.STOPPED
                 return
 
             if not isinstance(self._operation, _MoveOperation):
@@ -301,33 +389,35 @@ class ControllerThread(threading.Thread):
                 return
 
             operation = self._operation
-            if operation.raw_target is None or not _position_matches(raw_position, operation.raw_target):
+            if operation.internal_target is None or not _position_matches(
+                internal_position,
+                operation.internal_target,
+            ):
                 return
 
             if operation.phase == "regime_move":
                 assert operation.next_regime is not None
-                operation.next_offset = raw_position.elevation + (self._regime_elevation_offset or 0.0)
+                operation.next_offset = PanTilt(
+                    pan=internal_position.yaw + offset.pan,
+                    tilt=internal_position.pitch + offset.tilt,
+                )
                 operation.phase = "regime_set"
-                operation.raw_target = AzEl(0.0, 0.0)
-                self._write_command(_format_set_command(azimuth=0.0, elevation=0.0))
+                operation.internal_target = YawPitch(0.0, 0.0)
+                self._write_command(_format_set_command(yaw=0.0, pitch=0.0))
                 return
 
             if operation.phase == "regime_set":
                 assert operation.next_regime is not None
                 assert operation.next_offset is not None
-                self._regime_elevation_offset = operation.next_offset
+                self._regime_offset = operation.next_offset
                 self._current_regime = operation.next_regime
-                self._current_position = AzEl(
-                    azimuth=raw_position.azimuth,
-                    elevation=raw_position.elevation + operation.next_offset,
-                )
+                self._corrected_position = _apply_offset(internal_position, operation.next_offset)
                 self._continue_move(operation)
                 return
 
             if operation.phase == "final":
                 self._operation = None
-                self._state = TurntableState.STOPPED
-                return
+                self._state = TurntableState.MOVING if self._has_pending_commands() else TurntableState.STOPPED
 
     def _record_event(self, event: ReceivedMessage) -> None:
         with self._lock:
@@ -337,28 +427,26 @@ class ControllerThread(threading.Thread):
     def _check_timeouts(self) -> None:
         now = time.monotonic()
         with self._lock:
-            last_communication = self._most_recent_communication
             operation = self._operation
-
-            reference = last_communication if math.isfinite(last_communication) else self._started_at
+            reference = (
+                self._most_recent_communication if math.isfinite(self._most_recent_communication) else self._started_at
+            )
             if now - reference > self._communication_timeout:
-                already_disconnected = self._state == TurntableState.NO_COMMUNICATION
-                if not already_disconnected:
+                if self._state != TurntableState.NO_COMMUNICATION:
                     if isinstance(operation, _MoveOperation):
                         self._write_command(b"p", repetitions=1)
                     self._state = TurntableState.NO_COMMUNICATION
                     self._has_been_set = False
                     self._set_requested = False
                     self._current_regime = None
-                    self._regime_elevation_offset = None
+                    self._regime_offset = None
                     self._operation = None
                     self._invalidate_pending_commands()
                 return
 
             if operation is not None and now > operation.deadline:
                 self._write_command(b"p", repetitions=1)
-                error = TimeoutError("Turntable command timed out")
-                self._last_error = error
+                self._last_error = TimeoutError("Turntable command timed out")
                 self._operation = None
                 self._invalidate_pending_commands()
                 self._set_requested = self._has_been_set
@@ -384,23 +472,26 @@ class ControllerThread(threading.Thread):
         with self._lock:
             if command.generation != self._command_generation:
                 return
-            self._operation = _SetOperation(deadline=time.monotonic() + command.timeout)
+            deadline, timeout_at = _make_deadline(command.timeout)
+            self._operation = _SetOperation(deadline=deadline, timeout_at=timeout_at)
             self._state = TurntableState.NOT_SET
-            self._write_command(_format_set_command(azimuth=command.azimuth, elevation=command.elevation))
+            self._write_command(_format_set_command(yaw=command.pan, pitch=command.tilt))
 
     def _begin_move(self, command: _MoveCommand) -> None:
         with self._lock:
             if command.generation != self._command_generation:
                 return
-            if not self._has_been_set or self._current_regime is None or self._regime_elevation_offset is None:
+            if not self._has_been_set or self._current_regime is None or self._regime_offset is None:
                 self._last_error = TurntableError("The turntable position is not set")
                 self._state = TurntableState.ERROR
                 self._set_requested = False
                 return
+            deadline, timeout_at = _make_deadline(command.timeout)
             operation = _MoveOperation(
-                azimuth=command.azimuth,
-                elevation=command.elevation,
-                deadline=time.monotonic() + command.timeout,
+                pan=command.pan,
+                tilt=command.tilt,
+                deadline=deadline,
+                timeout_at=timeout_at,
             )
             self._operation = operation
             self._state = TurntableState.MOVING
@@ -411,28 +502,30 @@ class ControllerThread(threading.Thread):
             if self._operation is not operation:
                 return
             current_regime = self._current_regime
-            offset = self._regime_elevation_offset
+            offset = self._regime_offset
             assert current_regime is not None
             assert offset is not None
 
-            if operation.elevation not in current_regime:
-                next_regime = _regime.find_next_regime(
-                    destination_angle=operation.elevation,
+            if operation.tilt not in current_regime:
+                next_regime = find_next_regime(
+                    destination_tilt=operation.tilt,
                     current_regime=current_regime,
                 )
-                raw_elevation = next_regime.center_angle - offset
-                _validate_regime_elevation(raw_elevation)
+                internal_yaw = -offset.pan
+                internal_pitch = next_regime.center_tilt - offset.tilt
+                _validate_regime_pitch(internal_pitch)
                 operation.phase = "regime_move"
                 operation.next_regime = next_regime
-                operation.raw_target = AzEl(azimuth=0.0, elevation=raw_elevation)
-                self._write_command(_format_move_command(azimuth=0.0, elevation=raw_elevation))
+                operation.internal_target = YawPitch(yaw=internal_yaw, pitch=internal_pitch)
+                self._write_command(_format_move_command(yaw=internal_yaw, pitch=internal_pitch))
                 return
 
-            raw_elevation = operation.elevation - offset
-            _validate_regime_elevation(raw_elevation)
+            internal_yaw = operation.pan - offset.pan
+            internal_pitch = operation.tilt - offset.tilt
+            _validate_regime_pitch(internal_pitch)
             operation.phase = "final"
-            operation.raw_target = AzEl(azimuth=operation.azimuth, elevation=raw_elevation)
-            self._write_command(_format_move_command(azimuth=operation.azimuth, elevation=raw_elevation))
+            operation.internal_target = YawPitch(yaw=internal_yaw, pitch=internal_pitch)
+            self._write_command(_format_move_command(yaw=internal_yaw, pitch=internal_pitch))
 
     def _write_command(self, command: bytes, *, repetitions: int | None = None) -> None:
         with self._lock:
@@ -447,17 +540,24 @@ class ControllerThread(threading.Thread):
                 self._state = TurntableState.ERROR
 
     def _invalidate_pending_commands(self) -> None:
-        """Invalidate queued commands in constant time while holding ``_lock``."""
-
         self._command_generation += 1
         self._queued_commands.clear()
-        # A command already fetched by the controller retains the previous
-        # generation and will be ignored.
         self._command_queue = queue.Queue()
+
+    def _has_pending_commands(self) -> bool:
+        return bool(self._queued_commands) or not self._command_queue.empty()
 
     def _ensure_open(self) -> None:
         if self._state == TurntableState.CLOSED or self._stop_event.is_set():
             raise TurntableError("The turntable controller is closed")
+
+
+def _utc_now() -> datetime.datetime:
+    return datetime.datetime.now(tz=datetime.timezone.utc)
+
+
+def _make_deadline(timeout: float) -> tuple[float, datetime.datetime]:
+    return time.monotonic() + timeout, _utc_now() + datetime.timedelta(seconds=timeout)
 
 
 def _validate_timeout(timeout: float) -> None:
@@ -465,30 +565,43 @@ def _validate_timeout(timeout: float) -> None:
         raise ValueError("timeout must be a finite number greater than zero")
 
 
-def _validate_position(*, azimuth: float, elevation: float) -> None:
-    if not math.isfinite(azimuth) or not ABSOLUTE_AZIMUTH_BOUNDS[0] <= azimuth <= ABSOLUTE_AZIMUTH_BOUNDS[1]:
-        raise ValueError(f"azimuth must be within {ABSOLUTE_AZIMUTH_BOUNDS}")
-    if not math.isfinite(elevation) or not ABSOLUTE_ELEVATION_BOUNDS[0] <= elevation <= ABSOLUTE_ELEVATION_BOUNDS[1]:
-        raise ValueError(f"elevation must be within {ABSOLUTE_ELEVATION_BOUNDS}")
+def _validate_position(*, pan: float, tilt: float) -> None:
+    if not math.isfinite(pan) or not ABSOLUTE_PAN_BOUNDS[0] <= pan <= ABSOLUTE_PAN_BOUNDS[1]:
+        raise ValueError(f"pan must be within {ABSOLUTE_PAN_BOUNDS}")
+    if not math.isfinite(tilt) or not ABSOLUTE_TILT_BOUNDS[0] <= tilt <= ABSOLUTE_TILT_BOUNDS[1]:
+        raise ValueError(f"tilt must be within {ABSOLUTE_TILT_BOUNDS}")
 
 
-def _validate_regime_elevation(elevation: float) -> None:
-    if not REGIME_ELEVATION_BOUNDS[0] <= elevation <= REGIME_ELEVATION_BOUNDS[1]:
-        raise TurntableError(
-            f"Internal elevation {elevation} is outside the safe regime bounds {REGIME_ELEVATION_BOUNDS}"
-        )
+def _validate_regime_pitch(pitch: float) -> None:
+    if not REGIME_PITCH_BOUNDS[0] <= pitch <= REGIME_PITCH_BOUNDS[1]:
+        raise TurntableError(f"Internal pitch {pitch} is outside the safe regime bounds {REGIME_PITCH_BOUNDS}")
 
 
-def _position_matches(actual: AzEl, expected: AzEl) -> bool:
+def _position_matches(actual: YawPitch, expected: YawPitch) -> bool:
     return (
-        abs(actual.azimuth - expected.azimuth) <= ALLOWABLE_DISCREPANCY_DEG
-        and abs(actual.elevation - expected.elevation) <= ALLOWABLE_DISCREPANCY_DEG
+        abs(actual.yaw - expected.yaw) <= ALLOWABLE_DISCREPANCY_DEG
+        and abs(actual.pitch - expected.pitch) <= ALLOWABLE_DISCREPANCY_DEG
     )
 
 
-def _format_set_command(*, azimuth: float, elevation: float) -> bytes:
-    return f"CMD:SET:{azimuth:.3f},{elevation:.3f};".encode("ascii")
+def _apply_offset(position: YawPitch, offset: PanTilt) -> PanTilt:
+    return PanTilt(
+        pan=position.yaw + offset.pan,
+        tilt=position.pitch + offset.tilt,
+    )
 
 
-def _format_move_command(*, azimuth: float, elevation: float) -> bytes:
-    return f"CMD:MOV:{azimuth:.3f},{elevation:.3f};".encode("ascii")
+def _format_set_command(*, yaw: float, pitch: float) -> bytes:
+    """Format the firmware's fixed SET azimuth/elevation value slots."""
+
+    return f"CMD:SET:{_wire_number(yaw)},{_wire_number(pitch)};".encode("ascii")
+
+
+def _format_move_command(*, yaw: float, pitch: float) -> bytes:
+    """Format the firmware's fixed MOV azimuth/elevation value slots."""
+
+    return f"CMD:MOV:{_wire_number(yaw)},{_wire_number(pitch)};".encode("ascii")
+
+
+def _wire_number(value: float) -> str:
+    return f"{0.0 if value == 0 else value:.3f}"

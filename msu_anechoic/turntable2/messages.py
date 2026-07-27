@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
 
-_POSITION_PATTERN = re.compile(rb"Pos= El: (?P<elevation>-?\d{1,3}\.\d{2}) , Az: (?P<azimuth>-?\d{1,3}\.\d{2})")
+_POSITION_PATTERN = re.compile(rb"Pos= El: (?P<pitch>-?\d{1,3}\.\d{2}) , Az: (?P<yaw>-?\d{1,3}\.\d{2})")
 
 
 def _utc_now() -> datetime.datetime:
@@ -28,16 +28,16 @@ class ReceivedMessage(BaseModel):
 
 
 class ReceivedMessagePosition(ReceivedMessage):
-    """A received position report.
+    """A raw position report containing the firmware's relative coordinates.
 
-    ``azimuth`` and ``elevation`` are ``None`` only when a caller constructs an
-    event manually. The serial parser only creates position events after both
-    values have been parsed successfully.
+    The firmware labels these values ``Az`` and ``El`` on the wire. Within
+    ``turntable2`` they are called yaw and pitch to distinguish them from the
+    regime-compensated physical pan and tilt.
     """
 
     kind: Literal["position"] = "position"
-    azimuth: float | None = None
-    elevation: float | None = None
+    yaw: float | None = None
+    pitch: float | None = None
 
 
 def parse_received_message(
@@ -53,14 +53,14 @@ def parse_received_message(
         return ReceivedMessage(message=message, timestamp=timestamp)
 
     try:
-        azimuth = float(match.group("azimuth"))
-        elevation = float(match.group("elevation"))
+        yaw = float(match.group("yaw"))
+        pitch = float(match.group("pitch"))
     except (TypeError, ValueError):
         return ReceivedMessage(message=message, timestamp=timestamp)
 
     return ReceivedMessagePosition(
         message=message,
         timestamp=timestamp,
-        azimuth=azimuth,
-        elevation=elevation,
+        yaw=yaw,
+        pitch=pitch,
     )
