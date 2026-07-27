@@ -88,9 +88,14 @@ def test_experiment_page_has_load_run_and_abort_controls():
     assert "<h1>Experiment Graphs</h1>" in graph_body
     assert "Configure graphs" in graph_body
     assert "Configure Graphs" in graph_body
+    assert 'class="experiment-graphs-page"' in graph_body
     assert "data-graph-grid" in graph_body
     assert "data-graph-settings-overlay" in graph_body
     assert "data-hpbw-enabled" in graph_body
+    graph_styles = (WEB_ROOT / "static" / "experiment.css").read_text()
+    assert ".experiment-graphs-page main" in graph_styles
+    assert "max-width: none" in graph_styles
+    assert "repeat(auto-fit" in graph_styles
 
 
 def test_load_endpoint_validates_and_summarizes_definition():
