@@ -38,7 +38,7 @@ Use Keysight IO Libraries Suite for Linux:
 ```text
 lems-anechoic
   -> PyVISA
-  -> Keysight VISA (/opt/keysight/iolibs/libvisa.so)
+  -> Keysight VISA (/opt/keysight/iolibs/libktvisa32.so)
   -> Keysight 82357 driver (Kt82357Run)
   -> Keysight 82357B
   -> HP 8563E
@@ -50,8 +50,8 @@ open-source stack was not needed for the proven configuration.
 
 ## Install Keysight IO Libraries Suite
 
-Skip the installation if `/opt/keysight/iolibs/libvisa.so` already exists and
-`lsusb -t` reports `Driver=Kt82357Run`.
+Skip the installation if `/opt/keysight/iolibs/libktvisa32.so` already exists
+and `lsusb -t` reports `Driver=Kt82357Run`.
 
 ### Download
 
@@ -115,12 +115,17 @@ Boot/MOK instructions shown on the computer.
 Tell PyVISA to use the Keysight VISA implementation:
 
 ```bash
-export PYVISA_LIBRARY=/opt/keysight/iolibs/libvisa.so
+export PYVISA_LIBRARY=/opt/keysight/iolibs/libktvisa32.so
 ```
 
 Add that line to `~/.profile` to make it persistent, then log out and back in
-or reboot. On the proven installation, `libvisa.so` resolves to Keysight's
-`libktvisa32.so`.
+or reboot.
+
+Use `libktvisa32.so` directly. A clean installation of IO Libraries Suite may
+not create `/opt/keysight/iolibs/libvisa.so`; that name existed on the original
+test computer because it was retained from an older installation.
+`libvisaext.so` is not the core VISA implementation and should not be used for
+`PYVISA_LIBRARY`.
 
 Confirm the setting in a new login session:
 
@@ -131,7 +136,7 @@ printenv PYVISA_LIBRARY
 Expected output:
 
 ```text
-/opt/keysight/iolibs/libvisa.so
+/opt/keysight/iolibs/libktvisa32.so
 ```
 
 ## Verify the installation
@@ -147,7 +152,7 @@ lsusb -t
 lsmod | grep -E 'kt82357(Run|Boot)'
 dkms status | grep -E 'kt82357(Run|Boot)'
 id -nG
-readlink -f /opt/keysight/iolibs/libvisa.so
+test -e /opt/keysight/iolibs/libktvisa32.so
 ```
 
 Expected highlights include:
@@ -158,7 +163,6 @@ Driver=Kt82357Run
 kt82357Run
 kt82357Boot
 kt-iols
-/opt/keysight/iolibs/libktvisa32.so
 ```
 
 For IO Libraries Suite `21.3.94`, these services were also active:
@@ -209,13 +213,14 @@ Check:
 
 ```bash
 printenv PYVISA_LIBRARY
-test -e /opt/keysight/iolibs/libvisa.so
-readlink -f /opt/keysight/iolibs/libvisa.so
+test -e /opt/keysight/iolibs/libktvisa32.so
 ```
 
-`PYVISA_LIBRARY` should name the Keysight library. Do not select the PyVISA-Py
-backend with `@py` for this configuration; its GPIB support requires the
-separate open-source `linux-gpib` stack.
+`PYVISA_LIBRARY` should be
+`/opt/keysight/iolibs/libktvisa32.so`. Do not substitute
+`libvisaext.so`. Also, do not select the PyVISA-Py backend with `@py` for this
+configuration; its GPIB support requires the separate open-source
+`linux-gpib` stack.
 
 ### The adapter is absent
 

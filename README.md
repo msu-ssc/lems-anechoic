@@ -50,7 +50,7 @@ that **USB-GPIB** is selected, reboot, and configure PyVISA to load the
 Keysight VISA library:
 
 ```bash
-export PYVISA_LIBRARY=/opt/keysight/iolibs/libvisa.so
+export PYVISA_LIBRARY=/opt/keysight/iolibs/libktvisa32.so
 ```
 
 Add that export to `~/.profile` so it applies to future login sessions. See
