@@ -58,6 +58,12 @@ single azimuth/elevation or pan/tilt regime, applies optional pan/tilt
 quantization, removes duplicate points, and routes each row from the endpoint
 closest to the preceding row.
 
+## Threaded turntable controller
+
+The non-blocking turntable interface is available as
+`msu_anechoic.turntable2`. See [the threaded controller
+documentation](docs/turntable2.md) for its API and state model.
+
 ## Changelog
 
 ### v0.1.0 - Before March 2025
