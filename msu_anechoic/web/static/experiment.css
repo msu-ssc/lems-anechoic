@@ -1,0 +1,329 @@
+.experiment-page-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.experiment-page-heading > div {
+    max-width: 52rem;
+}
+
+.experiment-state {
+    flex: 0 0 auto;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0.45rem 0.75rem;
+    color: var(--text-muted);
+    background: var(--surface);
+    font-size: 0.75rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+}
+
+.experiment-state[data-state="running"] {
+    color: var(--plot-source);
+    border-color: color-mix(in srgb, var(--plot-source) 45%, var(--border));
+}
+
+.experiment-state[data-state="failed"],
+.experiment-state[data-state="cancelling"] {
+    color: var(--plot-origin);
+    border-color: color-mix(in srgb, var(--plot-origin) 45%, var(--border));
+}
+
+.experiment-workspace {
+    display: grid;
+    grid-template-columns: minmax(18rem, 0.75fr) minmax(28rem, 1.25fr);
+    gap: 1rem;
+    align-items: start;
+}
+
+.experiment-panel {
+    border: 1px solid var(--border);
+    border-radius: 1rem;
+    padding: 1.25rem;
+    background: var(--surface);
+}
+
+.plan-panel {
+    grid-row: span 2;
+}
+
+.results-panel {
+    grid-column: 1 / -1;
+}
+
+.results-panel[hidden] {
+    display: none;
+}
+
+.experiment-panel-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1.15rem;
+}
+
+.experiment-panel-heading h2,
+.experiment-panel-heading p {
+    margin: 0;
+}
+
+.experiment-panel-heading > span {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+}
+
+.section-kicker {
+    color: var(--accent);
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+
+.load-option > label,
+.output-mode legend {
+    display: block;
+    margin-bottom: 0.5rem;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+.load-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.65rem;
+}
+
+.load-row select,
+.load-row input[type="file"] {
+    min-width: 0;
+    border: 1px solid var(--border);
+    border-radius: 0.65rem;
+    padding: 0.65rem;
+    color: var(--text);
+    background: var(--input);
+}
+
+.load-divider {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin: 1rem 0;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+}
+
+.load-divider::before,
+.load-divider::after {
+    content: "";
+    height: 1px;
+    flex: 1;
+    background: var(--border);
+}
+
+.load-help,
+.experiment-description,
+.experiment-feedback {
+    color: var(--text-muted);
+    line-height: 1.5;
+}
+
+.load-help {
+    margin: 0.9rem 0 0;
+    font-size: 0.8rem;
+}
+
+.experiment-facts {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.65rem;
+    margin: 1.25rem 0;
+}
+
+.experiment-facts div {
+    border: 1px solid var(--border);
+    border-radius: 0.75rem;
+    padding: 0.75rem;
+    background: var(--surface-muted);
+}
+
+.experiment-facts dt {
+    color: var(--text-muted);
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.experiment-facts dd {
+    margin: 0.25rem 0 0;
+    overflow-wrap: anywhere;
+    font-weight: 700;
+}
+
+.cut-table-wrap {
+    overflow-x: auto;
+}
+
+.cut-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+
+.cut-table th,
+.cut-table td {
+    border-bottom: 1px solid var(--border);
+    padding: 0.65rem 0.5rem;
+    text-align: left;
+    white-space: nowrap;
+}
+
+.cut-table th {
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.progress-summary > div {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.progress-summary progress {
+    width: 100%;
+    height: 0.7rem;
+    margin: 0.75rem 0 1.1rem;
+    accent-color: var(--accent);
+}
+
+.output-mode {
+    display: grid;
+    gap: 0.45rem;
+    margin: 0 0 1rem;
+    border: 0;
+    padding: 0;
+}
+
+.output-mode label,
+.readiness-check {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.55rem;
+    font-size: 0.86rem;
+}
+
+.readiness-check {
+    border: 1px solid var(--border);
+    border-radius: 0.75rem;
+    padding: 0.8rem;
+    background: var(--surface-muted);
+}
+
+.run-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.65rem;
+    margin-top: 1rem;
+}
+
+.abort-button {
+    border: 1px solid var(--plot-origin);
+    border-radius: 0.65rem;
+    padding: 0.65rem 0.9rem;
+    color: var(--plot-origin);
+    background: transparent;
+    font: inherit;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.abort-button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.turntable-link {
+    text-decoration: none;
+}
+
+.experiment-feedback.is-error {
+    color: var(--plot-origin);
+}
+
+.results-description {
+    margin: -0.5rem 0 1rem;
+    color: var(--text-muted);
+    line-height: 1.5;
+}
+
+.polar-plot-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 25rem), 1fr));
+    gap: 1rem;
+}
+
+.polar-plot-card {
+    min-width: 0;
+    border: 1px solid var(--border);
+    border-radius: 0.85rem;
+    padding: 0.8rem;
+    background: var(--surface-muted);
+}
+
+.polar-plot-card header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.2rem 0.25rem 0;
+}
+
+.polar-plot-card h3 {
+    margin: 0;
+}
+
+.polar-plot-card header span {
+    color: var(--text-muted);
+    font-size: 0.78rem;
+}
+
+.polar-plot {
+    width: 100%;
+    min-height: 430px;
+}
+
+@media (max-width: 900px) {
+    .experiment-workspace {
+        grid-template-columns: 1fr;
+    }
+
+    .plan-panel {
+        grid-row: auto;
+    }
+}
+
+@media (max-width: 580px) {
+    .experiment-page-heading,
+    .experiment-panel-heading {
+        display: block;
+    }
+
+    .experiment-state {
+        display: inline-block;
+        margin-top: 0.75rem;
+    }
+
+    .load-row,
+    .experiment-facts {
+        grid-template-columns: 1fr;
+    }
+}

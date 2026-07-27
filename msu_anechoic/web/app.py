@@ -31,6 +31,7 @@ from scipy.spatial import cKDTree
 
 from msu_anechoic import experiment
 from msu_anechoic.turntable2 import TurntableError
+from msu_anechoic.web.experiment import experiment_service
 from msu_anechoic.web.grid import MAX_TURNTABLE_TILT
 from msu_anechoic.web.grid import AxisDefinition
 from msu_anechoic.web.grid import DesignedGrid
@@ -2092,6 +2093,78 @@ def grid_designer(request: Request) -> HTMLResponse:
 class _TurntablePositionCommand(BaseModel):
     pan: float
     tilt: float
+
+
+class _ExperimentLoadRequest(BaseModel):
+    definition: dict[str, object]
+    filename: str | None = None
+
+
+class _ExperimentServerLoadRequest(BaseModel):
+    path: str
+
+
+class _ExperimentStartRequest(BaseModel):
+    output_mode: Literal["new", "append", "overwrite"] = "new"
+
+
+@app.get("/experiment", response_class=HTMLResponse)
+def experiment_control(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request=request,
+        name="experiment.html",
+        context={
+            "available_definitions": experiment_service.available_definitions(),
+        },
+    )
+
+
+@app.get("/experiment/status")
+def experiment_status() -> dict:
+    return experiment_service.snapshot()
+
+
+@app.get("/experiment/results")
+def experiment_results() -> dict:
+    try:
+        return experiment_service.results_payload()
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/experiment/load")
+def load_experiment(command: _ExperimentLoadRequest) -> dict:
+    try:
+        return experiment_service.load_definition(command.definition, source_name=command.filename)
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/experiment/load-server")
+def load_server_experiment(command: _ExperimentServerLoadRequest) -> dict:
+    try:
+        return experiment_service.load_server_definition(command.path)
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/experiment/start")
+def start_experiment(command: _ExperimentStartRequest) -> dict:
+    try:
+        return experiment_service.start(
+            overwrite_csv=command.output_mode == "overwrite",
+            append_csv=command.output_mode == "append",
+        )
+    except (RuntimeError, TurntableError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/experiment/abort")
+def abort_experiment() -> dict:
+    try:
+        return experiment_service.abort()
+    except (RuntimeError, TurntableError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/turntable", response_class=HTMLResponse)
