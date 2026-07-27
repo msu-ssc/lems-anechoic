@@ -245,6 +245,186 @@
     grid-column: 1 / -1;
 }
 
+.graph-panel {
+    grid-column: 1 / -1;
+}
+
+.graph-panel[hidden] {
+    display: none;
+}
+
+.graph-source-line {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.graph-source-line > span {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    overflow-wrap: anywhere;
+    text-align: right;
+}
+
+.dashboard-graph-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+}
+
+.dashboard-graph-card {
+    min-width: 0;
+    border: 1px solid var(--border);
+    border-radius: 0.85rem;
+    padding: 0.8rem;
+    overflow: hidden;
+    contain: layout paint;
+    background: var(--surface-muted);
+}
+
+.dashboard-graph-card header {
+    min-height: 2rem;
+    padding: 0.2rem 0.25rem 0;
+}
+
+.dashboard-graph-card h3 {
+    margin: 0;
+}
+
+.dashboard-plot {
+    min-width: 0;
+    width: 100%;
+    min-height: 430px;
+    overflow: hidden;
+}
+
+.graph-settings-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    background: rgba(15, 25, 45, 0.55);
+}
+
+.graph-settings-overlay[hidden] {
+    display: none;
+}
+
+.graph-settings-dialog {
+    display: flex;
+    width: min(62rem, 100%);
+    max-height: min(48rem, 90vh);
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 1rem;
+    background: var(--surface);
+    box-shadow: 0 1.5rem 4rem rgba(0, 0, 0, 0.3);
+}
+
+.graph-settings-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.graph-settings-header h2 {
+    margin: 0;
+}
+
+.graph-settings-body {
+    display: grid;
+    grid-template-columns: auto minmax(18rem, 1fr) auto;
+    min-height: 0;
+}
+
+.graph-settings-groups,
+.graph-settings-options {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.8rem;
+}
+
+.graph-settings-groups {
+    border-right: 1px solid var(--border);
+}
+
+.graph-settings-options {
+    min-width: 13rem;
+    border-left: 1px solid var(--border);
+}
+
+.graph-settings-options h3 {
+    margin: 0 0 0.75rem;
+}
+
+.graph-settings-options label,
+.graph-settings-group,
+.graph-settings-item {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+}
+
+.graph-settings-group {
+    border-radius: 0.5rem;
+    padding: 0.45rem 0.65rem;
+    color: var(--text-muted);
+    cursor: pointer;
+    user-select: none;
+}
+
+.graph-settings-group:hover,
+.graph-settings-item:hover {
+    background: var(--surface-muted);
+}
+
+.graph-settings-items {
+    overflow-y: auto;
+    padding: 0.5rem 0;
+}
+
+.graph-settings-item {
+    padding: 0.5rem 1rem;
+    user-select: none;
+}
+
+.graph-settings-item.is-dragging {
+    opacity: 0.45;
+}
+
+.graph-settings-item.is-drag-over {
+    border-top: 2px solid var(--accent);
+}
+
+.graph-drag-handle {
+    border: 0;
+    padding: 0 0.2rem;
+    color: var(--text-muted);
+    background: transparent;
+    font-size: 1.25rem;
+    cursor: grab;
+}
+
+.graph-settings-check {
+    width: 1rem;
+    height: 1rem;
+    margin: 0;
+    accent-color: var(--accent);
+}
+
+.graph-settings-label {
+    flex: 1;
+}
+
 .output-mode {
     display: grid;
     gap: 0.45rem;
@@ -361,6 +541,10 @@
     .path-plot-grid {
         grid-template-columns: 1fr;
     }
+
+    .dashboard-graph-grid {
+        grid-template-columns: 1fr;
+    }
 }
 
 @media (max-width: 580px) {
@@ -377,5 +561,20 @@
     .load-row,
     .experiment-facts {
         grid-template-columns: 1fr;
+    }
+
+    .graph-settings-body {
+        grid-template-columns: 1fr;
+        overflow-y: auto;
+    }
+
+    .graph-settings-groups,
+    .graph-settings-options {
+        border: 0;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .graph-source-line {
+        display: block;
     }
 }

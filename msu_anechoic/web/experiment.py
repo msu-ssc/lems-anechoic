@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import datetime
 import math
+import statistics
 import threading
 from collections.abc import Callable
 from pathlib import Path
@@ -340,6 +341,7 @@ def _parameters_summary(parameters: experiment.ExperimentParameters) -> dict[str
         "total_points": _total_points(parameters),
         "travel_seconds": estimates["travel_seconds"],
         "return_home_seconds": estimates["return_home_seconds"],
+        "heatmap_bin_sizes": _heatmap_bin_sizes(parameters),
         "collect_center_frequency_data": parameters.collect_center_frequency_data,
         "collect_peak_data": parameters.collect_peak_data,
         "collect_trace_data": parameters.collect_trace_data,
@@ -428,6 +430,7 @@ def _polar_results(
 ) -> dict[str, Any]:
     cut_definitions = parameters.cuts or {}
     cuts: dict[str, dict[str, Any]] = {}
+    rows: list[dict[str, Any]] = []
     visited_points: set[tuple[str, int]] = set()
     with csv_path.open("r", encoding="utf-8", newline="") as file:
         for row in csv.DictReader(file):
@@ -449,10 +452,49 @@ def _polar_results(
             elevation = _position_value(row, "elevation")
             azimuth = converted.antenna_azimuth if azimuth is None else azimuth
             elevation = converted.antenna_elevation if elevation is None else elevation
+            commanded_pan = _finite_float(row.get("commanded_pan"))
+            commanded_tilt = _finite_float(row.get("commanded_tilt"))
+            commanded_pan = pan if commanded_pan is None else commanded_pan
+            commanded_tilt = tilt if commanded_tilt is None else commanded_tilt
+            commanded_coordinate = experiment.Coordinate.from_turntable(
+                azimuth=commanded_pan,
+                elevation=commanded_tilt,
+            )
+            commanded_azimuth = _finite_float(row.get("commanded_azimuth"))
+            commanded_elevation = _finite_float(row.get("commanded_elevation"))
+            commanded_azimuth = (
+                commanded_coordinate.antenna_azimuth
+                if commanded_azimuth is None
+                else commanded_azimuth
+            )
+            commanded_elevation = (
+                commanded_coordinate.antenna_elevation
+                if commanded_elevation is None
+                else commanded_elevation
+            )
             center_amplitude = _finite_float(row.get("center_amplitude"))
             peak_amplitude = _finite_float(row.get("peak_amplitude"))
             if center_amplitude is None and peak_amplitude is None:
                 continue
+            rows.append(
+                {
+                    "timestamp": row.get("timestamp") or None,
+                    "cut_id": cut_id,
+                    "point_index": point_index,
+                    "pan": pan,
+                    "tilt": tilt,
+                    "azimuth": azimuth,
+                    "elevation": elevation,
+                    "commanded_pan": commanded_pan,
+                    "commanded_tilt": commanded_tilt,
+                    "commanded_azimuth": commanded_azimuth,
+                    "commanded_elevation": commanded_elevation,
+                    "center_amplitude": center_amplitude,
+                    "peak_amplitude": peak_amplitude,
+                    "center_frequency": _finite_float(row.get("center_frequency")),
+                    "peak_frequency": _finite_float(row.get("peak_frequency")),
+                }
+            )
             cut = cuts.setdefault(
                 cut_id,
                 {
@@ -502,7 +544,32 @@ def _polar_results(
             {"cut_id": cut_id, "point_index": point_index}
             for cut_id, point_index in sorted(visited_points, key=lambda item: item[1])
         ],
+        "heatmap_bin_sizes": _heatmap_bin_sizes(parameters),
+        "rows": rows,
         "cuts": payload_cuts,
+    }
+
+
+def _heatmap_bin_sizes(
+    parameters: experiment.ExperimentParameters,
+) -> dict[str, int]:
+    """Choose whole-degree bins containing roughly three points per cut."""
+
+    def bin_size(direction: str) -> int:
+        steps = [
+            abs(cut.step_size)
+            for cut in (parameters.cuts or {}).values()
+            if cut.direction == direction and math.isfinite(cut.step_size)
+        ]
+        return (
+            max(1, math.floor(statistics.median(steps) * 3 + 0.5))
+            if steps
+            else 3
+        )
+
+    return {
+        "horizontal_degrees": bin_size("horizontal"),
+        "vertical_degrees": bin_size("vertical"),
     }
 
 

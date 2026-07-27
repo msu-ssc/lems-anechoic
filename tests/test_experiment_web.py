@@ -86,10 +86,11 @@ def test_experiment_page_has_load_run_and_abort_controls():
     graph_body = graph_response.body.decode()
     assert graph_response.status_code == 200
     assert "<h1>Experiment Graphs</h1>" in graph_body
-    assert 'data-path-plot="pan-tilt"' in graph_body
-    assert 'data-path-plot="az-el"' in graph_body
-    assert 'data-polar-group="horizontal"' in graph_body
-    assert 'data-polar-group="vertical"' in graph_body
+    assert "Configure graphs" in graph_body
+    assert "Configure Graphs" in graph_body
+    assert "data-graph-grid" in graph_body
+    assert "data-graph-settings-overlay" in graph_body
+    assert "data-hpbw-enabled" in graph_body
 
 
 def test_load_endpoint_validates_and_summarizes_definition():
@@ -107,6 +108,10 @@ def test_load_endpoint_validates_and_summarizes_definition():
     assert payload["experiment"]["cuts"][0]["point_count"] == 3
     assert payload["experiment"]["travel_seconds"] > 0
     assert payload["experiment"]["cuts"][0]["travel_seconds"] > 0
+    assert payload["experiment"]["heatmap_bin_sizes"] == {
+        "horizontal_degrees": 30,
+        "vertical_degrees": 3,
+    }
 
 
 def test_measurement_plan_travel_connects_cuts_and_returns_home():
@@ -142,6 +147,37 @@ def test_measurement_plan_travel_connects_cuts_and_returns_home():
         + second["travel_seconds"]
         + estimates["return_home_seconds"]
     )
+
+
+def test_heatmap_bins_target_three_points_and_round_to_whole_degrees():
+    payload = load_experiment(
+        _ExperimentLoadRequest(
+            definition=experiment_definition(
+                cuts={
+                    "horizontal": {
+                        "direction": "horizontal",
+                        "start_angle": -20,
+                        "end_angle": 20,
+                        "step_size": 2.297,
+                        "fixed_angle": 0,
+                    },
+                    "vertical": {
+                        "direction": "vertical",
+                        "start_angle": -20,
+                        "end_angle": 20,
+                        "step_size": 1.8,
+                        "fixed_angle": 0,
+                    },
+                }
+            ),
+            filename="bins.json",
+        )
+    )
+
+    assert payload["experiment"]["heatmap_bin_sizes"] == {
+        "horizontal_degrees": 7,
+        "vertical_degrees": 5,
+    }
 
 
 def test_load_endpoint_rejects_output_outside_experiments_folder():
@@ -206,11 +242,11 @@ def test_results_are_returned_in_both_coordinate_frames(tmp_path):
     csv_path = folder / "raw_data" / "data.csv"
     csv_path.parent.mkdir()
     csv_path.write_text(
-        "point_index,cut_id,actual_pan,actual_tilt,center_amplitude,peak_amplitude\n"
-        "1,horizontal,-10,0,-42,-40\n"
-        "2,horizontal,0,0,-39,-38\n"
-        "4,vertical,0,-10,-43,-41\n"
-        "5,vertical,0,0,-40,-39\n"
+        "point_index,timestamp,cut_id,actual_pan,actual_tilt,center_amplitude,peak_amplitude,center_frequency,peak_frequency\n"
+        "1,2026-01-01T00:00:00Z,horizontal,-10,0,-42,-40,1000,1001\n"
+        "2,2026-01-01T00:00:01Z,horizontal,0,0,-39,-38,1000,1002\n"
+        "4,2026-01-01T00:00:02Z,vertical,0,-10,-43,-41,1000,1003\n"
+        "5,2026-01-01T00:00:03Z,vertical,0,0,-40,-39,1000,1004\n"
     )
     service = ExperimentWebService(
         experiments_root=root,
@@ -248,6 +284,14 @@ def test_results_are_returned_in_both_coordinate_frames(tmp_path):
     assert cuts["horizontal"]["peak"]["absolute_dbm"][0] == pytest.approx(-40)
     assert payload["visited_points"][0] == {"cut_id": "horizontal", "point_index": 1}
     assert payload["visited_points"][-1] == {"cut_id": "vertical", "point_index": 5}
+    assert payload["heatmap_bin_sizes"] == {
+        "horizontal_degrees": 30,
+        "vertical_degrees": 30,
+    }
+    assert payload["rows"][0]["pan"] == -10
+    assert payload["rows"][0]["peak_amplitude"] == -40
+    assert payload["rows"][0]["timestamp"] == "2026-01-01T00:00:00Z"
+    assert payload["rows"][0]["peak_frequency"] == 1001
 
 
 def test_server_load_uses_selected_folder_for_results_and_output(tmp_path):
@@ -524,6 +568,13 @@ def test_experiment_script_loads_json_and_polls_status():
     assert 'name: "Visited points"' in graph_script
     assert 'pan_angles' in graph_script
     assert 'azimuth_angles' in graph_script
-    assert "const pendingPlots = POLAR_DEFINITIONS[direction].map" in graph_script
+    assert '"power-time"' in graph_script
+    assert '"freq-time"' in graph_script
+    assert '"az-el-peak-heat"' in graph_script
+    assert '"pan-tilt-center-heat"' in graph_script
+    assert "computeHpbw" in graph_script
+    assert "hpbwTraces" in graph_script
+    assert "GRAPH_CONFIG_KEY" in graph_script
+    assert "updateConfigFromItems" in graph_script
     assert graph_script.count("window.requestAnimationFrame") >= 2
     assert "width: plot.clientWidth" in graph_script

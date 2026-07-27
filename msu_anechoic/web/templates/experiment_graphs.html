@@ -54,42 +54,46 @@
                     <p data-graph-description>Load an experiment on the Experiment page to view its route and measurements.</p>
                 </div>
                 <div class="heading-actions">
+                    <button class="secondary-button" type="button" data-open-graph-settings>Configure graphs</button>
                     <a class="secondary-button" href="/experiment">Back to experiment</a>
                     <span class="experiment-state" data-experiment-state>NO EXPERIMENT</span>
                 </div>
             </div>
 
             <div class="experiment-workspace graph-workspace">
-                <section class="experiment-panel path-panel" data-path-panel hidden>
+                <section class="experiment-panel graph-panel" data-graph-panel hidden>
                     <div class="experiment-panel-heading">
-                        <div><p class="section-kicker">Live route</p><h2>Defined coordinates</h2></div>
+                        <div><p class="section-kicker">Live experiment</p><h2>Graphs</h2></div>
                         <span data-path-position>Actual position unavailable</span>
                     </div>
-                    <p class="results-description">Pending route points are light gray and turn dark gray when visited. The next target is red; actual position is green.</p>
-                    <div class="path-plot-grid">
-                        <article class="polar-plot-card"><header><h3>Pan / Tilt</h3></header><div class="path-plot" data-path-plot="pan-tilt"></div></article>
-                        <article class="polar-plot-card"><header><h3>Azimuth / Elevation</h3></header><div class="path-plot" data-path-plot="az-el"></div></article>
-                    </div>
-                </section>
-
-                <section class="experiment-panel results-panel" data-results-panel hidden>
-                    <div class="experiment-panel-heading">
-                        <div><p class="section-kicker">Measured response</p><h2>Horizontal cuts</h2></div>
+                    <div class="graph-source-line">
+                        <p class="results-description">Drag and visibility settings are available under Configure graphs. Pending route points are light gray; the target is red and actual position is green.</p>
                         <span data-results-path>—</span>
                     </div>
-                    <p class="results-description">Horizontal cuts only. Each power product and coordinate frame has its own plot; each trace is independently normalized to 0 dB.</p>
-                    <div class="polar-plot-grid" data-polar-group="horizontal"></div>
-                </section>
-
-                <section class="experiment-panel results-panel" data-results-panel hidden>
-                    <div class="experiment-panel-heading">
-                        <div><p class="section-kicker">Measured response</p><h2>Vertical cuts</h2></div>
-                    </div>
-                    <p class="results-description">Vertical cuts only, shown in both absolute tilt and converted antenna elevation.</p>
-                    <div class="polar-plot-grid" data-polar-group="vertical"></div>
+                    <div class="dashboard-graph-grid" data-graph-grid></div>
                 </section>
                 <p class="experiment-feedback graph-feedback" data-feedback role="status" aria-live="polite">Waiting for experiment status.</p>
             </div>
         </main>
+
+        <div class="graph-settings-overlay" data-graph-settings-overlay hidden>
+            <section class="graph-settings-dialog" role="dialog" aria-modal="true" aria-labelledby="graph-settings-title">
+                <header class="graph-settings-header">
+                    <h2 id="graph-settings-title">Configure Graphs</h2>
+                    <button class="primary-button" type="button" data-close-graph-settings>Done</button>
+                </header>
+                <div class="graph-settings-body">
+                    <aside class="graph-settings-groups" data-graph-settings-groups></aside>
+                    <div class="graph-settings-items" data-graph-settings-items></div>
+                    <aside class="graph-settings-options">
+                        <h3>Overlays</h3>
+                        <label>
+                            <input type="checkbox" data-hpbw-enabled>
+                            <span>Half-Power Beam Width</span>
+                        </label>
+                    </aside>
+                </div>
+            </section>
+        </div>
     </body>
 </html>
