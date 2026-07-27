@@ -20,23 +20,53 @@ All other code written by David Mayo.
 
 ### General
 
-You must be on a Windows computer that you have administrative rights to.
+Spectrum-analyzer control is supported on Windows and Linux. The Windows
+installation requires administrator access; the Linux installation requires
+`sudo` access. Turntable control has only been verified on Windows.
 
 [Install uv](https://docs.astral.sh/uv/getting-started/installation/), which is a Python package manager. (Alternately, you can do all of this with your Python of choice, if you know what you're doing.)
 
 ### GPIB control (for spectrum analyzer)
 
 The spec-an is controlled via GPIB, which requires a bunch of drivers that you need to install manually.
+
+#### Windows
+
 - Install [NI-Visa](bin/ni-visa_23.5_online.exe).
+
+> [!NOTE]
+> It is not known whether NI-VISA is actually required. This step was inherited from older installation instructions. The Windows setup is known to work with NI-VISA installed, but it has never been tested without NI-VISA. (Accurate as of July 2026.)
+
 - Reboot computer.
 - Install Keysight Instrument Control Bundle. A current link is [here](https://www.keysight.com/us/en/lib/software-detail/computer-software/keysight-instrument-control-bundle-download-1184883.html), but it might expire. You can Google for the current link. Specifically, install the "IO Libraries Suite" with the GUI.
 - Reboot computer.
 - Run the program "Keysight Connection Expert" to confirm that you can see any attached GPIB device.
 
-### USB/UART control (for turntable)
+#### Linux
+
+Linux spectrum-analyzer support is verified with the Keysight 82357B adapter
+and HP 8563E. Install the Linux version of Keysight IO Libraries Suite, ensure
+that **USB-GPIB** is selected, reboot, and configure PyVISA to load the
+Keysight VISA library:
+
+```bash
+export PYVISA_LIBRARY=/opt/keysight/iolibs/libvisa.so
+```
+
+Add that export to `~/.profile` so it applies to future login sessions. See
+[GPIB spectrum-analyzer setup on Linux](docs/linux-gpib.md) for the complete
+installation, verification, and troubleshooting procedure.
+
+Do not install the open-source `linux-gpib` driver alongside Keysight IO
+Libraries Suite; the two drivers would compete for the adapter.
+
+### USB/UART control (for turntable; Windows)
+
 - Plug in the UART cable (aka "the turntable USB cable")
 - Find the device in device manager
 - Install the [CP210x Universal Windows Driver](bin/CP210x_Universal_Windows_Driver.zip).
+
+Linux turntable support has not been verified.
 
 ### Verification
 
