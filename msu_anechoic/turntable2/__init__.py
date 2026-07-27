@@ -11,6 +11,7 @@ Typical use::
 
 from msu_anechoic.turntable2.controller import ALLOWABLE_DISCREPANCY_DEG
 from msu_anechoic.turntable2.controller import ControllerThread
+from msu_anechoic.turntable2.controller import PositionSample
 from msu_anechoic.turntable2.controller import TurntableActivity
 from msu_anechoic.turntable2.controller import TurntableCompleteState
 from msu_anechoic.turntable2.controller import TurntableError
@@ -30,6 +31,7 @@ __all__ = [
     "ALLOWABLE_DISCREPANCY_DEG",
     "ControllerThread",
     "PanTilt",
+    "PositionSample",
     "ReceivedMessage",
     "ReceivedMessagePosition",
     "SerialListener",

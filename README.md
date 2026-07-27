@@ -50,13 +50,22 @@ Run the local development server:
 uv run python -m msu_anechoic.web
 ```
 
-Then open <http://127.0.0.1:8000/grid-designer>.
+Then open:
+
+- <http://127.0.0.1:8000/grid-designer> to design measurement grids.
+- <http://127.0.0.1:8000/turntable> to monitor and control the threaded
+  turntable controller.
 
 The grid designer is independent of the legacy experiment and coordinate
 classes. It combines one or more inclusive rectangular grids defined in a
 single azimuth/elevation or pan/tilt regime, applies optional pan/tilt
 quantization, removes duplicate points, and routes each row from the endpoint
 closest to the preceding row.
+
+The turntable page shows paired pan/tilt and raw yaw/pitch position histories,
+the complete controller status, queued SET and MOVE controls, and an immediate
+emergency stop. It discovers the USB turntable lazily and reports connection
+errors in the page when hardware is unavailable.
 
 ## Threaded turntable controller
 

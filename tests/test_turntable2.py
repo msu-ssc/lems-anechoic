@@ -136,6 +136,17 @@ def test_set_and_move_are_queued_and_tilt_regimes_are_transparent():
         assert complete_state.most_recent_position_event.pitch == -13
         assert complete_state.activity == turntable2.TurntableActivity.IDLE
         assert complete_state.activity_timeout_at is None
+        assert complete_state.position_history_count == len(turntable.position_history())
+        assert turntable.position_history()[-1] == turntable2.PositionSample(
+            timestamp=complete_state.most_recent_position_event.timestamp,
+            internal_position=turntable2.YawPitch(yaw=15, pitch=-13),
+            corrected_position=turntable2.PanTilt(pan=15, tilt=-40),
+        )
+        assert any(
+            sample.internal_position == turntable2.YawPitch(yaw=0, pitch=0)
+            and sample.corrected_position == turntable2.PanTilt(pan=0, tilt=-27)
+            for sample in turntable.position_history()
+        )
     finally:
         turntable.close()
 
@@ -168,6 +179,7 @@ def test_complete_state_describes_active_move_and_timeout():
         assert complete_state.internal_target == turntable2.YawPitch(yaw=10, pitch=5)
         assert complete_state.queued_command_count == 0
         assert complete_state.has_been_set
+        assert not complete_state.set_requested
         assert complete_state.last_error is None
         assert complete_state.event_count >= 1
         with pytest.raises(FrozenInstanceError):

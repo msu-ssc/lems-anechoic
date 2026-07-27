@@ -56,6 +56,15 @@ class TurntableActivity(str, enum.Enum):
 
 
 @dataclasses.dataclass(frozen=True)
+class PositionSample:
+    """One raw and regime-compensated position observed at the same time."""
+
+    timestamp: datetime.datetime
+    internal_position: YawPitch
+    corrected_position: PanTilt
+
+
+@dataclasses.dataclass(frozen=True)
 class TurntableCompleteState:
     """An immutable diagnostic snapshot of controller state."""
 
@@ -77,8 +86,10 @@ class TurntableCompleteState:
     internal_target: YawPitch | None
     queued_command_count: int
     has_been_set: bool
+    set_requested: bool
     last_error: str | None
     event_count: int
+    position_history_count: int
 
 
 @dataclasses.dataclass(frozen=True)
@@ -170,6 +181,7 @@ class ControllerThread(threading.Thread):
         self._last_communication_at: datetime.datetime | None = None
         self._started_at = time.monotonic()
         self._events: "deque[ReceivedMessage]" = deque(maxlen=event_history_size)
+        self._position_history: "deque[PositionSample]" = deque(maxlen=event_history_size)
         self._most_recent_by_kind: dict[str, ReceivedMessage] = {}
         self._last_error: Exception | None = None
 
@@ -212,7 +224,7 @@ class ControllerThread(threading.Thread):
             self._ensure_open()
             self._operation = None
             self._invalidate_pending_commands()
-            self._set_requested = self._has_been_set
+            self._set_requested = False
             if self._state != TurntableState.NO_COMMUNICATION:
                 self._state = TurntableState.STOPPED if self._has_been_set else TurntableState.NOT_SET
             self._write_command(b"p", repetitions=1)
@@ -285,8 +297,10 @@ class ControllerThread(threading.Thread):
                 internal_target=internal_target,
                 queued_command_count=len(self._queued_commands) + self._command_queue.qsize(),
                 has_been_set=self._has_been_set,
+                set_requested=self._set_requested,
                 last_error=error,
                 event_count=len(self._events),
+                position_history_count=len(self._position_history),
             )
 
     @overload
@@ -309,6 +323,12 @@ class ControllerThread(threading.Thread):
     def events(self) -> tuple[ReceivedMessage, ...]:
         with self._lock:
             return tuple(self._events)
+
+    def position_history(self) -> tuple[PositionSample, ...]:
+        """Return raw and corrected position samples in receive order."""
+
+        with self._lock:
+            return tuple(self._position_history)
 
     def last_error(self) -> Exception | None:
         with self._lock:
@@ -333,7 +353,7 @@ class ControllerThread(threading.Thread):
                     self._last_error = exc
                     self._operation = None
                     self._invalidate_pending_commands()
-                    self._set_requested = self._has_been_set
+                    self._set_requested = False
                     self._state = TurntableState.ERROR
             self._stop_event.wait(self._poll_interval)
 
@@ -382,42 +402,44 @@ class ControllerThread(threading.Thread):
                     self._corrected_position = PanTilt(internal_position.yaw, internal_position.pitch)
                     self._operation = None
                     self._state = TurntableState.MOVING if self._has_pending_commands() else TurntableState.STOPPED
-                return
-
-            if not isinstance(self._operation, _MoveOperation):
+            elif not isinstance(self._operation, _MoveOperation):
                 self._state = TurntableState.STOPPED if self._has_been_set else TurntableState.NOT_SET
-                return
+            else:
+                operation = self._operation
+                if operation.internal_target is not None and _position_matches(
+                    internal_position,
+                    operation.internal_target,
+                ):
+                    if operation.phase == "regime_move":
+                        assert operation.next_regime is not None
+                        operation.next_offset = PanTilt(
+                            pan=internal_position.yaw + offset.pan,
+                            tilt=internal_position.pitch + offset.tilt,
+                        )
+                        operation.phase = "regime_set"
+                        operation.internal_target = YawPitch(0.0, 0.0)
+                        self._write_command(_format_set_command(yaw=0.0, pitch=0.0))
+                    elif operation.phase == "regime_set":
+                        assert operation.next_regime is not None
+                        assert operation.next_offset is not None
+                        self._regime_offset = operation.next_offset
+                        self._current_regime = operation.next_regime
+                        self._corrected_position = _apply_offset(internal_position, operation.next_offset)
+                        self._continue_move(operation)
+                    elif operation.phase == "final":
+                        self._operation = None
+                        self._state = (
+                            TurntableState.MOVING if self._has_pending_commands() else TurntableState.STOPPED
+                        )
 
-            operation = self._operation
-            if operation.internal_target is None or not _position_matches(
-                internal_position,
-                operation.internal_target,
-            ):
-                return
-
-            if operation.phase == "regime_move":
-                assert operation.next_regime is not None
-                operation.next_offset = PanTilt(
-                    pan=internal_position.yaw + offset.pan,
-                    tilt=internal_position.pitch + offset.tilt,
+            assert self._corrected_position is not None
+            self._position_history.append(
+                PositionSample(
+                    timestamp=event.timestamp,
+                    internal_position=internal_position,
+                    corrected_position=self._corrected_position,
                 )
-                operation.phase = "regime_set"
-                operation.internal_target = YawPitch(0.0, 0.0)
-                self._write_command(_format_set_command(yaw=0.0, pitch=0.0))
-                return
-
-            if operation.phase == "regime_set":
-                assert operation.next_regime is not None
-                assert operation.next_offset is not None
-                self._regime_offset = operation.next_offset
-                self._current_regime = operation.next_regime
-                self._corrected_position = _apply_offset(internal_position, operation.next_offset)
-                self._continue_move(operation)
-                return
-
-            if operation.phase == "final":
-                self._operation = None
-                self._state = TurntableState.MOVING if self._has_pending_commands() else TurntableState.STOPPED
+            )
 
     def _record_event(self, event: ReceivedMessage) -> None:
         with self._lock:
@@ -449,7 +471,7 @@ class ControllerThread(threading.Thread):
                 self._last_error = TimeoutError("Turntable command timed out")
                 self._operation = None
                 self._invalidate_pending_commands()
-                self._set_requested = self._has_been_set
+                self._set_requested = False
                 self._state = TurntableState.TIMED_OUT
 
     def _start_next_command(self) -> None:

@@ -194,6 +194,15 @@ body {
     text-decoration: none;
 }
 
+.application-menu a + a {
+    margin-top: 4px;
+}
+
+.application-menu a[aria-current="page"] {
+    border-left: 4px solid var(--brand-yellow);
+    padding-left: 6px;
+}
+
 .application-menu a:hover {
     background: var(--menu-hover);
 }

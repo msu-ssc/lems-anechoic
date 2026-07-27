@@ -12,6 +12,7 @@ import serial
 
 from msu_anechoic import create_null_logger
 from msu_anechoic.turntable2.controller import ControllerThread
+from msu_anechoic.turntable2.controller import PositionSample
 from msu_anechoic.turntable2.controller import TurntableCompleteState
 from msu_anechoic.turntable2.controller import TurntableError
 from msu_anechoic.turntable2.controller import TurntableState
@@ -187,6 +188,11 @@ class Turntable:
         """Return a snapshot of the bounded receive-event history."""
 
         return self._controller.events()
+
+    def position_history(self) -> tuple[PositionSample, ...]:
+        """Return timestamped raw and corrected position samples."""
+
+        return self._controller.position_history()
 
     def time_since_last_communication(self) -> float:
         return self._controller.time_since_last_communication()

@@ -61,8 +61,8 @@ under the controller lock. It includes:
 - the active operation's corrected `target_position`, `internal_target`, and
   timezone-aware `activity_timeout_at`;
 - `last_communication_at`, elapsed communication time, the configured
-  communication timeout, queue depth, event count, and the latest asynchronous
-  error.
+  communication timeout, queue depth, whether the initial SET is pending,
+  position-history and event counts, and the latest asynchronous error.
 
 For example:
 
@@ -90,3 +90,8 @@ Successfully parsed position lines become `ReceivedMessagePosition` events.
 These events intentionally preserve raw firmware yaw and pitch. Use
 `current_position()` or `get_complete_state().corrected_position` for physical
 pan and tilt.
+
+`position_history()` returns bounded `PositionSample` records containing the
+raw `YawPitch` and corrected `PanTilt` observed at each position-event
+timestamp. The web monitor uses these paired samples so its two coordinate
+plots always describe the same observations.
