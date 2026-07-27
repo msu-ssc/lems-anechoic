@@ -28,6 +28,10 @@ You must be on a Windows computer that you have administrative rights to.
 
 The spec-an is controlled via GPIB, which requires a bunch of drivers that you need to install manually.
 - Install [NI-Visa](bin/ni-visa_23.5_online.exe).
+
+> [!NOTE]
+> It is not known whether NI-VISA is actually required. This step was inherited from older installation instructions. The Windows setup is known to work with NI-VISA installed, but it has never been tested without NI-VISA. (Accurate as of July 2026.)
+
 - Reboot computer.
 - Install Keysight Instrument Control Bundle. A current link is [here](https://www.keysight.com/us/en/lib/software-detail/computer-software/keysight-instrument-control-bundle-download-1184883.html), but it might expire. You can Google for the current link. Specifically, install the "IO Libraries Suite" with the GUI.
 - Reboot computer.
