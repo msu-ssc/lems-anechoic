@@ -1,0 +1,4 @@
+.venv/
+.uv_cache/
+visa_cf_query
+
