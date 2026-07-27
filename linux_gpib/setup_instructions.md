@@ -216,6 +216,25 @@ readlink -f /opt/keysight/iolibs/libvisa.so
 
 On the proven installation this resolves to Keysight's `libktvisa32.so`.
 
+Configure PyVISA to use the Keysight implementation:
+
+```bash
+export PYVISA_LIBRARY=/opt/keysight/iolibs/libvisa.so
+```
+
+Add that export to `~/.profile` to make it persistent for future login
+sessions, then log out and back in or reboot. The tested computer already had
+the equivalent setting below from its original 2025 installation:
+
+```bash
+export PYVISA_LIBRARY=/opt/keysight/iolibs/libktvisa32.so
+```
+
+`libvisa.so` resolves to `libktvisa32.so` on the tested installation. The
+`libvisa.so` name is preferable in new instructions because it is the
+installer-managed VISA entry point rather than the implementation-specific
+filename.
+
 If the current user is not in `kt-iols`, add the user and then reboot or fully
 log out and back in:
 
@@ -277,6 +296,25 @@ linux_gpib/.venv/bin/python linux_gpib/pyvisa_cf_query.py \
 The HP 8563E does not respond to the usual SCPI `*IDN?` query. `CF?` is the
 appropriate non-mutating connectivity test for this instrument.
 
+### Verify the existing lems-anechoic application
+
+With `PYVISA_LIBRARY` set as described above, the existing application code
+works without modification:
+
+```bash
+uv run test-connection.py
+```
+
+Observed spectrum-analyzer result:
+
+```text
+✅ Connected to Spectrum Analyzer. Serial: 3310A01144, GPIB address: GPIB0::18::INSTR
+```
+
+The same run reported that it could not find the turntable. Turntable discovery
+is independent of the Keysight VISA/GPIB spectrum-analyzer path and does not
+indicate a failure of this setup.
+
 ## 5. Optional direct VISA C++ verification
 
 The C++ probe avoids Python entirely:
@@ -300,15 +338,22 @@ Keysight's installed `visatype.h` includes the C++ header `<cstdint>`, so use
 
 ### PyVISA cannot find a VISA library
 
-The proof script explicitly loads:
+First confirm that the standard PyVISA environment variable is present:
+
+```bash
+printenv PYVISA_LIBRARY
+```
+
+For this setup it should name the Keysight library:
 
 ```text
 /opt/keysight/iolibs/libvisa.so
 ```
 
-Keep that explicit path. On the proven host, `pyvisa-info` did not reliably
-identify the IVI binary library automatically even though the explicit
-Keysight library worked.
+The standalone proof script also loads that path explicitly, making the proof
+independent of the caller's environment. On the proven host, `pyvisa-info` did
+not reliably identify the IVI binary library automatically even though the
+explicit Keysight library and the environment-variable selection both worked.
 
 Do not select the PyVISA-Py backend with `@py` for this setup. PyVISA-Py's GPIB
 support requires the separate open-source linux-gpib stack.

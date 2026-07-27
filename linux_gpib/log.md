@@ -649,3 +649,45 @@ Result: **success**. The current Keysight IO Libraries Suite 2026 Linux build
 The installer and reboot changed host system state under the user's direct
 control. The assistant's post-reboot commands were read-only and the final
 query was non-mutating.
+
+### Follow-up — Existing application works unchanged
+
+The user ran the repository's existing connection test:
+
+```text
+uv run test-connection.py
+```
+
+Result:
+
+```text
+✅ Connected to Spectrum Analyzer. Serial: 3310A01144, GPIB address: GPIB0::18::INSTR
+❌ Unable to connect to Turn Table: TurntableError('Failed to find turntable.')
+```
+
+This is the application-level confirmation that
+`SpectrumAnalyzerHP8563E.find()` and the existing default
+`pyvisa.ResourceManager()` path work with the Linux Keysight installation. The
+turntable result is independent of the VISA/GPIB spectrum-analyzer path.
+
+Read-only environment inspection found:
+
+```text
+PYVISA_LIBRARY=/opt/keysight/iolibs/libktvisa32.so
+```
+
+That export is present in `/home/mayo/.profile`, whose modification timestamp
+is 2026-02-05, the date of the original Keysight 2025 installation:
+
+```bash
+export PYVISA_LIBRARY=/opt/keysight/iolibs/libktvisa32.so
+```
+
+It was not added by the 2026 upgrade performed in this experiment. This
+explains why the existing application works without a code change: PyVISA's
+standard `PYVISA_LIBRARY` mechanism already selects Keysight VISA. The setup
+instructions now make this configuration step explicit and recommend the
+equivalent installer-managed path `/opt/keysight/iolibs/libvisa.so`.
+
+No system or user configuration was changed during this inspection. Only the
+experiment documentation was updated.
