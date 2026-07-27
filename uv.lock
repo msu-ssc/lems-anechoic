@@ -686,7 +686,7 @@ wheels = [
 name = "lems-anechoic"
 source = { editable = "." }
 dependencies = [
-    { name = "comtypes" },
+    { name = "comtypes", marker = "sys_platform == 'win32'" },
     { name = "dash" },
     { name = "fastapi" },
     { name = "jinja2" },
@@ -716,7 +716,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "comtypes", specifier = ">=1.4.11" },
+    { name = "comtypes", marker = "sys_platform == 'win32'", specifier = ">=1.4.11" },
     { name = "dash", specifier = ">=4.4.1" },
     { name = "fastapi", specifier = ">=0.116" },
     { name = "jinja2", specifier = ">=3.1" },
