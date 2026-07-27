@@ -26,6 +26,39 @@ installation requires administrator access; the Linux installation requires
 
 [Install uv](https://docs.astral.sh/uv/getting-started/installation/), which is a Python package manager. (Alternately, you can do all of this with your Python of choice, if you know what you're doing.)
 
+### Text-to-speech
+
+Sound uses the first available backend in this order:
+
+1. Windows SAPI through `comtypes`
+2. Piper with a local voice model
+3. `espeak-ng` or `espeak`
+4. Silence
+
+#### Install a Piper voice
+
+Piper voice models are not downloaded automatically. Install the default
+`en_US-lessac-medium` voice in the user voice directory:
+
+```shell
+mkdir -p ~/.local/share/piper-voices
+uv run python -m piper.download_voices \
+    --data-dir ~/.local/share/piper-voices \
+    en_US-lessac-medium
+```
+
+The application searches this directory automatically. Test the installed
+voice with:
+
+```shell
+uv run python -m msu_anechoic.sound
+```
+
+To store voice files elsewhere, set `MSU_ANECHOIC_PIPER_DATA_DIR` to the
+directory containing the model and its `.onnx.json` configuration. Set
+`MSU_ANECHOIC_PIPER_VOICE` to select another voice name or provide the full
+path to an `.onnx` model.
+
 ### GPIB control (for spectrum analyzer)
 
 The spec-an is controlled via GPIB, which requires a bunch of drivers that you need to install manually.
