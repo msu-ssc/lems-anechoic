@@ -86,7 +86,7 @@ function renderCuts(cuts) {
             humanize(cut.direction),
             angle(cut.fixed_angle),
             `${angle(cut.start_angle)} to ${angle(cut.end_angle)}`,
-            angle(cut.step_size),
+            cut.variable_spacing ? "Variable" : angle(cut.step_size),
             cut.point_count.toLocaleString(),
             duration(cut.travel_seconds),
         ].forEach((value) => {

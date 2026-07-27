@@ -123,20 +123,37 @@ class CutDefinition(pydantic.BaseModel):
     """On the axis that is fixed, the angle of the cut, in degrees"""
     reset_before: bool | None = None
     """Should the turntable reset before starting this cut?"""
+    angles: list[float] | None = None
+    """Explicit moving-axis positions for a cut with nonuniform spacing."""
+
+    @pydantic.field_validator("angles")
+    @classmethod
+    def _validate_angles(
+        cls,
+        value: list[float] | None,
+    ) -> list[float] | None:
+        if value is not None and not value:
+            raise ValueError("Explicit cut angles cannot be empty")
+        if value is not None and any(not math.isfinite(angle) for angle in value):
+            raise ValueError("Explicit cut angles must be finite")
+        return value
 
     @property
     def coordinates(self) -> list[Coordinate]:
         """Get the coordinates of this cut, as a list of `Coordinate` objects."""
 
-        # Reverse the step size if the start angle is greater than the end angle
-        step_size = self.step_size
-        if self.start_angle > self.end_angle:
-            step_size = -step_size
-        moving_angles = np.arange(
-            self.start_angle,
-            self.end_angle + step_size / 2,
-            step_size,
-        )
+        if self.angles is not None:
+            moving_angles = self.angles
+        else:
+            # Reverse the step size if the start angle is greater than the end angle
+            step_size = self.step_size
+            if self.start_angle > self.end_angle:
+                step_size = -step_size
+            moving_angles = np.arange(
+                self.start_angle,
+                self.end_angle + step_size / 2,
+                step_size,
+            )
 
         if self.direction == "horizontal":
             return [
@@ -745,7 +762,12 @@ class Experiment(pydantic.BaseModel):
 
         for cut_id, cut in cuts.items():
             cut_estimate = cut_estimates[str(cut_id)]
-            prompt_string += f"\n  {cut_id}: {cut.direction} at {cut.fixed_angle}° from {cut.start_angle}° to {cut.end_angle}°, step size {cut.step_size}°. {len(cut.coordinates):,} points, estimated travel {cut_estimate['travel_seconds']:,.0f} seconds."
+            spacing = (
+                "explicit positions"
+                if cut.angles is not None
+                else f"step size {cut.step_size}°"
+            )
+            prompt_string += f"\n  {cut_id}: {cut.direction} at {cut.fixed_angle}° from {cut.start_angle}° to {cut.end_angle}°, {spacing}. {len(cut.coordinates):,} points, estimated travel {cut_estimate['travel_seconds']:,.0f} seconds."
         prompt_string += f"\nTotal estimated travel time for all cuts: {total_rough_time_estimate:,.0f} seconds = {total_rough_time_estimate / 60:,.1f} minutes = {total_rough_time_estimate / 60 / 60:,.2f} hours."
 
         if not self.assume_ready:

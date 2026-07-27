@@ -309,8 +309,7 @@ def _total_points(parameters: experiment.ExperimentParameters) -> int:
 
 
 def _cut_point_count(cut: experiment.CutDefinition) -> int:
-    distance = abs(cut.end_angle - cut.start_angle)
-    return math.ceil(distance / cut.step_size + 0.5 - 1e-12)
+    return len(cut.coordinates)
 
 
 def _parameters_summary(parameters: experiment.ExperimentParameters) -> dict[str, Any]:
@@ -329,6 +328,7 @@ def _parameters_summary(parameters: experiment.ExperimentParameters) -> dict[str
                     "start_angle": cut.start_angle,
                     "end_angle": cut.end_angle,
                     "step_size": cut.step_size,
+                    "variable_spacing": cut.angles is not None,
                     "point_count": _cut_point_count(cut),
                     **estimates_by_id[str(cut_id)],
                 }
@@ -556,11 +556,21 @@ def _heatmap_bin_sizes(
     """Choose whole-degree bins containing roughly three points per cut."""
 
     def bin_size(direction: str) -> int:
-        steps = [
-            abs(cut.step_size)
-            for cut in (parameters.cuts or {}).values()
-            if cut.direction == direction and math.isfinite(cut.step_size)
-        ]
+        steps = []
+        for cut in (parameters.cuts or {}).values():
+            if cut.direction != direction:
+                continue
+            if cut.angles is None:
+                if math.isfinite(cut.step_size):
+                    steps.append(abs(cut.step_size))
+                continue
+            steps.extend(
+                abs(current - previous)
+                for previous, current in zip(cut.angles, cut.angles[1:])
+                if math.isfinite(previous)
+                and math.isfinite(current)
+                and not math.isclose(previous, current, abs_tol=1e-12)
+            )
         return (
             max(1, math.floor(statistics.median(steps) * 3 + 0.5))
             if steps

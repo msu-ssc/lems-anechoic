@@ -51,6 +51,126 @@
     align-items: start;
 }
 
+.experiment-design-workspace {
+    display: grid;
+    grid-template-columns: minmax(17rem, 0.65fr) minmax(32rem, 1.35fr);
+    gap: 1rem;
+    align-items: start;
+}
+
+.experiment-grid-source .secondary-button {
+    display: inline-block;
+    margin-top: 0.25rem;
+    text-decoration: none;
+}
+
+.experiment-design-fields {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.9rem;
+}
+
+.experiment-design-fields > label {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 0.35rem;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+.experiment-design-fields > label > input,
+.experiment-design-fields textarea,
+.experiment-design-fields select,
+.experiment-unit-input input {
+    width: 100%;
+    min-width: 0;
+    min-height: 2.6rem;
+    border: 1px solid var(--border);
+    border-radius: 0.65rem;
+    padding: 0.65rem;
+    color: var(--text);
+    background: var(--input);
+    font: inherit;
+}
+
+.experiment-design-fields textarea {
+    resize: vertical;
+}
+
+.experiment-design-wide,
+.experiment-design-products {
+    grid-column: 1 / -1;
+}
+
+.experiment-unit-input {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: stretch;
+}
+
+.experiment-unit-input input {
+    border-radius: 0.65rem 0 0 0.65rem;
+}
+
+.experiment-unit-input b {
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--border);
+    border-left: 0;
+    border-radius: 0 0.65rem 0.65rem 0;
+    padding: 0 0.65rem;
+    color: var(--text-muted);
+    background: var(--surface-muted);
+    font-size: 0.75rem;
+}
+
+.experiment-design-products {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.65rem 1.5rem;
+}
+
+.experiment-design-products legend {
+    margin-bottom: 0.5rem;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+.experiment-design-products label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: 0.85rem;
+    font-weight: 700;
+}
+
+.experiment-design-products input {
+    width: 1rem;
+    height: 1rem;
+    accent-color: var(--accent);
+}
+
+.experiment-design-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    margin-top: 1.15rem;
+    padding-top: 1.15rem;
+    border-top: 1px solid var(--border);
+}
+
+.experiment-design-feedback {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+}
+
+.experiment-design-feedback.is-error {
+    color: var(--plot-origin);
+}
+
 .experiment-panel {
     border: 1px solid var(--border);
     border-radius: 1rem;
@@ -534,8 +654,13 @@
 }
 
 @media (max-width: 900px) {
-    .experiment-workspace {
+    .experiment-workspace,
+    .experiment-design-workspace {
         grid-template-columns: 1fr;
+    }
+
+    .experiment-design-fields {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
     .plan-panel {
@@ -560,8 +685,14 @@
     }
 
     .load-row,
-    .experiment-facts {
+    .experiment-facts,
+    .experiment-design-fields {
         grid-template-columns: 1fr;
+    }
+
+    .experiment-design-actions {
+        align-items: flex-start;
+        flex-direction: column;
     }
 
     .graph-settings-body {
