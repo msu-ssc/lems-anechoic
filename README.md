@@ -33,17 +33,28 @@ Sound uses the first available backend in this order:
 3. `espeak-ng` or `espeak`
 4. Silence
 
-Piper voice models are not downloaded automatically. The default voice name is
-`en_US-lessac-medium`. Download it into the directory from which you run the
-application:
+#### Install a Piper voice
+
+Piper voice models are not downloaded automatically. Install the default
+`en_US-lessac-medium` voice in the user voice directory:
 
 ```shell
-uv run python -m piper.download_voices en_US-lessac-medium
+mkdir -p ~/.local/share/piper-voices
+uv run python -m piper.download_voices \
+    --data-dir ~/.local/share/piper-voices \
+    en_US-lessac-medium
 ```
 
-Alternatively, set `MSU_ANECHOIC_PIPER_DATA_DIR` to the directory containing
-the model and its `.onnx.json` configuration. Set
-`MSU_ANECHOIC_PIPER_VOICE` to select another voice name or to provide the full
+The application searches this directory automatically. Test the installed
+voice with:
+
+```shell
+uv run python -m msu_anechoic.sound
+```
+
+To store voice files elsewhere, set `MSU_ANECHOIC_PIPER_DATA_DIR` to the
+directory containing the model and its `.onnx.json` configuration. Set
+`MSU_ANECHOIC_PIPER_VOICE` to select another voice name or provide the full
 path to an `.onnx` model.
 
 ### GPIB control (for spectrum analyzer)
