@@ -1,7 +1,9 @@
+import json
 import threading
 from pathlib import Path
 from types import SimpleNamespace
 
+import pandas as pd
 import pytest
 from fastapi import HTTPException
 from fastapi import Request
@@ -74,6 +76,7 @@ def test_experiment_page_has_load_run_and_abort_controls():
     assert 'data-start-form' in body
     assert 'data-abort' in body
     assert 'data-results-panel' in body
+    assert 'name="output_mode" value="continue"' in body
     assert '<script src="/vendor/plotly.min.js" defer></script>' in body
     assert any(getattr(route, "path", None) == "/experiment" for route in app.routes)
 
@@ -145,21 +148,34 @@ def test_sample_results_are_returned_as_normalized_polar_cuts():
     assert cuts["horizontal"]["peak"]["absolute_dbm"][0] == pytest.approx(-119)
 
 
-def test_server_load_uses_selected_folder_for_results_and_output():
+def test_server_load_uses_selected_folder_for_results_and_output(tmp_path):
+    root = tmp_path / "experiments"
+    definition = experiment_definition(
+        short_description="sample",
+        relative_folder_path=None,
+    )
+    for folder_name in ("sample", "sample2"):
+        folder = root / folder_name
+        folder.mkdir(parents=True)
+        (folder / "parameters.json").write_text(json.dumps(definition))
+    sample_csv = root / "sample" / "raw_data" / "data.csv"
+    sample_csv.parent.mkdir()
+    sample_csv.write_text("point_index,cut_id,peak_amplitude\n1,AZIMUTH,-40\n")
+
     service = ExperimentWebService(
-        experiments_root=Path("experiments").resolve(),
+        experiments_root=root,
         turntable_provider=lambda: None,
     )
     sample = service.load_server_definition("sample/parameters.json")
     assert sample["results"]["available"] is True
-    assert sample["results"]["path"] == "experiments/sample/raw_data/data.csv"
+    assert Path(sample["results"]["path"]) == sample_csv
 
     sample2 = service.load_server_definition("sample2/parameters.json")
     assert sample2["source_name"] == "sample2/parameters.json"
-    assert sample2["experiment"]["output_folder"] == "experiments/sample2"
+    assert Path(sample2["experiment"]["output_folder"]) == root / "sample2"
     assert sample2["results"] == {
         "available": False,
-        "path": "experiments/sample2/raw_data/data.csv",
+        "path": str(root / "sample2" / "raw_data" / "data.csv"),
         "version": None,
     }
     with pytest.raises(RuntimeError, match="does not have result data"):
@@ -254,6 +270,106 @@ def test_background_service_reports_progress_and_completion():
     assert payload["finished_at"] is not None
 
 
+def test_continue_mode_loads_existing_points_and_appends(tmp_path):
+    finished = threading.Event()
+    captured_options = {}
+    turntable = FakeExperimentTurntable()
+    root = tmp_path / "experiments"
+
+    class FakeRunner:
+        def __init__(self, *, parameters):
+            self.parameters = parameters
+
+        def run(self, **options):
+            captured_options.update(options)
+            finished.set()
+
+    service = ExperimentWebService(
+        experiments_root=root,
+        turntable_provider=lambda: turntable,
+        experiment_factory=FakeRunner,
+    )
+    payload = service.load_definition(
+        experiment_definition(relative_folder_path="resume"),
+    )
+    csv_path = Path(payload["experiment"]["output_folder"]) / "raw_data" / "data.csv"
+    csv_path.parent.mkdir(parents=True)
+    csv_path.write_text(
+        "point_index,cut_id,peak_amplitude\n"
+        "1,AZIMUTH,-40\n"
+        "3,AZIMUTH,-41\n"
+    )
+
+    service.start(output_mode="continue")
+
+    assert finished.wait(timeout=1)
+    assert service._thread is not None
+    service._thread.join(timeout=1)
+    existing_data = captured_options["existing_data"]
+    assert list(zip(existing_data["cut_id"], existing_data["point_index"])) == [
+        ("AZIMUTH", 1),
+        ("AZIMUTH", 3),
+    ]
+    assert captured_options["append_csv"] is True
+    assert captured_options["overwrite_csv"] is False
+
+
+def test_continue_mode_requires_a_compatible_existing_csv(tmp_path):
+    service = ExperimentWebService(
+        experiments_root=tmp_path / "experiments",
+        turntable_provider=lambda: FakeExperimentTurntable(),
+    )
+    service.load_definition(experiment_definition(relative_folder_path="resume"))
+
+    with pytest.raises(ValueError, match="no existing CSV"):
+        service.start(output_mode="continue")
+
+
+def test_experiment_continue_skips_existing_cut_point_pairs(monkeypatch, tmp_path):
+    class RecordingExperiment(experiment.Experiment):
+        def _run_experiment_at_point(self, **options):
+            self.recorded_point_indexes.append(options["point_index"])
+
+        def _move_turntable_and_wait(self, *, pan, tilt, timeout=120.0):
+            return turntable2.PanTilt(pan, tilt)
+
+    parameters = experiment.ExperimentParameters(
+        short_description="resume",
+        relative_folder_path=tmp_path,
+        neutral_elevation=0,
+        cuts={
+            "AZIMUTH": experiment.CutDefinition(
+                direction="horizontal",
+                start_angle=-10,
+                end_angle=10,
+                step_size=10,
+                fixed_angle=0,
+            )
+        },
+    )
+    runner = RecordingExperiment(parameters=parameters)
+    runner.recorded_point_indexes = []
+    runner.assume_ready = True
+    runner.cancel_event = threading.Event()
+    runner.progress_callback = None
+    runner.logger = SimpleNamespace(
+        info=lambda *args, **kwargs: None,
+        warning=lambda *args, **kwargs: None,
+        error=lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(experiment, "say", lambda *args, **kwargs: None)
+    existing_data = pd.DataFrame(
+        {
+            "cut_id": ["AZIMUTH", "AZIMUTH"],
+            "point_index": [1, 3],
+        }
+    )
+
+    runner._run_cuts_experiment(existing_data=existing_data)
+
+    assert runner.recorded_point_indexes == [2]
+
+
 def test_background_service_aborts_cooperatively():
     started = threading.Event()
     finished = threading.Event()
@@ -292,6 +408,9 @@ def test_experiment_script_loads_json_and_polls_status():
     assert 'requestJson("/experiment/abort"' in script
     assert 'requestJson("/experiment/results"' in script
     assert 'type: "scatterpolar"' in script
+    assert 'const pendingPlots = payload.cuts.map' in script
+    assert 'window.requestAnimationFrame' in script
+    assert 'window.Plotly?.purge(plot)' in script
     assert 'expectedResultsKey === desiredResultsKey' in script
     assert "`${payload.results.path}:${payload.results.version}`" in script
     assert 'window.setInterval(refreshStatus, 1000)' in script

@@ -9,6 +9,9 @@ import threading
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+from typing import Literal
+
+import pandas as pd
 
 from msu_anechoic import experiment
 from msu_anechoic import turntable2
@@ -16,6 +19,7 @@ from msu_anechoic.web.turntable import TurntableLike
 from msu_anechoic.web.turntable import turntable_service
 
 UTC = datetime.timezone.utc
+OutputMode = Literal["new", "continue", "append", "overwrite"]
 
 
 class ExperimentWebService:
@@ -90,15 +94,20 @@ class ExperimentWebService:
             )
         return definitions
 
-    def start(self, *, overwrite_csv: bool = False, append_csv: bool = False) -> dict[str, Any]:
-        if overwrite_csv and append_csv:
-            raise ValueError("Choose either append or overwrite, not both")
+    def start(self, *, output_mode: OutputMode = "new") -> dict[str, Any]:
+        if output_mode not in {"new", "continue", "append", "overwrite"}:
+            raise ValueError(f"Unsupported output mode: {output_mode}")
         with self._lock:
             if self._state in {"running", "cancelling"}:
                 raise RuntimeError("An experiment is already running")
             if self._parameters is None:
                 raise RuntimeError("Load an experiment definition before starting")
             self._validate_for_run(self._parameters)
+            existing_data = (
+                _load_existing_data(self._parameters.raw_data_csv_path)
+                if output_mode == "continue"
+                else None
+            )
             turntable = self._turntable_provider()
             state = turntable.get_complete_state()
             if not state.has_been_set:
@@ -124,8 +133,8 @@ class ExperimentWebService:
                     "parameters": parameters,
                     "turntable": turntable,
                     "cancel_event": cancel_event,
-                    "overwrite_csv": overwrite_csv,
-                    "append_csv": append_csv,
+                    "output_mode": output_mode,
+                    "existing_data": existing_data,
                 },
                 name="anechoic-experiment",
                 daemon=True,
@@ -194,8 +203,8 @@ class ExperimentWebService:
         parameters: experiment.ExperimentParameters,
         turntable: TurntableLike,
         cancel_event: threading.Event,
-        overwrite_csv: bool,
-        append_csv: bool,
+        output_mode: OutputMode,
+        existing_data: pd.DataFrame | None,
     ) -> None:
         try:
             runner = self._experiment_factory(parameters=parameters)
@@ -204,8 +213,9 @@ class ExperimentWebService:
                 assume_ready=True,
                 progress_callback=self._update_progress,
                 cancel_event=cancel_event,
-                overwrite_csv=overwrite_csv,
-                append_csv=append_csv,
+                existing_data=existing_data,
+                overwrite_csv=output_mode == "overwrite",
+                append_csv=output_mode in {"continue", "append"},
             )
         except experiment.ExperimentCancelled:
             with self._lock:
@@ -341,6 +351,24 @@ def _results_summary(parameters: experiment.ExperimentParameters | None) -> dict
         "path": str(csv_path),
         "version": f"{stat.st_mtime_ns}:{stat.st_size}",
     }
+
+
+def _load_existing_data(csv_path: Path) -> pd.DataFrame:
+    if not csv_path.is_file():
+        raise ValueError("There is no existing CSV to continue")
+    try:
+        data = pd.read_csv(csv_path)
+    except (OSError, pd.errors.EmptyDataError, pd.errors.ParserError) as exc:
+        raise ValueError(f"Could not read existing CSV: {exc}") from exc
+    required_columns = {"cut_id", "point_index"}
+    missing_columns = sorted(required_columns - set(data.columns))
+    if missing_columns:
+        raise ValueError(
+            f"Existing CSV cannot be continued because it is missing: {', '.join(missing_columns)}"
+        )
+    data["cut_id"] = data["cut_id"].map(str)
+    data["point_index"] = pd.to_numeric(data["point_index"], errors="coerce")
+    return data
 
 
 def _polar_results(

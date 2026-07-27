@@ -5,6 +5,7 @@ let statusRequestInFlight = false;
 let resultsRequestInFlight = false;
 let desiredResultsKey = null;
 let displayedResultsKey = null;
+let polarRenderGeneration = 0;
 
 function setMenuOpen(isOpen) {
     const toggle = document.getElementById("menu-toggle");
@@ -128,9 +129,11 @@ function polarTrace(cut, seriesName, label, color, floor) {
 
 function renderPolarResults(payload, resultsKey) {
     const container = document.querySelector("[data-polar-plots]");
+    container.querySelectorAll(".polar-plot").forEach((plot) => window.Plotly?.purge(plot));
     container.replaceChildren();
     document.querySelector("[data-results-path]").textContent = payload.source_path;
     displayedResultsKey = resultsKey;
+    const renderGeneration = ++polarRenderGeneration;
 
     if (!payload.cuts.length) {
         const message = document.createElement("p");
@@ -147,7 +150,7 @@ function renderPolarResults(payload, resultsKey) {
         return;
     }
 
-    payload.cuts.forEach((cut) => {
+    const pendingPlots = payload.cuts.map((cut) => {
         const card = document.createElement("article");
         card.className = "polar-plot-card";
         const header = document.createElement("header");
@@ -164,53 +167,62 @@ function renderPolarResults(payload, resultsKey) {
         plot.setAttribute("aria-label", `${cut.id} ${cut.direction} polar cut`);
         card.append(header, plot);
         container.append(card);
+        return { cut, plot };
+    });
 
-        const floor = polarFloor(cut);
-        const radialTicks = [];
-        const radialTickText = [];
-        for (let value = floor; value <= 0; value += 5) {
-            radialTicks.push(value - floor);
-            radialTickText.push(String(value));
-        }
-        const traces = [
-            polarTrace(cut, "peak", "Detected peak", cssColor("--accent", "#0033a0"), floor),
-            polarTrace(cut, "center", "Center frequency", cssColor("--plot-end", "#c49300"), floor),
-        ];
-        window.Plotly.react(
-            plot,
-            traces,
-            {
-                margin: { t: 30, r: 35, b: 65, l: 35 },
-                paper_bgcolor: "rgba(0,0,0,0)",
-                font: { color: cssColor("--text", "#000000") },
-                showlegend: true,
-                legend: { orientation: "h", x: 0.5, xanchor: "center", y: -0.1 },
-                polar: {
-                    bgcolor: cssColor("--surface-muted", "#c2d5ff"),
-                    angularaxis: {
-                        direction: "clockwise",
-                        rotation: 90,
-                        gridcolor: cssColor("--plot-grid", "#8fa6d2"),
-                        linecolor: cssColor("--border-dark", "#6684c6"),
-                        ticksuffix: "°",
-                    },
-                    radialaxis: {
-                        range: [0, -floor],
-                        tickvals: radialTicks,
-                        ticktext: radialTickText,
-                        ticksuffix: " dB",
-                        angle: 45,
-                        gridcolor: cssColor("--plot-grid", "#8fa6d2"),
-                        linecolor: cssColor("--border-dark", "#6684c6"),
+    // Plotly measures its parent when rendering. Wait until every grid card is
+    // present and the browser has calculated the final two-column layout.
+    window.requestAnimationFrame(() => {
+        if (renderGeneration !== polarRenderGeneration) return;
+        pendingPlots.forEach(({ cut, plot }) => {
+            if (!plot.isConnected) return;
+            const floor = polarFloor(cut);
+            const radialTicks = [];
+            const radialTickText = [];
+            for (let value = floor; value <= 0; value += 5) {
+                radialTicks.push(value - floor);
+                radialTickText.push(String(value));
+            }
+            const traces = [
+                polarTrace(cut, "peak", "Detected peak", cssColor("--accent", "#0033a0"), floor),
+                polarTrace(cut, "center", "Center frequency", cssColor("--plot-end", "#c49300"), floor),
+            ];
+            window.Plotly.react(
+                plot,
+                traces,
+                {
+                    margin: { t: 30, r: 35, b: 65, l: 35 },
+                    paper_bgcolor: "rgba(0,0,0,0)",
+                    font: { color: cssColor("--text", "#000000") },
+                    showlegend: true,
+                    legend: { orientation: "h", x: 0.5, xanchor: "center", y: -0.1 },
+                    polar: {
+                        bgcolor: cssColor("--surface-muted", "#c2d5ff"),
+                        angularaxis: {
+                            direction: "clockwise",
+                            rotation: 90,
+                            gridcolor: cssColor("--plot-grid", "#8fa6d2"),
+                            linecolor: cssColor("--border-dark", "#6684c6"),
+                            ticksuffix: "°",
+                        },
+                        radialaxis: {
+                            range: [0, -floor],
+                            tickvals: radialTicks,
+                            ticktext: radialTickText,
+                            ticksuffix: " dB",
+                            angle: 45,
+                            gridcolor: cssColor("--plot-grid", "#8fa6d2"),
+                            linecolor: cssColor("--border-dark", "#6684c6"),
+                        },
                     },
                 },
-            },
-            {
-                responsive: true,
-                displaylogo: false,
-                modeBarButtonsToRemove: ["select2d", "lasso2d"],
-            },
-        );
+                {
+                    responsive: true,
+                    displaylogo: false,
+                    modeBarButtonsToRemove: ["select2d", "lasso2d"],
+                },
+            );
+        });
     });
 }
 

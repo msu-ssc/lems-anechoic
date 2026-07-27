@@ -2105,7 +2105,7 @@ class _ExperimentServerLoadRequest(BaseModel):
 
 
 class _ExperimentStartRequest(BaseModel):
-    output_mode: Literal["new", "append", "overwrite"] = "new"
+    output_mode: Literal["new", "continue", "append", "overwrite"] = "new"
 
 
 @app.get("/experiment", response_class=HTMLResponse)
@@ -2151,10 +2151,7 @@ def load_server_experiment(command: _ExperimentServerLoadRequest) -> dict:
 @app.post("/experiment/start")
 def start_experiment(command: _ExperimentStartRequest) -> dict:
     try:
-        return experiment_service.start(
-            overwrite_csv=command.output_mode == "overwrite",
-            append_csv=command.output_mode == "append",
-        )
+        return experiment_service.start(output_mode=command.output_mode)
     except (RuntimeError, TurntableError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

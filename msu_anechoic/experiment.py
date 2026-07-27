@@ -751,7 +751,7 @@ class Experiment(pydantic.BaseModel):
                         )
                         continue
 
-                    if (cut_id, point_index) in existing_points:
+                    if (str(cut_id), point_index) in existing_points:
                         self.logger.info(f"Skipping existing point {point_index} for cut {cut_id}")
                         completed_points += 1
                         self._notify_progress(
