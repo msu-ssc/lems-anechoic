@@ -190,12 +190,16 @@ def test_abort_stops_the_active_move_and_cancels_queued_moves():
         turntable.set_position(azimuth=0, elevation=0)
         wait_for(lambda: turntable.current_state() == turntable2.TurntableState.STOPPED)
         turntable.move_to(azimuth=10, elevation=0)
+        turntable.move_to(azimuth=20, elevation=0)
         wait_for(lambda: turntable.current_state() == turntable2.TurntableState.MOVING)
 
         turntable.abort()
 
-        wait_for(lambda: b"p" in fake.writes)
+        # ABORT bypasses the queue and performs the stop write before returning.
+        assert fake.writes[-1] == b"p"
         assert turntable.current_state() == turntable2.TurntableState.STOPPED
+        time.sleep(0.03)
+        assert b"CMD:MOV:20.000,0.000;" not in fake.writes
     finally:
         turntable.close()
 

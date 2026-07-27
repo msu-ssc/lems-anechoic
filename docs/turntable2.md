@@ -26,9 +26,11 @@ with turntable2.find() as turntable:
     print(f"Finished moving. Final position = {turntable.current_position()}")
 ```
 
-`set_position`, `move_to`, and `abort` queue work and return immediately.
-Commands are processed in order. `move_to` accepts absolute angles and handles
-elevation-regime changes internally.
+`set_position` and `move_to` queue work and return immediately. Commands are
+processed in order. `move_to` accepts absolute angles and handles
+elevation-regime changes internally. `abort` is the exception: it immediately
+invalidates the active operation and every queued command, writes the stop
+command, and returns only after that write has been attempted.
 
 The observable states are:
 

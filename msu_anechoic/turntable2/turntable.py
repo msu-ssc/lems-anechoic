@@ -151,7 +151,7 @@ class Turntable:
         self._controller.submit_move(azimuth=azimuth, elevation=elevation, timeout=move_timeout)
 
     def abort(self) -> None:
-        """Queue the firmware's immediate stop command and cancel queued moves."""
+        """Immediately stop movement and invalidate all queued commands."""
 
         self._controller.submit_abort()
 

@@ -43,6 +43,7 @@ class TurntableState(str, enum.Enum):
 
 @dataclasses.dataclass(frozen=True)
 class _SetCommand:
+    generation: int
     azimuth: float
     elevation: float
     timeout: float
@@ -50,22 +51,13 @@ class _SetCommand:
 
 @dataclasses.dataclass(frozen=True)
 class _MoveCommand:
+    generation: int
     azimuth: float
     elevation: float
     timeout: float
 
 
-@dataclasses.dataclass(frozen=True)
-class _AbortCommand:
-    pass
-
-
-@dataclasses.dataclass(frozen=True)
-class _CloseCommand:
-    pass
-
-
-_Command = _SetCommand | _MoveCommand | _AbortCommand | _CloseCommand
+_Command = _SetCommand | _MoveCommand
 
 
 @dataclasses.dataclass
@@ -123,6 +115,7 @@ class ControllerThread(threading.Thread):
         self._operation: _Operation | None = None
         self._stop_event = threading.Event()
         self._lock = threading.RLock()
+        self._command_generation = 0
 
         self._state = TurntableState.NOT_SET
         self._has_been_set = False
@@ -144,7 +137,14 @@ class ControllerThread(threading.Thread):
         with self._lock:
             self._ensure_open()
             self._set_requested = True
-            self._command_queue.put(_SetCommand(azimuth=azimuth, elevation=elevation, timeout=timeout))
+            self._command_queue.put(
+                _SetCommand(
+                    generation=self._command_generation,
+                    azimuth=azimuth,
+                    elevation=elevation,
+                    timeout=timeout,
+                )
+            )
 
     def submit_move(self, *, azimuth: float, elevation: float, timeout: float) -> None:
         _validate_position(azimuth=azimuth, elevation=elevation)
@@ -153,15 +153,31 @@ class ControllerThread(threading.Thread):
             self._ensure_open()
             if not (self._has_been_set or self._set_requested):
                 raise TurntableError("The turntable position must be set before it can move")
-            self._command_queue.put(_MoveCommand(azimuth=azimuth, elevation=elevation, timeout=timeout))
+            self._command_queue.put(
+                _MoveCommand(
+                    generation=self._command_generation,
+                    azimuth=azimuth,
+                    elevation=elevation,
+                    timeout=timeout,
+                )
+            )
 
     def submit_abort(self) -> None:
+        """Immediately stop movement and invalidate all previously submitted work."""
+
         with self._lock:
             self._ensure_open()
-            self._command_queue.put(_AbortCommand())
+            self._operation = None
+            self._invalidate_pending_commands()
+            self._set_requested = self._has_been_set
+            if self._state != TurntableState.NO_COMMUNICATION:
+                self._state = TurntableState.STOPPED if self._has_been_set else TurntableState.NOT_SET
+            # ABORT is the safety exception to normal command queuing. Holding
+            # the controller lock ensures no SET/MOV write can race after it.
+            self._write_command(b"p", repetitions=1)
 
     def stop(self) -> None:
-        self._command_queue.put(_CloseCommand())
+        self._stop_event.set()
 
     def current_state(self) -> TurntableState:
         with self._lock:
@@ -214,7 +230,7 @@ class ControllerThread(threading.Thread):
                 with self._lock:
                     self._last_error = exc
                     self._operation = None
-                    self._queued_commands.clear()
+                    self._invalidate_pending_commands()
                     self._set_requested = self._has_been_set
                     self._state = TurntableState.ERROR
             self._stop_event.wait(self._poll_interval)
@@ -229,13 +245,9 @@ class ControllerThread(threading.Thread):
             except queue.Empty:
                 return
 
-            if isinstance(command, _CloseCommand):
-                self._stop_event.set()
-                return
-            if isinstance(command, _AbortCommand):
-                self._abort()
-                continue
-            self._queued_commands.append(command)
+            with self._lock:
+                if command.generation == self._command_generation:
+                    self._queued_commands.append(command)
 
     def _drain_messages(self) -> None:
         while True:
@@ -272,9 +284,9 @@ class ControllerThread(threading.Thread):
         )
         self._record_event(actual_event)
 
-        if isinstance(self._operation, _SetOperation):
-            if _position_matches(raw_position, AzEl(0.0, 0.0)):
-                with self._lock:
+        with self._lock:
+            if isinstance(self._operation, _SetOperation):
+                if _position_matches(raw_position, AzEl(0.0, 0.0)):
                     self._has_been_set = True
                     self._set_requested = any(isinstance(command, _SetCommand) for command in self._queued_commands)
                     self._current_regime = _regime.find_best_regime(0.0)
@@ -282,43 +294,40 @@ class ControllerThread(threading.Thread):
                     self._current_position = raw_position
                     self._operation = None
                     self._state = TurntableState.STOPPED
-            return
+                return
 
-        if not isinstance(self._operation, _MoveOperation):
-            with self._lock:
+            if not isinstance(self._operation, _MoveOperation):
                 self._state = TurntableState.STOPPED if self._has_been_set else TurntableState.NOT_SET
-            return
+                return
 
-        operation = self._operation
-        if operation.raw_target is None or not _position_matches(raw_position, operation.raw_target):
-            return
+            operation = self._operation
+            if operation.raw_target is None or not _position_matches(raw_position, operation.raw_target):
+                return
 
-        if operation.phase == "regime_move":
-            assert operation.next_regime is not None
-            operation.next_offset = raw_position.elevation + (self._regime_elevation_offset or 0.0)
-            operation.phase = "regime_set"
-            operation.raw_target = AzEl(0.0, 0.0)
-            self._write_command(_format_set_command(azimuth=0.0, elevation=0.0))
-            return
+            if operation.phase == "regime_move":
+                assert operation.next_regime is not None
+                operation.next_offset = raw_position.elevation + (self._regime_elevation_offset or 0.0)
+                operation.phase = "regime_set"
+                operation.raw_target = AzEl(0.0, 0.0)
+                self._write_command(_format_set_command(azimuth=0.0, elevation=0.0))
+                return
 
-        if operation.phase == "regime_set":
-            assert operation.next_regime is not None
-            assert operation.next_offset is not None
-            with self._lock:
+            if operation.phase == "regime_set":
+                assert operation.next_regime is not None
+                assert operation.next_offset is not None
                 self._regime_elevation_offset = operation.next_offset
                 self._current_regime = operation.next_regime
                 self._current_position = AzEl(
                     azimuth=raw_position.azimuth,
                     elevation=raw_position.elevation + operation.next_offset,
                 )
-            self._continue_move(operation)
-            return
+                self._continue_move(operation)
+                return
 
-        if operation.phase == "final":
-            with self._lock:
+            if operation.phase == "final":
                 self._operation = None
                 self._state = TurntableState.STOPPED
-            return
+                return
 
     def _record_event(self, event: ReceivedMessage) -> None:
         with self._lock:
@@ -331,30 +340,27 @@ class ControllerThread(threading.Thread):
             last_communication = self._most_recent_communication
             operation = self._operation
 
-        reference = last_communication if math.isfinite(last_communication) else self._started_at
-        if now - reference > self._communication_timeout:
-            with self._lock:
+            reference = last_communication if math.isfinite(last_communication) else self._started_at
+            if now - reference > self._communication_timeout:
                 already_disconnected = self._state == TurntableState.NO_COMMUNICATION
-            if not already_disconnected:
-                if isinstance(operation, _MoveOperation):
-                    self._write_command(b"p", repetitions=1)
-                with self._lock:
+                if not already_disconnected:
+                    if isinstance(operation, _MoveOperation):
+                        self._write_command(b"p", repetitions=1)
                     self._state = TurntableState.NO_COMMUNICATION
                     self._has_been_set = False
                     self._set_requested = False
                     self._current_regime = None
                     self._regime_elevation_offset = None
                     self._operation = None
-                    self._queued_commands.clear()
-            return
+                    self._invalidate_pending_commands()
+                return
 
-        if operation is not None and now > operation.deadline:
-            self._write_command(b"p", repetitions=1)
-            error = TimeoutError("Turntable command timed out")
-            with self._lock:
+            if operation is not None and now > operation.deadline:
+                self._write_command(b"p", repetitions=1)
+                error = TimeoutError("Turntable command timed out")
                 self._last_error = error
                 self._operation = None
-                self._queued_commands.clear()
+                self._invalidate_pending_commands()
                 self._set_requested = self._has_been_set
                 self._state = TurntableState.TIMED_OUT
 
@@ -367,20 +373,25 @@ class ControllerThread(threading.Thread):
             ):
                 return
             command = self._queued_commands.popleft()
-
-        if isinstance(command, _SetCommand):
-            self._begin_set(command)
-        else:
-            self._begin_move(command)
+            if command.generation != self._command_generation:
+                return
+            if isinstance(command, _SetCommand):
+                self._begin_set(command)
+            else:
+                self._begin_move(command)
 
     def _begin_set(self, command: _SetCommand) -> None:
         with self._lock:
+            if command.generation != self._command_generation:
+                return
             self._operation = _SetOperation(deadline=time.monotonic() + command.timeout)
             self._state = TurntableState.NOT_SET
-        self._write_command(_format_set_command(azimuth=command.azimuth, elevation=command.elevation))
+            self._write_command(_format_set_command(azimuth=command.azimuth, elevation=command.elevation))
 
     def _begin_move(self, command: _MoveCommand) -> None:
         with self._lock:
+            if command.generation != self._command_generation:
+                return
             if not self._has_been_set or self._current_regime is None or self._regime_elevation_offset is None:
                 self._last_error = TurntableError("The turntable position is not set")
                 self._state = TurntableState.ERROR
@@ -393,53 +404,56 @@ class ControllerThread(threading.Thread):
             )
             self._operation = operation
             self._state = TurntableState.MOVING
-        self._continue_move(operation)
+            self._continue_move(operation)
 
     def _continue_move(self, operation: _MoveOperation) -> None:
         with self._lock:
+            if self._operation is not operation:
+                return
             current_regime = self._current_regime
             offset = self._regime_elevation_offset
-        assert current_regime is not None
-        assert offset is not None
+            assert current_regime is not None
+            assert offset is not None
 
-        if operation.elevation not in current_regime:
-            next_regime = _regime.find_next_regime(
-                destination_angle=operation.elevation,
-                current_regime=current_regime,
-            )
-            raw_elevation = next_regime.center_angle - offset
+            if operation.elevation not in current_regime:
+                next_regime = _regime.find_next_regime(
+                    destination_angle=operation.elevation,
+                    current_regime=current_regime,
+                )
+                raw_elevation = next_regime.center_angle - offset
+                _validate_regime_elevation(raw_elevation)
+                operation.phase = "regime_move"
+                operation.next_regime = next_regime
+                operation.raw_target = AzEl(azimuth=0.0, elevation=raw_elevation)
+                self._write_command(_format_move_command(azimuth=0.0, elevation=raw_elevation))
+                return
+
+            raw_elevation = operation.elevation - offset
             _validate_regime_elevation(raw_elevation)
-            operation.phase = "regime_move"
-            operation.next_regime = next_regime
-            operation.raw_target = AzEl(azimuth=0.0, elevation=raw_elevation)
-            self._write_command(_format_move_command(azimuth=0.0, elevation=raw_elevation))
-            return
-
-        raw_elevation = operation.elevation - offset
-        _validate_regime_elevation(raw_elevation)
-        operation.phase = "final"
-        operation.raw_target = AzEl(azimuth=operation.azimuth, elevation=raw_elevation)
-        self._write_command(_format_move_command(azimuth=operation.azimuth, elevation=raw_elevation))
-
-    def _abort(self) -> None:
-        self._write_command(b"p", repetitions=1)
-        with self._lock:
-            self._operation = None
-            self._queued_commands.clear()
-            self._set_requested = self._has_been_set
-            self._state = TurntableState.STOPPED if self._has_been_set else TurntableState.NOT_SET
+            operation.phase = "final"
+            operation.raw_target = AzEl(azimuth=operation.azimuth, elevation=raw_elevation)
+            self._write_command(_format_move_command(azimuth=operation.azimuth, elevation=raw_elevation))
 
     def _write_command(self, command: bytes, *, repetitions: int | None = None) -> None:
-        repetitions = repetitions if repetitions is not None else self._command_repetitions
-        try:
-            for _ in range(repetitions):
-                self._serial.write(command)
-        except Exception as exc:
-            self._logger.exception("Failed to write command to the turntable")
-            with self._lock:
+        with self._lock:
+            repetitions = repetitions if repetitions is not None else self._command_repetitions
+            try:
+                for _ in range(repetitions):
+                    self._serial.write(command)
+            except Exception as exc:
+                self._logger.exception("Failed to write command to the turntable")
                 self._last_error = exc
                 self._operation = None
                 self._state = TurntableState.ERROR
+
+    def _invalidate_pending_commands(self) -> None:
+        """Invalidate queued commands in constant time while holding ``_lock``."""
+
+        self._command_generation += 1
+        self._queued_commands.clear()
+        # A command already fetched by the controller retains the previous
+        # generation and will be ignored.
+        self._command_queue = queue.Queue()
 
     def _ensure_open(self) -> None:
         if self._state == TurntableState.CLOSED or self._stop_event.is_set():
