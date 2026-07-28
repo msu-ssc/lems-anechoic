@@ -160,17 +160,40 @@ function convertPanTilt(pan, tilt) {
     };
 }
 
-function degreeAxis(title, anchor = null) {
+function degreeAxis(title, range) {
     const tickvals = Array.from({ length: 25 }, (_, index) => -180 + index * 15);
     return {
         title,
         tickmode: "array",
         tickvals,
         ticktext: tickvals.map((value) => value % 45 === 0 ? `${value}°` : ""),
-        range: [-180, 180],
+        range,
         gridcolor: cssColor("--plot-grid", "#8fa6d2"),
         zerolinecolor: cssColor("--plot-zero", "#5f79ad"),
-        ...(anchor ? { scaleanchor: anchor, scaleratio: 1 } : {}),
+    };
+}
+
+function paddedRange(values, minimumPadding = 2) {
+    const finiteValues = values.filter(Number.isFinite);
+    if (!finiteValues.length) return [-5, 5];
+    const minimum = Math.min(...finiteValues);
+    const maximum = Math.max(...finiteValues);
+    const padding = Math.max(minimumPadding, (maximum - minimum) * 0.05);
+    return [minimum - padding, maximum + padding];
+}
+
+function plannedFrameRanges(frame, { xPadding = 2, yPadding = 2 } = {}) {
+    const x = [];
+    const y = [];
+    (pathPlan?.cuts || []).forEach((cut) => {
+        cut.points.forEach((point) => {
+            x.push(frame === "pan-tilt" ? point.pan : point.azimuth);
+            y.push(frame === "pan-tilt" ? point.tilt : point.elevation);
+        });
+    });
+    return {
+        x: paddedRange(x, xPadding),
+        y: paddedRange(y, yPadding),
     };
 }
 
@@ -251,6 +274,7 @@ function renderPath(definition, plot) {
         return;
     }
     const frame = definition.frame;
+    const ranges = plannedFrameRanges(frame);
     const pendingColor = "#aeb6c2";
     const visitedColor = "#555e6b";
     const traces = [
@@ -291,8 +315,14 @@ function renderPath(definition, plot) {
         margin: { t: 15, r: 25, b: 65, l: 65 },
         legend: { orientation: "h", x: 0.5, xanchor: "center", y: -0.18 },
         uirevision: `${definition.id}-${pathPlan.version}`,
-        xaxis: degreeAxis(frame === "pan-tilt" ? "Pan" : "Azimuth"),
-        yaxis: degreeAxis(frame === "pan-tilt" ? "Tilt" : "Elevation", "x"),
+        xaxis: degreeAxis(
+            frame === "pan-tilt" ? "Pan" : "Azimuth",
+            ranges.x,
+        ),
+        yaxis: degreeAxis(
+            frame === "pan-tilt" ? "Tilt" : "Elevation",
+            ranges.y,
+        ),
     }), { responsive: true, displaylogo: false });
 }
 
@@ -371,6 +401,18 @@ function hpbwTraces(result, floor, cutId) {
     ];
 }
 
+function currentCutId() {
+    const progressCut = latestStatus?.progress?.cut_id;
+    if (progressCut !== undefined && progressCut !== null) {
+        return String(progressCut);
+    }
+    const rows = resultsPayload?.rows || [];
+    const latestMeasuredCut = rows.at(-1)?.cut_id;
+    return latestMeasuredCut === undefined || latestMeasuredCut === null
+        ? null
+        : String(latestMeasuredCut);
+}
+
 function renderPolar(definition, plot) {
     const cuts = (resultsPayload?.cuts || []).filter((cut) => cut.direction === definition.direction);
     if (!cuts.length) {
@@ -402,13 +444,19 @@ function renderPolar(definition, plot) {
     }));
     const overlayTraces = [];
     if (hpbwEnabled) {
-        cuts.forEach((cut) => {
+        const activeCutId = currentCutId();
+        const activeCut = cuts.find((cut) => String(cut.id) === activeCutId);
+        if (activeCut) {
             const result = computeHpbw(
-                cut[definition.angle],
-                cut[definition.power].normalized_db,
+                activeCut[definition.angle],
+                activeCut[definition.power].normalized_db,
             );
-            if (result) overlayTraces.push(...hpbwTraces(result, floor, cut.id));
-        });
+            if (result) {
+                overlayTraces.push(
+                    ...hpbwTraces(result, floor, activeCut.id),
+                );
+            }
+        }
     }
     const radialTickvals = [];
     const radialTicktext = [];
@@ -420,7 +468,7 @@ function renderPolar(definition, plot) {
     window.Plotly.react(plot, [...overlayTraces, ...dataTraces], baseLayout(plot, {
         margin: { t: 25, r: 30, b: 55, l: 30 },
         legend: { orientation: "h", x: 0.5, xanchor: "center", y: -0.08 },
-        uirevision: `${definition.id}-${resultsPayload?.version || "empty"}-${hpbwEnabled}`,
+        uirevision: `${definition.id}-${resultsPayload?.version || "empty"}-${hpbwEnabled}-${currentCutId() || "no-cut"}`,
         polar: {
             bgcolor: cssColor("--surface-muted", "#c2d5ff"),
             angularaxis: {
@@ -500,6 +548,10 @@ function heatmapTitle(definition) {
 
 function renderHeatmap(definition, plot) {
     const bins = heatmapBins(definition);
+    const ranges = plannedFrameRanges(definition.frame, {
+        xPadding: Math.max(1, bins.x / 2),
+        yPadding: Math.max(1, bins.y / 2),
+    });
     const values = new Map();
     (resultsPayload?.rows || []).forEach((row) => {
         const x = row[bins.xColumn];
@@ -534,8 +586,8 @@ function renderHeatmap(definition, plot) {
         colorbar: { title: "dBm" },
         hovertemplate: `${bins.xName} %{x:.1f}°<br>${bins.yName} %{y:.1f}°<br>Power %{z:.2f} dBm<extra></extra>`,
     }], baseLayout(plot, {
-        xaxis: degreeAxis(bins.xName),
-        yaxis: degreeAxis(bins.yName, "x"),
+        xaxis: degreeAxis(bins.xName, ranges.x),
+        yaxis: degreeAxis(bins.yName, ranges.y),
     }), { responsive: true, displaylogo: false });
 }
 
@@ -618,6 +670,7 @@ function renderAll() {
         planVersion || "no-plan",
         document.documentElement.dataset.colorMode,
         hpbwEnabled,
+        currentCutId() || "no-cut",
         graphConfigRevision,
     ].join(":");
     if (loaded && renderKey !== renderedGraphKey) {

@@ -37,8 +37,11 @@
                 <span></span>
                 <span></span>
             </button>
-            <a class="application-name" href="/grid-designer">MSU Anechoic Chamber</a>
-            <span class="current-page">Experiment Designer</span>
+            {% set breadcrumbs = [
+                {"label": "Experiment", "href": "/experiment"},
+                {"label": "Design"}
+            ] %}
+            {% include "_breadcrumbs.html" %}
             <nav id="application-menu" class="application-menu" aria-label="Application navigation" hidden>
                 <p>Tools</p>
                 <a href="/grid-designer">

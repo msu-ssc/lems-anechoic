@@ -900,6 +900,8 @@ def test_grid_designer_page_loads():
     assert "Reject inaccessible points" in response.text
     assert "Use this grid in an experiment" in response.text
     assert "data-use-grid-for-experiment" in response.text
+    assert '<a class="breadcrumb-home" href="/">MSU Anechoic Chamber</a>' in response.text
+    assert 'aria-current="page">Grid Designer</span>' in response.text
     assert client.get("/vendor/plotly.min.js").status_code == 200
     assert client.get("/static/htmx.min.js").status_code == 200
 

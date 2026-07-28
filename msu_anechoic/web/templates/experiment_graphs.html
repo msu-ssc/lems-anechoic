@@ -29,8 +29,11 @@
             <button id="menu-toggle" class="menu-toggle" type="button" aria-label="Open navigation menu" aria-controls="application-menu" aria-expanded="false">
                 <span></span><span></span><span></span>
             </button>
-            <a class="application-name" href="/grid-designer">MSU Anechoic Chamber</a>
-            <span class="current-page">Experiment Graphs</span>
+            {% set breadcrumbs = [
+                {"label": "Experiment", "href": "/experiment"},
+                {"label": "Graphs"}
+            ] %}
+            {% include "_breadcrumbs.html" %}
             <nav id="application-menu" class="application-menu" aria-label="Application navigation" hidden>
                 <p>Tools</p>
                 <a href="/grid-designer"><span>Grid Designer</span><small>Plan chamber grids</small></a>

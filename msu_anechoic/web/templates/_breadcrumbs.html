@@ -1,0 +1,11 @@
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+    <a class="breadcrumb-home" href="/">MSU Anechoic Chamber</a>
+    {% for breadcrumb in breadcrumbs %}
+        <span class="breadcrumb-separator" aria-hidden="true">›</span>
+        {% if breadcrumb.href %}
+            <a href="{{ breadcrumb.href }}">{{ breadcrumb.label }}</a>
+        {% else %}
+            <span class="breadcrumb-current" aria-current="page">{{ breadcrumb.label }}</span>
+        {% endif %}
+    {% endfor %}
+</nav>

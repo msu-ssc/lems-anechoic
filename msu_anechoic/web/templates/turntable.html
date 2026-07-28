@@ -38,8 +38,8 @@
                 <span></span>
                 <span></span>
             </button>
-            <a class="application-name" href="/grid-designer">MSU Anechoic Chamber</a>
-            <span class="current-page">Turntable</span>
+            {% set breadcrumbs = [{"label": "Turntable"}] %}
+            {% include "_breadcrumbs.html" %}
             <nav id="application-menu" class="application-menu" aria-label="Application navigation" hidden>
                 <p>Tools</p>
                 <a href="/grid-designer">

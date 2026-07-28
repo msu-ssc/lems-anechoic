@@ -22,7 +22,6 @@ from fastapi import FastAPI
 from fastapi import HTTPException
 from fastapi import Request
 from fastapi.responses import HTMLResponse
-from fastapi.responses import RedirectResponse
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -2206,9 +2205,13 @@ def _parse_vertical_movement_multiplier(request: Request) -> float:
     return multiplier
 
 
-@app.get("/", include_in_schema=False)
-def index() -> RedirectResponse:
-    return RedirectResponse(url="/grid-designer", status_code=307)
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+def index(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request=request,
+        name="home.html",
+        context={},
+    )
 
 
 @app.get("/grid-designer", response_class=HTMLResponse)

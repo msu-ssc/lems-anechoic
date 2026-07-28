@@ -15,7 +15,9 @@ from msu_anechoic.web.app import WEB_ROOT
 from msu_anechoic.web.app import _ExperimentLoadRequest
 from msu_anechoic.web.app import app
 from msu_anechoic.web.app import experiment_control
+from msu_anechoic.web.app import experiment_designer
 from msu_anechoic.web.app import experiment_graphs
+from msu_anechoic.web.app import index
 from msu_anechoic.web.app import load_experiment
 from msu_anechoic.web.experiment import ExperimentWebService
 from msu_anechoic.web.experiment import experiment_service
@@ -80,6 +82,9 @@ def test_experiment_page_has_load_run_and_abort_controls():
     assert "Overall points visited" in body
     assert "Overall cuts" in body
     assert "Points within current cut" in body
+    assert 'aria-label="Breadcrumb"' in body
+    assert '<a class="breadcrumb-home" href="/">MSU Anechoic Chamber</a>' in body
+    assert 'aria-current="page">Experiment</span>' in body
     assert any(getattr(route, "path", None) == "/experiment" for route in app.routes)
 
     graph_response = experiment_graphs(page_request("/experiment/graphs"))
@@ -92,10 +97,34 @@ def test_experiment_page_has_load_run_and_abort_controls():
     assert "data-graph-grid" in graph_body
     assert "data-graph-settings-overlay" in graph_body
     assert "data-hpbw-enabled" in graph_body
+    assert '<a href="/experiment">Experiment</a>' in graph_body
+    assert 'aria-current="page">Graphs</span>' in graph_body
     graph_styles = (WEB_ROOT / "static" / "experiment.css").read_text()
     assert ".experiment-graphs-page main" in graph_styles
     assert "max-width: none" in graph_styles
     assert "repeat(auto-fit" in graph_styles
+
+
+def test_home_page_links_to_every_chamber_page():
+    response = index(page_request("/"))
+    body = response.body.decode()
+
+    assert response.status_code == 200
+    assert "<h1>MSU Anechoic Chamber</h1>" in body
+    for path in (
+        "/grid-designer",
+        "/experiment/design",
+        "/experiment",
+        "/experiment/graphs",
+        "/turntable",
+    ):
+        assert f'href="{path}"' in body
+
+    design_body = experiment_designer(
+        page_request("/experiment/design")
+    ).body.decode()
+    assert '<a href="/experiment">Experiment</a>' in design_body
+    assert 'aria-current="page">Design</span>' in design_body
 
 
 def test_load_endpoint_validates_and_summarizes_definition():
@@ -579,6 +608,11 @@ def test_experiment_script_loads_json_and_polls_status():
     assert '"pan-tilt-center-heat"' in graph_script
     assert "computeHpbw" in graph_script
     assert "hpbwTraces" in graph_script
+    assert "currentCutId" in graph_script
+    assert "const activeCut = cuts.find" in graph_script
+    assert "plannedFrameRanges" in graph_script
+    assert "range: [-180, 180]" not in graph_script
+    assert "scaleanchor" not in graph_script
     assert "GRAPH_CONFIG_KEY" in graph_script
     assert "updateConfigFromItems" in graph_script
     assert graph_script.count("window.requestAnimationFrame") >= 2

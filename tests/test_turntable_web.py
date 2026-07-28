@@ -157,6 +157,8 @@ def test_turntable_page_contains_status_history_and_controls():
     assert 'data-command-form="set"' in body
     assert 'data-command-form="move"' in body
     assert "Emergency stop" in body
+    assert '<a class="breadcrumb-home" href="/">MSU Anechoic Chamber</a>' in body
+    assert 'aria-current="page">Turntable</span>' in body
     assert any(getattr(route, "path", None) == "/turntable" for route in app.routes)
 
 
