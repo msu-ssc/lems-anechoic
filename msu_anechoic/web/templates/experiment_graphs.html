@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="description" content="Live experiment paths and radiation-pattern graphs.">
+        <title>Experiment Graphs · MSU Anechoic Chamber</title>
+        <script>
+            (() => {
+                let mode = null;
+                try {
+                    mode = window.localStorage.getItem("grid-designer-color-mode");
+                } catch {
+                    // Use the system preference when storage is unavailable.
+                }
+                if (mode !== "light" && mode !== "dark") {
+                    mode = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+                }
+                document.documentElement.dataset.colorMode = mode;
+            })();
+        </script>
+        <link rel="stylesheet" href="{{ url_for('static', path='grid-designer.css') }}">
+        <link rel="stylesheet" href="{{ url_for('static', path='experiment.css') }}">
+        <script src="/vendor/plotly.min.js" defer></script>
+        <script src="{{ url_for('static', path='experiment-graphs.js') }}" defer></script>
+    </head>
+    <body class="experiment-graphs-page">
+        <header class="site-header">
+            <button id="menu-toggle" class="menu-toggle" type="button" aria-label="Open navigation menu" aria-controls="application-menu" aria-expanded="false">
+                <span></span><span></span><span></span>
+            </button>
+            {% set breadcrumbs = [
+                {"label": "Experiment", "href": "/experiment"},
+                {"label": "Graphs"}
+            ] %}
+            {% include "_breadcrumbs.html" %}
+            <nav id="application-menu" class="application-menu" aria-label="Application navigation" hidden>
+                <p>Tools</p>
+                <a href="/grid-designer"><span>Grid Designer</span><small>Plan chamber grids</small></a>
+                <a href="/experiment/design"><span>Experiment Designer</span><small>Create parameters.json from a grid</small></a>
+                <a href="/experiment"><span>Experiment</span><small>Load and run a measurement</small></a>
+                <a href="/experiment/graphs" aria-current="page"><span>Experiment Graphs</span><small>Live paths and measured cuts</small></a>
+                <a href="/turntable"><span>Turntable</span><small>Monitor and control the positioner</small></a>
+                <fieldset class="appearance-control">
+                    <legend>Appearance</legend>
+                    <div class="color-mode-switch" role="radiogroup" aria-label="Color mode">
+                        <label><input id="color-mode-light" type="radio" name="color_mode" value="light"><span>Light</span></label>
+                        <label><input id="color-mode-dark" type="radio" name="color_mode" value="dark"><span>Dark</span></label>
+                    </div>
+                </fieldset>
+            </nav>
+        </header>
+
+        <main>
+            <div class="page-heading experiment-page-heading">
+                <div>
+                    <h1>Experiment Graphs</h1>
+                    <p data-graph-description>Load an experiment on the Experiment page to view its route and measurements.</p>
+                </div>
+                <div class="heading-actions">
+                    <button class="secondary-button" type="button" data-open-graph-settings>Configure graphs</button>
+                    <a class="secondary-button" href="/experiment">Back to experiment</a>
+                    <span class="experiment-state" data-experiment-state>NO EXPERIMENT</span>
+                </div>
+            </div>
+
+            <div class="experiment-workspace graph-workspace">
+                <section class="experiment-panel graph-panel" data-graph-panel hidden>
+                    <div class="experiment-panel-heading">
+                        <div><p class="section-kicker">Live experiment</p><h2>Graphs</h2></div>
+                        <span data-path-position>Actual position unavailable</span>
+                    </div>
+                    <div class="graph-source-line">
+                        <p class="results-description">Drag and visibility settings are available under Configure graphs. Pending route points are light gray; the target is red and actual position is green.</p>
+                        <span data-results-path>—</span>
+                    </div>
+                    <div class="dashboard-graph-grid" data-graph-grid></div>
+                </section>
+                <p class="experiment-feedback graph-feedback" data-feedback role="status" aria-live="polite">Waiting for experiment status.</p>
+            </div>
+        </main>
+
+        <div class="graph-settings-overlay" data-graph-settings-overlay hidden>
+            <section class="graph-settings-dialog" role="dialog" aria-modal="true" aria-labelledby="graph-settings-title">
+                <header class="graph-settings-header">
+                    <h2 id="graph-settings-title">Configure Graphs</h2>
+                    <button class="primary-button" type="button" data-close-graph-settings>Done</button>
+                </header>
+                <div class="graph-settings-body">
+                    <aside class="graph-settings-groups" data-graph-settings-groups></aside>
+                    <div class="graph-settings-items" data-graph-settings-items></div>
+                    <aside class="graph-settings-options">
+                        <h3>Overlays</h3>
+                        <label>
+                            <input type="checkbox" data-hpbw-enabled>
+                            <span>Half-Power Beam Width</span>
+                        </label>
+                    </aside>
+                </div>
+            </section>
+        </div>
+    </body>
+</html>

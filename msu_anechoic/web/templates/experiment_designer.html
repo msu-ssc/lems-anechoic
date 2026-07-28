@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="description" content="Create an MSU anechoic chamber experiment from the current Grid Designer grid.">
+        <title>Experiment Designer · MSU Anechoic Chamber</title>
+        <script>
+            (() => {
+                let mode = null;
+                try {
+                    mode = window.localStorage.getItem("grid-designer-color-mode");
+                } catch {
+                    // Use the system preference when storage is unavailable.
+                }
+                if (mode !== "light" && mode !== "dark") {
+                    mode = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+                }
+                document.documentElement.dataset.colorMode = mode;
+            })();
+        </script>
+        <link rel="stylesheet" href="{{ url_for('static', path='grid-designer.css') }}">
+        <link rel="stylesheet" href="{{ url_for('static', path='experiment.css') }}">
+        <script src="{{ url_for('static', path='experiment-design.js') }}" defer></script>
+    </head>
+    <body>
+        <header class="site-header">
+            <button
+                id="menu-toggle"
+                class="menu-toggle"
+                type="button"
+                aria-label="Open navigation menu"
+                aria-controls="application-menu"
+                aria-expanded="false"
+            >
+                <span></span>
+                <span></span>
+                <span></span>
+            </button>
+            {% set breadcrumbs = [
+                {"label": "Experiment", "href": "/experiment"},
+                {"label": "Design"}
+            ] %}
+            {% include "_breadcrumbs.html" %}
+            <nav id="application-menu" class="application-menu" aria-label="Application navigation" hidden>
+                <p>Tools</p>
+                <a href="/grid-designer">
+                    <span>Grid Designer</span>
+                    <small>Plan azimuth/elevation and pan/tilt grids</small>
+                </a>
+                <a href="/experiment/design" aria-current="page">
+                    <span>Experiment Designer</span>
+                    <small>Create parameters.json from the current grid</small>
+                </a>
+                <a href="/experiment">
+                    <span>Experiment</span>
+                    <small>Load and run a chamber measurement</small>
+                </a>
+                <a href="/turntable">
+                    <span>Turntable</span>
+                    <small>Monitor and control the chamber positioner</small>
+                </a>
+                <fieldset class="appearance-control">
+                    <legend>Appearance</legend>
+                    <div class="color-mode-switch" role="radiogroup" aria-label="Color mode">
+                        <label><input id="color-mode-light" type="radio" name="color_mode" value="light"><span>Light</span></label>
+                        <label><input id="color-mode-dark" type="radio" name="color_mode" value="dark"><span>Dark</span></label>
+                    </div>
+                </fieldset>
+            </nav>
+        </header>
+
+        <main>
+            <div class="page-heading experiment-page-heading">
+                <div>
+                    <h1>Experiment Designer</h1>
+                    <p>Add experiment settings to the grid supplied by Grid Designer, then create a new parameters.json.</p>
+                </div>
+                <div class="heading-actions">
+                    <a class="secondary-button" href="/grid-designer">Edit grid</a>
+                    <a class="secondary-button" href="/experiment">Back to experiment</a>
+                </div>
+            </div>
+
+            <div class="experiment-design-workspace">
+                <section class="experiment-panel experiment-grid-source" aria-labelledby="grid-source-heading">
+                    <div class="experiment-panel-heading">
+                        <div>
+                            <p class="section-kicker">Input</p>
+                            <h2 id="grid-source-heading">Grid Designer grid</h2>
+                        </div>
+                        <span data-grid-source-status>Checking this browser tab…</span>
+                    </div>
+                    <p class="experiment-description" data-grid-source-description>
+                        Open Grid Designer and choose “Use this grid in an experiment.”
+                    </p>
+                    <dl class="experiment-facts" data-grid-source-facts hidden>
+                        <div><dt>Coordinates</dt><dd data-grid-coordinate-system>—</dd></div>
+                        <div><dt>Simple grids</dt><dd data-grid-count>—</dd></div>
+                        <div><dt>Names</dt><dd data-grid-names>—</dd></div>
+                        <div><dt>Source</dt><dd>Grid Designer in this tab</dd></div>
+                    </dl>
+                    <a class="secondary-button" href="/grid-designer" data-choose-grid>Choose a grid</a>
+                </section>
+
+                <form id="experiment-design-form" class="experiment-panel experiment-definition-panel">
+                    <div class="experiment-panel-heading">
+                        <div>
+                            <p class="section-kicker">Definition</p>
+                            <h2>Experiment parameters</h2>
+                        </div>
+                        <span>Saving never overwrites an existing folder.</span>
+                    </div>
+                    <div class="experiment-design-fields">
+                        <label>
+                            Folder name
+                            <input name="folder_name" type="text" value="new-experiment" maxlength="80" pattern="[A-Za-z0-9][A-Za-z0-9._-]{0,79}" required>
+                        </label>
+                        <label>
+                            Short description
+                            <input name="short_description" type="text" value="new-experiment" maxlength="120" required>
+                        </label>
+                        <label class="experiment-design-wide">
+                            Long description
+                            <textarea name="long_description" rows="3">Grid-designed experiment</textarea>
+                        </label>
+                        <label>
+                            Center frequency
+                            <span class="experiment-unit-input"><input name="center_frequency" type="number" min="0.000001" step="any" value="8457300000" required><b>Hz</b></span>
+                        </label>
+                        <label>
+                            Signal-generator power
+                            <span class="experiment-unit-input"><input name="signal_power" type="number" step="any" value="10" required><b>dBm</b></span>
+                        </label>
+                        <label>
+                            Vernier power
+                            <span class="experiment-unit-input"><input name="vernier_power" type="number" step="any" value="0" required><b>dB</b></span>
+                        </label>
+                        <label>
+                            Analyzer reference level
+                            <span class="experiment-unit-input"><input name="reference_level" type="number" step="any" value="-40" required><b>dBm</b></span>
+                        </label>
+                        <label>
+                            Analyzer span
+                            <span class="experiment-unit-input"><input name="span" type="number" min="0.000001" step="any" value="10000" required><b>Hz</b></span>
+                        </label>
+                        <label>
+                            Polarization
+                            <select name="polarization">
+                                <option value="horizontal">Horizontal</option>
+                                <option value="vertical">Vertical</option>
+                            </select>
+                        </label>
+                        <label>
+                            Log level
+                            <select name="log_level">
+                                <option value="DEBUG">Debug</option>
+                                <option value="INFO">Info</option>
+                                <option value="WARNING">Warning</option>
+                                <option value="ERROR">Error</option>
+                                <option value="CRITICAL">Critical</option>
+                            </select>
+                        </label>
+                        <fieldset class="experiment-design-products">
+                            <legend>Data products</legend>
+                            <label><input name="collect_center_frequency_data" type="checkbox" value="true" checked> Center frequency</label>
+                            <label><input name="collect_peak_data" type="checkbox" value="true" checked> Peak</label>
+                            <label><input name="collect_trace_data" type="checkbox" value="true"> Trace</label>
+                        </fieldset>
+                    </div>
+                    <div class="experiment-design-actions">
+                        <button type="submit" class="primary-button" data-save-experiment disabled>
+                            Save parameters.json
+                        </button>
+                        <span class="experiment-design-feedback" data-experiment-design-feedback role="status" aria-live="polite">
+                            Choose a grid before saving.
+                        </span>
+                    </div>
+                </form>
+            </div>
+        </main>
+    </body>
+</html>

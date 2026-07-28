@@ -38,13 +38,21 @@
                 <span></span>
                 <span></span>
             </button>
-            <a class="application-name" href="/grid-designer">MSU Anechoic Chamber</a>
-            <span class="current-page">Grid Designer</span>
+            {% set breadcrumbs = [{"label": "Grid Designer"}] %}
+            {% include "_breadcrumbs.html" %}
             <nav id="application-menu" class="application-menu" aria-label="Application navigation" hidden>
                 <p>Tools</p>
                 <a href="/grid-designer" aria-current="page">
                     <span>Grid Designer</span>
                     <small>Plan azimuth/elevation and pan/tilt grids</small>
+                </a>
+                <a href="/experiment/design">
+                    <span>Experiment Designer</span>
+                    <small>Create parameters.json from a grid</small>
+                </a>
+                <a href="/experiment">
+                    <span>Experiment</span>
+                    <small>Load and run a chamber measurement</small>
                 </a>
                 <a href="/turntable">
                     <span>Turntable</span>
@@ -87,11 +95,11 @@
                         <h2>Grid parameters</h2>
                         <div class="coordinate-switch" role="radiogroup" aria-label="Input coordinate system">
                             <label>
-                                <input type="radio" name="input_system" value="az_el" checked>
+                                <input type="radio" name="input_system" value="az_el"{% if input_system == "az_el" %} checked{% endif %}>
                                 <span>Azimuth / elevation</span>
                             </label>
                             <label>
-                                <input type="radio" name="input_system" value="pan_tilt">
+                                <input type="radio" name="input_system" value="pan_tilt"{% if input_system == "pan_tilt" %} checked{% endif %}>
                                 <span>Pan / tilt</span>
                             </label>
                         </div>
@@ -304,9 +312,12 @@
                                 name="reject_inaccessible"
                                 value="true"
                                 {% if reject_inaccessible %}checked{% endif %}
-                            >
+                        >
                             <span>Reject inaccessible points</span>
                         </label>
+                        <button type="button" class="primary-button" data-use-grid-for-experiment>
+                            Use this grid in an experiment
+                        </button>
                         <span id="updating-indicator" class="htmx-indicator">Updating views…</span>
                     </div>
                 </form>

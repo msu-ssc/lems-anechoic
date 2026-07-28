@@ -1,9 +1,13 @@
 import importlib
 import math
 import re
+from pathlib import Path
+from urllib.parse import urlencode
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from starlette.requests import Request
 
 from msu_anechoic import experiment
 from msu_anechoic.web.app import INACCESSIBLE_AZ_EL_REGIONS
@@ -12,6 +16,7 @@ from msu_anechoic.web.app import _estimate_grid_cost
 from msu_anechoic.web.app import _estimate_grid_travel_time
 from msu_anechoic.web.app import _estimate_move_cost
 from msu_anechoic.web.app import _estimate_move_travel_time
+from msu_anechoic.web.app import _experiment_cuts_from_grid
 from msu_anechoic.web.app import _figure
 from msu_anechoic.web.app import _flat_topped_lower_hemisphere_mesh
 from msu_anechoic.web.app import _format_duration
@@ -23,6 +28,8 @@ from msu_anechoic.web.app import _quantization_error_figure
 from msu_anechoic.web.app import _spherical_patch_mesh
 from msu_anechoic.web.app import _three_dimensional_figure
 from msu_anechoic.web.app import app
+from msu_anechoic.web.app import experiment_designer
+from msu_anechoic.web.app import save_experiment_design
 from msu_anechoic.web.grid import DUPLICATE_TOLERANCE
 from msu_anechoic.web.grid import MAX_TURNTABLE_TILT
 from msu_anechoic.web.grid import AxisDefinition
@@ -891,8 +898,189 @@ def test_grid_designer_page_loads():
     assert 'name="pan_quantization_step"' in response.text
     assert 'name="reject_inaccessible"' in response.text
     assert "Reject inaccessible points" in response.text
+    assert "Use this grid in an experiment" in response.text
+    assert "data-use-grid-for-experiment" in response.text
+    assert '<a class="breadcrumb-home" href="/">MSU Anechoic Chamber</a>' in response.text
+    assert 'aria-current="page">Grid Designer</span>' in response.text
     assert client.get("/vendor/plotly.min.js").status_code == 200
     assert client.get("/static/htmx.min.js").status_code == 200
+
+
+def experiment_design_request(
+    params: dict | None = None,
+    *,
+    method: str = "GET",
+) -> Request:
+    path = "/experiment/design"
+    return Request(
+        {
+            "type": "http",
+            "method": method,
+            "path": path,
+            "raw_path": path.encode(),
+            "headers": [],
+            "query_string": urlencode(params or {}).encode(),
+            "server": ("testserver", 80),
+            "client": ("testclient", 1),
+            "scheme": "http",
+            "root_path": "",
+            "app": app,
+            "router": app.router,
+        }
+    )
+
+
+def test_experiment_designer_reads_the_grid_designer_grid():
+    response = experiment_designer(experiment_design_request())
+    body = response.body.decode()
+    grid_script = Path(
+        "msu_anechoic/web/static/grid-designer.js"
+    ).read_text(encoding="utf-8")
+    design_script = Path(
+        "msu_anechoic/web/static/experiment-design.js"
+    ).read_text(encoding="utf-8")
+
+    assert response.status_code == 200
+    assert "<h1>Experiment Designer</h1>" in body
+    assert 'id="experiment-design-form"' in body
+    assert 'name="folder_name"' in body
+    assert "Save parameters.json" in body
+    assert 'data-save-experiment' in body
+    assert "Grid Designer grid" in body
+    assert 'data-grid-source-facts' in body
+    assert 'id="grid-form"' not in body
+    assert 'name="input_system"' not in body
+    assert 'name="pan_min"' not in body
+    assert 'name="azimuth_min"' not in body
+    assert "/static/experiment-design.js" in body
+    assert 'sessionStorage.setItem(' in grid_script
+    assert '"experiment-designer-grid"' in grid_script
+    assert 'window.location.assign("/experiment/design")' in grid_script
+    assert "window.sessionStorage.getItem(GRID_STORAGE_KEY)" in design_script
+    assert 'new URLSearchParams(gridDefinition)' in design_script
+
+
+def test_experiment_designer_saves_exact_serpentine_cuts(
+    tmp_path: Path,
+    monkeypatch,
+):
+    experiments_root = tmp_path / "experiments"
+    monkeypatch.setattr(
+        experiment,
+        "EXPERIMENTS_FOLDER_PATH",
+        experiments_root,
+    )
+    params = {
+        "input_system": "pan_tilt",
+        "grid_name": "Measurement grid",
+        "pan_min": -10,
+        "pan_max": 10,
+        "pan_step": 10,
+        "tilt_min": -5,
+        "tilt_max": 5,
+        "tilt_step": 5,
+        "folder_name": "designed-test",
+        "short_description": "Designed test",
+        "long_description": "Created from a pan/tilt grid",
+        "center_frequency": 8_457_300_000,
+        "signal_power": 10,
+        "vernier_power": 0,
+        "reference_level": -40,
+        "span": 10_000,
+        "polarization": "horizontal",
+        "log_level": "INFO",
+        "collect_center_frequency_data": "true",
+        "collect_peak_data": "true",
+    }
+    payload = save_experiment_design(
+        experiment_design_request(params, method="POST")
+    )
+
+    assert payload["cut_count"] == 3
+    assert payload["point_count"] == 9
+    parameters_path = experiments_root / "designed-test" / "parameters.json"
+    assert parameters_path.is_file()
+    parameters = experiment.ExperimentParameters.model_validate_json(
+        parameters_path.read_text(encoding="utf-8")
+    )
+    assert parameters.short_description == "Designed test"
+    assert parameters.long_description == "Created from a pan/tilt grid"
+    assert parameters.relative_folder_path == experiments_root / "designed-test"
+    assert parameters.grid is None
+    assert parameters.cuts is not None
+    assert [cut.fixed_angle for cut in parameters.cuts.values()] == [5, 0, -5]
+    route = [
+        (coordinate.pan, coordinate.tilt)
+        for cut in parameters.cuts.values()
+        for coordinate in cut.coordinates
+    ]
+    assert route == [
+        (-10, 5),
+        (0, 5),
+        (10, 5),
+        (10, 0),
+        (0, 0),
+        (-10, 0),
+        (-10, -5),
+        (0, -5),
+        (10, -5),
+    ]
+    assert "neutral_elevation" not in parameters_path.read_text(encoding="utf-8")
+
+    original = parameters_path.read_text(encoding="utf-8")
+    with pytest.raises(HTTPException, match="already exists") as exc_info:
+        save_experiment_design(experiment_design_request(params, method="POST"))
+    assert exc_info.value.status_code == 400
+    assert parameters_path.read_text(encoding="utf-8") == original
+
+
+def test_experiment_designer_rejects_az_el_without_creating_a_folder(
+    tmp_path: Path,
+    monkeypatch,
+):
+    experiments_root = tmp_path / "experiments"
+    monkeypatch.setattr(
+        experiment,
+        "EXPERIMENTS_FOLDER_PATH",
+        experiments_root,
+    )
+
+    with pytest.raises(HTTPException, match="only pan/tilt") as exc_info:
+        save_experiment_design(
+            experiment_design_request(
+                {
+                    "input_system": "az_el",
+                    "azimuth_min": -10,
+                    "azimuth_max": 10,
+                    "azimuth_step": 10,
+                    "elevation_min": 0,
+                    "elevation_max": 0,
+                    "elevation_step": 1,
+                    "folder_name": "unsupported-az-el",
+                },
+                method="POST",
+            )
+        )
+
+    assert exc_info.value.status_code == 400
+    assert not (experiments_root / "unsupported-az-el").exists()
+
+
+def test_experiment_designer_preserves_nonuniform_pan_spacing():
+    grid = design_grid(
+        input_system="pan_tilt",
+        horizontal=AxisDefinition(0, 40, 10),
+        vertical=AxisDefinition(0, 0, 1),
+        equal_area_pan_spacing=True,
+    )
+
+    cuts = _experiment_cuts_from_grid(grid)
+
+    assert len(cuts) == 1
+    cut = next(iter(cuts.values()))
+    expected_pans = [point.pan for point in grid.points]
+    assert cut.angles == expected_pans
+    assert [coordinate.pan for coordinate in cut.coordinates] == expected_pans
 
 
 def test_grid_designer_uses_msu_palette_for_both_color_modes():

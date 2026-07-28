@@ -1,0 +1,43 @@
+.home-header {
+    justify-content: flex-start;
+}
+
+.home-link-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+    gap: 1rem;
+}
+
+.home-link-card {
+    min-height: 9rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.55rem;
+    border: 1px solid var(--border);
+    border-radius: 1rem;
+    padding: 1.25rem;
+    color: var(--text);
+    background: var(--surface);
+    text-decoration: none;
+}
+
+.home-link-card:hover {
+    border-color: var(--accent);
+    background: var(--surface-muted);
+}
+
+.home-link-card:focus-visible {
+    outline: 3px solid var(--accent);
+    outline-offset: 3px;
+}
+
+.home-link-card strong {
+    color: var(--accent);
+    font-size: 1.15rem;
+}
+
+.home-link-card span {
+    color: var(--text-muted);
+    line-height: 1.5;
+}

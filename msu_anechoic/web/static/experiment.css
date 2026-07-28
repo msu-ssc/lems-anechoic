@@ -1,0 +1,712 @@
+.experiment-page-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.experiment-page-heading > div {
+    max-width: 52rem;
+}
+
+.experiment-page-heading .heading-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.75rem;
+}
+
+.heading-actions .secondary-button {
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.experiment-state {
+    flex: 0 0 auto;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0.45rem 0.75rem;
+    color: var(--text-muted);
+    background: var(--surface);
+    font-size: 0.75rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+}
+
+.experiment-state[data-state="running"] {
+    color: var(--plot-source);
+    border-color: color-mix(in srgb, var(--plot-source) 45%, var(--border));
+}
+
+.experiment-state[data-state="failed"],
+.experiment-state[data-state="cancelling"] {
+    color: var(--plot-origin);
+    border-color: color-mix(in srgb, var(--plot-origin) 45%, var(--border));
+}
+
+.experiment-workspace {
+    display: grid;
+    grid-template-columns: minmax(18rem, 0.75fr) minmax(28rem, 1.25fr);
+    gap: 1rem;
+    align-items: start;
+}
+
+.experiment-design-workspace {
+    display: grid;
+    grid-template-columns: minmax(17rem, 0.65fr) minmax(32rem, 1.35fr);
+    gap: 1rem;
+    align-items: start;
+}
+
+.experiment-grid-source .secondary-button {
+    display: inline-block;
+    margin-top: 0.25rem;
+    text-decoration: none;
+}
+
+.experiment-design-fields {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.9rem;
+}
+
+.experiment-design-fields > label {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 0.35rem;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+.experiment-design-fields > label > input,
+.experiment-design-fields textarea,
+.experiment-design-fields select,
+.experiment-unit-input input {
+    width: 100%;
+    min-width: 0;
+    min-height: 2.6rem;
+    border: 1px solid var(--border);
+    border-radius: 0.65rem;
+    padding: 0.65rem;
+    color: var(--text);
+    background: var(--input);
+    font: inherit;
+}
+
+.experiment-design-fields textarea {
+    resize: vertical;
+}
+
+.experiment-design-wide,
+.experiment-design-products {
+    grid-column: 1 / -1;
+}
+
+.experiment-unit-input {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: stretch;
+}
+
+.experiment-unit-input input {
+    border-radius: 0.65rem 0 0 0.65rem;
+}
+
+.experiment-unit-input b {
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--border);
+    border-left: 0;
+    border-radius: 0 0.65rem 0.65rem 0;
+    padding: 0 0.65rem;
+    color: var(--text-muted);
+    background: var(--surface-muted);
+    font-size: 0.75rem;
+}
+
+.experiment-design-products {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.65rem 1.5rem;
+}
+
+.experiment-design-products legend {
+    margin-bottom: 0.5rem;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+.experiment-design-products label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: 0.85rem;
+    font-weight: 700;
+}
+
+.experiment-design-products input {
+    width: 1rem;
+    height: 1rem;
+    accent-color: var(--accent);
+}
+
+.experiment-design-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    margin-top: 1.15rem;
+    padding-top: 1.15rem;
+    border-top: 1px solid var(--border);
+}
+
+.experiment-design-feedback {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+}
+
+.experiment-design-feedback.is-error {
+    color: var(--plot-origin);
+}
+
+.experiment-panel {
+    border: 1px solid var(--border);
+    border-radius: 1rem;
+    padding: 1.25rem;
+    background: var(--surface);
+}
+
+.plan-panel {
+    grid-row: span 2;
+}
+
+.path-panel,
+.results-panel {
+    grid-column: 1 / -1;
+}
+
+.path-panel[hidden],
+.results-panel[hidden] {
+    display: none;
+}
+
+.experiment-panel-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1.15rem;
+}
+
+.experiment-panel-heading h2,
+.experiment-panel-heading p {
+    margin: 0;
+}
+
+.experiment-panel-heading > span {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+}
+
+.section-kicker {
+    color: var(--accent);
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+
+.load-option > label,
+.output-mode legend {
+    display: block;
+    margin-bottom: 0.5rem;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+.load-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.65rem;
+}
+
+.load-row select,
+.load-row input[type="file"] {
+    min-width: 0;
+    border: 1px solid var(--border);
+    border-radius: 0.65rem;
+    padding: 0.65rem;
+    color: var(--text);
+    background: var(--input);
+}
+
+.load-divider {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin: 1rem 0;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+}
+
+.load-divider::before,
+.load-divider::after {
+    content: "";
+    height: 1px;
+    flex: 1;
+    background: var(--border);
+}
+
+.load-help,
+.experiment-description,
+.experiment-feedback {
+    color: var(--text-muted);
+    line-height: 1.5;
+}
+
+.load-help {
+    margin: 0.9rem 0 0;
+    font-size: 0.8rem;
+}
+
+.experiment-facts {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.65rem;
+    margin: 1.25rem 0;
+}
+
+.experiment-facts div {
+    border: 1px solid var(--border);
+    border-radius: 0.75rem;
+    padding: 0.75rem;
+    background: var(--surface-muted);
+}
+
+.experiment-facts dt {
+    color: var(--text-muted);
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.experiment-facts dd {
+    margin: 0.25rem 0 0;
+    overflow-wrap: anywhere;
+    font-weight: 700;
+}
+
+.cut-table-wrap {
+    overflow-x: auto;
+}
+
+.cut-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+
+.cut-table th,
+.cut-table td {
+    border-bottom: 1px solid var(--border);
+    padding: 0.65rem 0.5rem;
+    text-align: left;
+    white-space: nowrap;
+}
+
+.cut-table th {
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.progress-summary > div {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.progress-stack {
+    display: grid;
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+}
+
+.progress-summary small {
+    display: block;
+    margin-top: -0.75rem;
+    color: var(--text-muted);
+}
+
+.progress-summary progress {
+    width: 100%;
+    height: 0.7rem;
+    margin: 0.75rem 0 1.1rem;
+    accent-color: var(--accent);
+}
+
+.graph-workspace {
+    grid-template-columns: 1fr;
+}
+
+.experiment-graphs-page main {
+    max-width: none;
+}
+
+.path-plot-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+}
+
+.graph-feedback {
+    grid-column: 1 / -1;
+}
+
+.graph-panel {
+    grid-column: 1 / -1;
+}
+
+.graph-panel[hidden] {
+    display: none;
+}
+
+.graph-source-line {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.graph-source-line > span {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    overflow-wrap: anywhere;
+    text-align: right;
+}
+
+.dashboard-graph-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 26rem), 1fr));
+    gap: 1rem;
+}
+
+.dashboard-graph-card {
+    min-width: 0;
+    border: 1px solid var(--border);
+    border-radius: 0.85rem;
+    padding: 0.8rem;
+    overflow: hidden;
+    contain: layout paint;
+    background: var(--surface-muted);
+}
+
+.dashboard-graph-card header {
+    min-height: 2rem;
+    padding: 0.2rem 0.25rem 0;
+}
+
+.dashboard-graph-card h3 {
+    margin: 0;
+}
+
+.dashboard-plot {
+    min-width: 0;
+    width: 100%;
+    min-height: 430px;
+    overflow: hidden;
+}
+
+.graph-settings-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    background: rgba(15, 25, 45, 0.55);
+}
+
+.graph-settings-overlay[hidden] {
+    display: none;
+}
+
+.graph-settings-dialog {
+    display: flex;
+    width: min(62rem, 100%);
+    max-height: min(48rem, 90vh);
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 1rem;
+    background: var(--surface);
+    box-shadow: 0 1.5rem 4rem rgba(0, 0, 0, 0.3);
+}
+
+.graph-settings-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.graph-settings-header h2 {
+    margin: 0;
+}
+
+.graph-settings-body {
+    display: grid;
+    grid-template-columns: auto minmax(18rem, 1fr) auto;
+    min-height: 0;
+}
+
+.graph-settings-groups,
+.graph-settings-options {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.8rem;
+}
+
+.graph-settings-groups {
+    border-right: 1px solid var(--border);
+}
+
+.graph-settings-options {
+    min-width: 13rem;
+    border-left: 1px solid var(--border);
+}
+
+.graph-settings-options h3 {
+    margin: 0 0 0.75rem;
+}
+
+.graph-settings-options label,
+.graph-settings-group,
+.graph-settings-item {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+}
+
+.graph-settings-group {
+    border-radius: 0.5rem;
+    padding: 0.45rem 0.65rem;
+    color: var(--text-muted);
+    cursor: pointer;
+    user-select: none;
+}
+
+.graph-settings-group:hover,
+.graph-settings-item:hover {
+    background: var(--surface-muted);
+}
+
+.graph-settings-items {
+    overflow-y: auto;
+    padding: 0.5rem 0;
+}
+
+.graph-settings-item {
+    padding: 0.5rem 1rem;
+    user-select: none;
+}
+
+.graph-settings-item.is-dragging {
+    opacity: 0.45;
+}
+
+.graph-settings-item.is-drag-over {
+    border-top: 2px solid var(--accent);
+}
+
+.graph-drag-handle {
+    border: 0;
+    padding: 0 0.2rem;
+    color: var(--text-muted);
+    background: transparent;
+    font-size: 1.25rem;
+    cursor: grab;
+}
+
+.graph-settings-check {
+    width: 1rem;
+    height: 1rem;
+    margin: 0;
+    accent-color: var(--accent);
+}
+
+.graph-settings-label {
+    flex: 1;
+}
+
+.output-mode {
+    display: grid;
+    gap: 0.45rem;
+    margin: 0 0 1rem;
+    border: 0;
+    padding: 0;
+}
+
+.output-mode label,
+.readiness-check {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.55rem;
+    font-size: 0.86rem;
+}
+
+.readiness-check {
+    border: 1px solid var(--border);
+    border-radius: 0.75rem;
+    padding: 0.8rem;
+    background: var(--surface-muted);
+}
+
+.run-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.65rem;
+    margin-top: 1rem;
+}
+
+.abort-button {
+    border: 1px solid var(--plot-origin);
+    border-radius: 0.65rem;
+    padding: 0.65rem 0.9rem;
+    color: var(--plot-origin);
+    background: transparent;
+    font: inherit;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.abort-button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.turntable-link {
+    text-decoration: none;
+}
+
+.experiment-feedback.is-error {
+    color: var(--plot-origin);
+}
+
+.results-description {
+    margin: -0.5rem 0 1rem;
+    color: var(--text-muted);
+    line-height: 1.5;
+}
+
+.polar-plot-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 25rem), 1fr));
+    gap: 1rem;
+}
+
+.polar-plot-card {
+    min-width: 0;
+    border: 1px solid var(--border);
+    border-radius: 0.85rem;
+    padding: 0.8rem;
+    background: var(--surface-muted);
+}
+
+.polar-plot-card header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.2rem 0.25rem 0;
+}
+
+.polar-plot-card h3 {
+    margin: 0;
+}
+
+.polar-plot-card header span {
+    color: var(--text-muted);
+    font-size: 0.78rem;
+}
+
+.polar-plot {
+    min-width: 0;
+    width: 100%;
+    min-height: 430px;
+    overflow: hidden;
+    contain: layout paint;
+}
+
+.path-plot {
+    width: 100%;
+    min-height: 480px;
+}
+
+@media (max-width: 900px) {
+    .experiment-workspace,
+    .experiment-design-workspace {
+        grid-template-columns: 1fr;
+    }
+
+    .experiment-design-fields {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .plan-panel {
+        grid-row: auto;
+    }
+
+    .path-plot-grid {
+        grid-template-columns: 1fr;
+    }
+
+}
+
+@media (max-width: 580px) {
+    .experiment-page-heading,
+    .experiment-panel-heading {
+        display: block;
+    }
+
+    .experiment-state {
+        display: inline-block;
+        margin-top: 0.75rem;
+    }
+
+    .load-row,
+    .experiment-facts,
+    .experiment-design-fields {
+        grid-template-columns: 1fr;
+    }
+
+    .experiment-design-actions {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .graph-settings-body {
+        grid-template-columns: 1fr;
+        overflow-y: auto;
+    }
+
+    .graph-settings-groups,
+    .graph-settings-options {
+        border: 0;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .graph-source-line {
+        display: block;
+    }
+}

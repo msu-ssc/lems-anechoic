@@ -563,6 +563,21 @@ document.addEventListener("change", (event) => {
 });
 
 document.addEventListener("click", (event) => {
+    if (event.target.closest("[data-use-grid-for-experiment]")) {
+        const form = document.getElementById("grid-form");
+        if (!form || !form.reportValidity()) return;
+        const query = new URLSearchParams(new FormData(form));
+        try {
+            window.sessionStorage.setItem(
+                "experiment-designer-grid",
+                query.toString(),
+            );
+            window.location.assign("/experiment/design");
+        } catch {
+            window.location.assign(`/experiment/design?${query}`);
+        }
+        return;
+    }
     if (event.target.closest("[data-add-simple-grid]")) {
         addSimpleGrid();
         return;

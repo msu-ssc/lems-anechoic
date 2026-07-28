@@ -1,20 +1,24 @@
 import csv
 import datetime
+import math
+import threading
+import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 from typing import Generator
 from typing import Iterable
 from typing import Literal
+from typing import Protocol
 
 import numpy as np
 import pandas as pd
 import pydantic
 from msu_ssc import path_util
 
-# from msu_anechoic import AzElTurntable
+from msu_anechoic import turntable2
 from msu_anechoic.sound import say
 from msu_anechoic.spec_an import SpectrumAnalyzerHP8563E
-from msu_anechoic.turn_table import Turntable
 from msu_anechoic.util.coordinate import Coordinate
 
 EXPERIMENTS_FOLDER_PATH = Path("./experiments")
@@ -24,8 +28,28 @@ _MIN_TRAVEL_TIME_AZ = 1.0
 _MIN_TRAVEL_TIME_EL = 1.8
 _AVERAGE_TRAVEL_DEG_PER_SEC_AZ = 2.5
 _AVERAGE_TRAVEL_DEG_PER_SEC_EL = 1.5
-_PAUSE_TIME = 0.2
 _PAUSE_TIME_TRACE = 1.0
+TURNTABLE_POLL_INTERVAL = 0.05
+TURNTABLE_POSITION_MARGIN = 0.2
+
+
+class ExperimentCancelled(RuntimeError):
+    """Raised when an in-progress experiment is cancelled."""
+
+
+class ExperimentTurntable(Protocol):
+    """The subset of the threaded turntable API used by experiments."""
+
+    def set_position(self, *, pan: float, tilt: float, timeout: float = 5.0) -> None: ...
+
+    def move_to(self, *, pan: float, tilt: float, move_timeout: float = 120.0) -> None: ...
+
+    def abort(self) -> None: ...
+
+    def get_complete_state(self) -> turntable2.TurntableCompleteState: ...
+
+
+ProgressCallback = Callable[[dict[str, Any]], None]
 
 
 def _estimate_time(angle: float, kind: Literal["horizontal", "vertical"], trace: bool) -> float:
@@ -63,8 +87,30 @@ def _estimate_time(angle: float, kind: Literal["horizontal", "vertical"], trace:
         raise ValueError(f"Invalid kind: {kind}. Must be 'horizontal' or 'vertical'.")
 
 
+def estimate_move_time(
+    start: tuple[float, float],
+    end: tuple[float, float],
+) -> float:
+    """Estimate a diagonal pan/tilt move, whose axes move concurrently."""
+    pan_delta = end[0] - start[0]
+    tilt_delta = end[1] - start[1]
+    pan_time = (
+        _estimate_time(pan_delta, kind="horizontal", trace=False)
+        if not math.isclose(pan_delta, 0.0, abs_tol=1e-12)
+        else 0.0
+    )
+    tilt_time = (
+        _estimate_time(tilt_delta, kind="vertical", trace=False)
+        if not math.isclose(tilt_delta, 0.0, abs_tol=1e-12)
+        else 0.0
+    )
+    return max(pan_time, tilt_time)
+
+
 class CutDefinition(pydantic.BaseModel):
     """The definition of a single cut, which is a bunch of points at a fixed tilt or pan"""
+
+    model_config = pydantic.ConfigDict(extra="forbid")
 
     direction: Literal["horizontal", "vertical"]
     start_angle: float
@@ -77,35 +123,43 @@ class CutDefinition(pydantic.BaseModel):
     """On the axis that is fixed, the angle of the cut, in degrees"""
     reset_before: bool | None = None
     """Should the turntable reset before starting this cut?"""
-    neutral_elevation: float | None = None
-    """The neutral elevation angle for this cut, in degrees.
-    
-    If `None` (the default), it will be necessary to set the elevation angle before calculating the cut coordinates."""
+    angles: list[float] | None = None
+    """Explicit moving-axis positions for a cut with nonuniform spacing."""
+
+    @pydantic.field_validator("angles")
+    @classmethod
+    def _validate_angles(
+        cls,
+        value: list[float] | None,
+    ) -> list[float] | None:
+        if value is not None and not value:
+            raise ValueError("Explicit cut angles cannot be empty")
+        if value is not None and any(not math.isfinite(angle) for angle in value):
+            raise ValueError("Explicit cut angles must be finite")
+        return value
 
     @property
     def coordinates(self) -> list[Coordinate]:
         """Get the coordinates of this cut, as a list of `Coordinate` objects."""
 
-        if self.neutral_elevation is None:
-            message = f"Cannot get coordinates until neutral_elevation is set"
-            raise ValueError(message)
-
-        # Reverse the step size if the start angle is greater than the end angle
-        step_size = self.step_size
-        if self.start_angle > self.end_angle:
-            step_size = -step_size
-        moving_angles = np.arange(
-            self.start_angle,
-            self.end_angle + step_size / 2,
-            step_size,
-        )
+        if self.angles is not None:
+            moving_angles = self.angles
+        else:
+            # Reverse the step size if the start angle is greater than the end angle
+            step_size = self.step_size
+            if self.start_angle > self.end_angle:
+                step_size = -step_size
+            moving_angles = np.arange(
+                self.start_angle,
+                self.end_angle + step_size / 2,
+                step_size,
+            )
 
         if self.direction == "horizontal":
             return [
                 Coordinate.from_turntable(
                     azimuth=angle,
                     elevation=self.fixed_angle,
-                    neutral_elevation=self.neutral_elevation,
                 )
                 for angle in moving_angles
             ]
@@ -114,7 +168,6 @@ class CutDefinition(pydantic.BaseModel):
                 Coordinate.from_turntable(
                     azimuth=self.fixed_angle,
                     elevation=angle,
-                    neutral_elevation=self.neutral_elevation,
                 )
                 for angle in moving_angles
             ]
@@ -122,15 +175,61 @@ class CutDefinition(pydantic.BaseModel):
             raise ValueError(f"Invalid direction: {self.direction}. Must be 'horizontal' or 'vertical'.")
 
     def rough_time_estimate(self, seconds_per_point: float = 5, *, trace: bool) -> float:
-        """A VERY rough estimate of how long this cut will take. Only for ballparking. Doesn't include slew time."""
-        return len(self.coordinates) * _estimate_time(self.step_size, kind=self.direction, trace=False)
+        """Estimate point-to-point travel time within this cut."""
+        coordinates = self.coordinates
+        return sum(
+            estimate_move_time(
+                (previous.pan, previous.tilt),
+                (current.pan, current.tilt),
+            )
+            for previous, current in zip(coordinates, coordinates[1:])
+        )
 
     def __len__(self) -> int:
         """The number of points in this cut"""
         return len(self.coordinates)
 
 
+def measurement_plan_estimates(
+    cuts: dict[str, CutDefinition],
+) -> dict[str, Any]:
+    """Estimate travel time for a complete ordered cut route."""
+    cursor = (0.0, 0.0)
+    cut_estimates: list[dict[str, Any]] = []
+    total_travel = 0.0
+
+    for cut_id, cut in cuts.items():
+        travel = 0.0
+        if cut.reset_before and cursor != (0.0, 0.0):
+            travel += estimate_move_time(cursor, (0.0, 0.0))
+            cursor = (0.0, 0.0)
+
+        points = cut.coordinates
+        for coordinate in points:
+            destination = (coordinate.pan, coordinate.tilt)
+            travel += estimate_move_time(cursor, destination)
+            cursor = destination
+
+        cut_estimates.append(
+            {
+                "id": str(cut_id),
+                "travel_seconds": travel,
+            }
+        )
+        total_travel += travel
+
+    return_home_seconds = estimate_move_time(cursor, (0.0, 0.0)) if cuts else 0.0
+    total_travel += return_home_seconds
+    return {
+        "cuts": cut_estimates,
+        "travel_seconds": total_travel,
+        "return_home_seconds": return_home_seconds,
+    }
+
+
 class Grid(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(extra="forbid")
+
     min_azimuth: float
     max_azimuth: float
     azimuth_step_size: float
@@ -139,7 +238,6 @@ class Grid(pydantic.BaseModel):
     elevation_step_size: float
     orientation: Literal["horizontal", "vertical"]
     kind: Literal["turntable", "antenna"] = "turntable"
-    neutral_elevation: float = 0.0
 
     def elevations(self) -> list[float]:
         return list(
@@ -174,7 +272,6 @@ class Grid(pydantic.BaseModel):
                     Coordinate.from_turntable(
                         azimuth=within_cut_angle,
                         elevation=cut_angle,
-                        neutral_elevation=self.neutral_elevation,
                     )
                 )
             else:
@@ -182,7 +279,6 @@ class Grid(pydantic.BaseModel):
                     Coordinate.from_turntable(
                         azimuth=cut_angle,
                         elevation=within_cut_angle,
-                        neutral_elevation=self.neutral_elevation,
                     )
                 )
         return points
@@ -305,6 +401,8 @@ class PolarizationConfig(pydantic.BaseModel):
 
 
 class ExperimentParameters(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(extra="forbid")
+
     short_description: str = "default"
     long_description: str = "default"
     relative_folder_path: Path | None = None
@@ -315,8 +413,6 @@ class ExperimentParameters(pydantic.BaseModel):
     polarization_config: PolarizationConfig | None = None
     # points: list[AzElTurntable] | None = None
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "DEBUG"
-
-    neutral_elevation: float | None = None
 
     collect_center_frequency_data: bool = True
     collect_peak_data: bool = True
@@ -405,13 +501,13 @@ class ExperimentDatapoint(pydantic.BaseModel):
         if self.commanded_coordinate is not None:
             rv["commanded_azimuth"] = self.commanded_coordinate.antenna_azimuth
             rv["commanded_elevation"] = self.commanded_coordinate.antenna_elevation
-            rv["commanded_pan"] = self.commanded_coordinate.absolute_turntable_azimuth
-            rv["commanded_tilt"] = self.commanded_coordinate.absolute_turntable_elevation
+            rv["commanded_pan"] = self.commanded_coordinate.pan
+            rv["commanded_tilt"] = self.commanded_coordinate.tilt
         if self.actual_coordinate is not None:
             rv["actual_azimuth"] = self.actual_coordinate.antenna_azimuth
             rv["actual_elevation"] = self.actual_coordinate.antenna_elevation
-            rv["actual_pan"] = self.actual_coordinate.absolute_turntable_azimuth
-            rv["actual_tilt"] = self.actual_coordinate.absolute_turntable_elevation
+            rv["actual_pan"] = self.actual_coordinate.pan
+            rv["actual_tilt"] = self.actual_coordinate.tilt
         if self.trace_data:
             rv["trace_data"] = ";".join(str(x) for x in self.trace_data)
             rv["trace_lower_bound"] = self.trace_lower_bound
@@ -520,8 +616,26 @@ class Experiment(pydantic.BaseModel):
         existing_data: pd.DataFrame | None = None,
         overwrite_csv: bool = False,
         append_csv: bool = False,
+        turntable: ExperimentTurntable | None = None,
+        spec_an: SpectrumAnalyzerHP8563E | None = None,
+        assume_ready: bool = False,
+        progress_callback: ProgressCallback | None = None,
+        cancel_event: threading.Event | None = None,
     ) -> "Experiment":
+        """Run the experiment with either discovered or injected hardware.
+
+        The injected hardware and callback options are used by the web GUI. The
+        command-line workflow remains interactive unless ``assume_ready`` is
+        explicitly enabled.
+        """
         from msu_ssc import ssc_log
+
+        if overwrite_csv and append_csv:
+            raise ValueError("overwrite_csv and append_csv cannot both be enabled")
+
+        self.assume_ready = assume_ready
+        self.progress_callback = progress_callback
+        self.cancel_event = cancel_event or threading.Event()
 
         ssc_log.init(
             level=self.parameters.log_level,
@@ -531,9 +645,7 @@ class Experiment(pydantic.BaseModel):
         self.logger = ssc_log.logger.getChild("experiment")
 
         # CONNECT TO AND CONFIGURE SPEC AN
-        self.spec_an = SpectrumAnalyzerHP8563E.find(
-            logger=self.logger.getChild("spec_an"),
-        )
+        self.spec_an = spec_an or SpectrumAnalyzerHP8563E.find(logger=self.logger.getChild("spec_an"))
         if not self.spec_an:
             raise ValueError("No spectrum analyzer found")
 
@@ -546,28 +658,49 @@ class Experiment(pydantic.BaseModel):
         # )
 
         # CONNECT TO AND CONFIGURE SIGNAL GENERATOR
-        while True:
-            print(f"Configure the signal generator and polarization manually.")
-            print(f"Signal generator settings:")
-            print(f"{self.parameters.sig_gen_config.model_dump_json(indent=4)}")
-            print(f"Polarization settings:")
-            print(f"{self.parameters.polarization_config.model_dump_json(indent=4)}")
-            user_input = input("Are signal generator and polarization configured? [y/n]: ")
-            if user_input.lower() == "y":
-                break
+        if not assume_ready:
+            while True:
+                print("Configure the signal generator and polarization manually.")
+                print("Signal generator settings:")
+                print(
+                    self.parameters.sig_gen_config.model_dump_json(indent=4)
+                    if self.parameters.sig_gen_config is not None
+                    else "Not specified"
+                )
+                print("Polarization settings:")
+                print(
+                    self.parameters.polarization_config.model_dump_json(indent=4)
+                    if self.parameters.polarization_config is not None
+                    else "Not specified"
+                )
+                user_input = input("Are signal generator and polarization configured? [y/n]: ")
+                if user_input.lower() == "y":
+                    break
 
         # CONNECT TO AND CONFIGURE TURNTABLE
-        self.turntable = Turntable.find(
-            logger=self.logger.getChild("turntable"),
-            timeout=1.0,
-            show_move_debug=True,
-        )
+        turntable_was_injected = turntable is not None
+        self.turntable = turntable or turntable2.find(logger=self.logger.getChild("turntable"))
         if not self.turntable:
             raise ValueError("No turn table found")
-        self.turntable.interactively_center()
+        turntable_state = self.turntable.get_complete_state()
+        if not turntable_state.has_been_set:
+            if turntable_was_injected or assume_ready:
+                raise turntable2.TurntableError("The turntable position must be set before starting an experiment")
+            while True:
+                user_input = input(
+                    "Physically center the turntable at pan=0°, tilt=0°. Set this as the current position? [y/n]: "
+                )
+                if user_input.lower() == "y":
+                    self.turntable.set_position(pan=0, tilt=0)
+                    self._wait_for_turntable_set()
+                    break
+                if user_input.lower() == "n":
+                    raise ExperimentCancelled("Experiment cancelled before setting the turntable position")
+                print("Did not understand input.")
 
         # CREATE RESULTS OBJECT
         self.results = ExperimentResults()
+        self._notify_progress(state="running", completed_points=0)
 
         # Delete the CSV, if it exists
         if self.parameters.raw_data_csv_path.exists():
@@ -604,6 +737,7 @@ class Experiment(pydantic.BaseModel):
         print(
             f"Test started at {test_start_time} and ended at {test_end_time}. Total duration: {duration.total_seconds():,.0f} seconds = {duration.total_seconds() / 60:,.1f} minutes = {duration.total_seconds() / 60 / 60:,.2f} hours"
         )
+        self._notify_progress(state="completed")
         return self
 
     def _run_cuts_experiment(
@@ -617,111 +751,136 @@ class Experiment(pydantic.BaseModel):
         assert cuts is not None, "Cuts should not be `None` here"
         assert len(cuts) > 0, "Cuts should not be empty here"
 
-        for cut in cuts.values():
-            if cut.neutral_elevation is None:
-                cut.neutral_elevation = self.parameters.neutral_elevation
-
         total_points = sum(len(cut.coordinates) for cut in cuts.values())
-        total_rough_time_estimate = sum(
-            cut.rough_time_estimate(trace=self.parameters.collect_trace_data) for cut in cuts.values()
+        estimates = measurement_plan_estimates(
+            cuts,
         )
+        cut_estimates = {item["id"]: item for item in estimates["cuts"]}
+        total_rough_time_estimate = estimates["travel_seconds"]
 
         prompt_string = f"There are {len(cuts):,} cuts, with a total of {total_points:,} points."
 
         for cut_id, cut in cuts.items():
-            prompt_string += f"\n  {cut_id}: {cut.direction} at {cut.fixed_angle}° from {cut.start_angle}° to {cut.end_angle}°, step size {cut.step_size}°. {len(cut.coordinates):,} points, estimated time {cut.rough_time_estimate(trace=self.parameters.collect_trace_data):,.0f} seconds."
-        prompt_string += f"\nTotal estimated time for all cuts: {total_rough_time_estimate:,.0f} seconds = {total_rough_time_estimate / 60:,.1f} minutes = {total_rough_time_estimate / 60 / 60:,.2f} hours."
+            cut_estimate = cut_estimates[str(cut_id)]
+            spacing = (
+                "explicit positions"
+                if cut.angles is not None
+                else f"step size {cut.step_size}°"
+            )
+            prompt_string += f"\n  {cut_id}: {cut.direction} at {cut.fixed_angle}° from {cut.start_angle}° to {cut.end_angle}°, {spacing}. {len(cut.coordinates):,} points, estimated travel {cut_estimate['travel_seconds']:,.0f} seconds."
+        prompt_string += f"\nTotal estimated travel time for all cuts: {total_rough_time_estimate:,.0f} seconds = {total_rough_time_estimate / 60:,.1f} minutes = {total_rough_time_estimate / 60 / 60:,.2f} hours."
 
-        while True:
-            print(prompt_string)
-            user_input = input("Do you want to continue? [y/n]: ")
-            if user_input.lower() == "y":
-                break
-            elif user_input.lower() == "n":
-                print("Aborting experiment.")
-                return
-            else:
-                print("Did not understand input.")
+        if not self.assume_ready:
+            while True:
+                print(prompt_string)
+                user_input = input("Do you want to continue? [y/n]: ")
+                if user_input.lower() == "y":
+                    break
+                elif user_input.lower() == "n":
+                    print("Aborting experiment.")
+                    return
+                else:
+                    print("Did not understand input.")
         say(f"Beginning experiment.")
-        from rich.progress import Progress
 
         try:
-            with Progress(transient=True) as progress:
-                overall_progress_task = progress.add_task(
-                    f"Overall point 1 of {total_points:,}",
-                    total=total_points,
-                    completed=0,
-                )
-                cut_progress_task = progress.add_task(
-                    f"Cut 1 of {len(cuts):,}",
-                    total=len(cuts),
-                    completed=0,
-                )
+            point_index = 0
+            completed_points = 0
+            completed_cuts = 0
+            experiment_started_at = time.monotonic()
+            existing_points = (
+                set(zip(existing_data["cut_id"].to_numpy(), existing_data["point_index"].to_numpy()))
+                if existing_data is not None
+                else set()
+            )
+            for cut_index, (cut_id, cut) in enumerate(cuts.items()):
+                self._raise_if_cancelled()
+                cut_id_text = str(cut_id).lower().replace("_", " ").replace("-", " ")
+                say(f"Begin cut {cut_index + 1} of {len(cuts)}, {cut_id_text}")
 
-                this_cut_progress_task = progress.add_task(
-                    f"Cut point 1 of ??",
-                    total=100,
-                    completed=0,
-                )
+                if cut.reset_before:
+                    self._move_turntable_and_wait(pan=0, tilt=0)
 
-                point_index = 0
-                for cut_index, (cut_id, cut) in enumerate(cuts.items()):
-                    cut_id_text = cut_id.lower().replace("_", " ").replace("-", " ")
-                    say(f"Begin cut {cut_index + 1} of {len(cuts)}, {cut_id_text}")
-                    # Update the progress tasks
-                    progress.update(
-                        cut_progress_task,
-                        completed=cut_index + 1,
-                        description=f"Doing cut #{cut_index + 1} of {len(cuts):,} ({cut_id})",
+                for coordinate_index, coordinate in enumerate(cut.coordinates):
+                    self._raise_if_cancelled()
+                    point_index += 1
+                    self._notify_progress(
+                        state="running",
+                        total_points=total_points,
+                        completed_points=completed_points,
+                        cut_id=str(cut_id),
+                        cut_index=cut_index + 1,
+                        cut_count=len(cuts),
+                        completed_cuts=completed_cuts,
+                        point_index=point_index,
+                        point_in_cut=coordinate_index + 1,
+                        completed_points_in_cut=coordinate_index,
+                        points_in_cut=len(cut),
+                        elapsed_seconds=time.monotonic() - experiment_started_at,
+                        estimated_total_travel_seconds=estimates["travel_seconds"],
+                        estimated_cut_travel_seconds=cut_estimates[str(cut_id)]["travel_seconds"],
+                        target={
+                            "pan": coordinate.pan,
+                            "tilt": coordinate.tilt,
+                        },
                     )
-                    progress.update(
-                        this_cut_progress_task,
-                        total=len(cut),
-                        completed=0,
-                    )
 
-                    if cut.reset_before:
-                        self.turntable.move_to(azimuth=0, elevation=0)
-
-                    for coordinate_index, coordinate in enumerate(cut.coordinates):
-                        progress.update(
-                            this_cut_progress_task,
-                            completed=coordinate_index,
-                            description=f"Doing point #{coordinate_index + 1} of {len(cut)} within cut",
-                        )
-                        point_index += 1
-                        progress.update(
-                            overall_progress_task,
-                            completed=point_index,
-                            description=f"Overall progress point #{point_index} of {total_points:,} points",
-                        )
-
-                        if point_index in indexes_to_skip:
-                            self.logger.info(f"Skipping point_index {point_index} {coordinate}")
-                            continue
-
-                        if existing_data is not None:
-                            cut_ids = existing_data["cut_id"].to_numpy()
-                            point_indexes = existing_data["point_index"].to_numpy()
-                            tuples = list(zip(cut_ids, point_indexes))
-                            if (cut_id, point_index) in tuples:
-                                self.logger.info(f"Skipping existing point {point_index} for cut {cut_id}")
-                                continue
-
-                        # Actually do the danged experiment
-                        self._run_experiment_at_point(
-                            point=coordinate,
-                            cut_id=cut_id,
+                    if point_index in indexes_to_skip:
+                        self.logger.info(f"Skipping point_index {point_index} {coordinate}")
+                        completed_points += 1
+                        self._notify_progress(
+                            state="running",
+                            total_points=total_points,
+                            completed_points=completed_points,
+                            cut_id=str(cut_id),
                             point_index=point_index,
-                            neutral_elevation=self.parameters.neutral_elevation,
+                            completed_points_in_cut=coordinate_index + 1,
                         )
+                        continue
 
-                    # Move to 0 0 at the end of each cut
-                    # self.turntable.move_to(azimuth=0, elevation=0)
+                    if (str(cut_id), point_index) in existing_points:
+                        self.logger.info(f"Skipping existing point {point_index} for cut {cut_id}")
+                        completed_points += 1
+                        self._notify_progress(
+                            state="running",
+                            total_points=total_points,
+                            completed_points=completed_points,
+                            cut_id=str(cut_id),
+                            point_index=point_index,
+                            completed_points_in_cut=coordinate_index + 1,
+                        )
+                        continue
+
+                    self._run_experiment_at_point(
+                        point=coordinate,
+                        cut_id=cut_id,
+                        point_index=point_index,
+                    )
+                    completed_points += 1
+                    self._notify_progress(
+                        state="running",
+                        total_points=total_points,
+                        completed_points=completed_points,
+                        cut_id=str(cut_id),
+                        point_index=point_index,
+                        completed_points_in_cut=coordinate_index + 1,
+                        elapsed_seconds=time.monotonic() - experiment_started_at,
+                    )
+                completed_cuts = cut_index + 1
+                self._notify_progress(
+                    state="running",
+                    completed_cuts=completed_cuts,
+                    completed_points_in_cut=len(cut),
+                    elapsed_seconds=time.monotonic() - experiment_started_at,
+                )
             print(f"FINISHED!!!")
             say(f"Experiment finished!")
 
             print(f"Data saved to {self.parameters.raw_data_csv_path}")
+        except ExperimentCancelled:
+            self.logger.warning("Experiment cancelled")
+            say("Experiment cancelled")
+            raise
         except Exception as exc:
             self.logger.error(f"Error during experiment: {exc}")
             say(f"Error during experiment: {type(exc).__name__}")
@@ -730,9 +889,14 @@ class Experiment(pydantic.BaseModel):
             self.logger.warning(f"Experiment interrupted by user")
             say(f"Experiment interrupted by user")
         finally:
-            # Reset turntable
-            say(f"Resetting turntable to 0, 0.")
-            self.turntable.move_to(azimuth=0, elevation=0, move_timeout=120)
+            if not self.cancel_event.is_set():
+                say(f"Resetting turntable to 0, 0.")
+                self._notify_progress(
+                    state="running",
+                    cut_id="Return to origin",
+                    target={"pan": 0.0, "tilt": 0.0},
+                )
+                self._move_turntable_and_wait(pan=0, tilt=0)
 
     def _run_grid_experiment(
         self,
@@ -809,7 +973,6 @@ class Experiment(pydantic.BaseModel):
                             point=coordinate,
                             cut_id=grid_name,
                             point_index=point_index,
-                            neutral_elevation=grid.neutral_elevation,
                         )
                         point_index += 1
                         progress.update(
@@ -842,26 +1005,15 @@ class Experiment(pydantic.BaseModel):
         point: Coordinate,
         cut_id: str | int | None = None,
         point_index: int | None = None,
-        neutral_elevation: float | None = None,
     ) -> None:
-        self.turntable.move_to(
-            azimuth=point.absolute_turntable_azimuth,
-            elevation=point.absolute_turntable_elevation,
-            azimuth_margin=0.2,
+        actual_position = self._move_turntable_and_wait(
+            pan=point.pan,
+            tilt=point.tilt,
         )
-        actual_position = self.turntable.wait_for_position()
         data = ExperimentDatapoint()
-        if neutral_elevation is None:
-            neutral_elevation = self.parameters.neutral_elevation
-        if neutral_elevation is None:
-            raise ValueError("Neutral elevation is not set.")
-        # data.actual_coordinate = Coordinate.from_turntable(
-        data.actual_coordinate = Coordinate.from_absolute_turntable(
-            # azimuth=actual_position.turntable_azimuth,
-            azimuth=actual_position.absolute_turntable_azimuth,
-            # elevation=actual_position.turntable_elevation,
-            elevation=actual_position.absolute_turntable_elevation,
-            neutral_elevation=neutral_elevation,
+        data.actual_coordinate = Coordinate.from_turntable(
+            azimuth=actual_position.pan,
+            elevation=actual_position.tilt,
         )
         data.commanded_coordinate = point
         data.timestamp = datetime.datetime.now(datetime.timezone.utc)
@@ -894,6 +1046,73 @@ class Experiment(pydantic.BaseModel):
             data=data,
             csv_path=self.parameters.raw_data_csv_path,
         )
+
+    def _move_turntable_and_wait(
+        self,
+        *,
+        pan: float,
+        tilt: float,
+        timeout: float = 120.0,
+    ) -> turntable2.PanTilt:
+        """Queue a turntable2 move and wait for its observable completion."""
+        self._raise_if_cancelled()
+        self.turntable.move_to(pan=pan, tilt=tilt, move_timeout=timeout)
+        deadline = time.monotonic() + timeout
+        failed_states = {
+            turntable2.TurntableState.NO_COMMUNICATION,
+            turntable2.TurntableState.TIMED_OUT,
+            turntable2.TurntableState.ERROR,
+            turntable2.TurntableState.CLOSED,
+        }
+
+        while time.monotonic() < deadline:
+            self._raise_if_cancelled()
+            state = self.turntable.get_complete_state()
+            if state.state in failed_states:
+                detail = state.last_error or state.state.value.replace("_", " ")
+                raise turntable2.TurntableError(f"Turntable move failed: {detail}")
+
+            actual = state.corrected_position
+            arrived = (
+                actual is not None
+                and math.isclose(actual.pan, pan, abs_tol=TURNTABLE_POSITION_MARGIN)
+                and math.isclose(actual.tilt, tilt, abs_tol=TURNTABLE_POSITION_MARGIN)
+            )
+            idle = state.activity == turntable2.TurntableActivity.IDLE and state.queued_command_count == 0
+            if arrived and idle:
+                return actual
+            time.sleep(TURNTABLE_POLL_INTERVAL)
+
+        raise turntable2.TurntableError(
+            f"Timed out waiting for turntable to reach pan={pan:g}°, tilt={tilt:g}°"
+        )
+
+    def _wait_for_turntable_set(self, *, timeout: float = 5.0) -> None:
+        deadline = time.monotonic() + timeout
+        failed_states = {
+            turntable2.TurntableState.NO_COMMUNICATION,
+            turntable2.TurntableState.TIMED_OUT,
+            turntable2.TurntableState.ERROR,
+            turntable2.TurntableState.CLOSED,
+        }
+        while time.monotonic() < deadline:
+            self._raise_if_cancelled()
+            state = self.turntable.get_complete_state()
+            if state.has_been_set:
+                return
+            if state.state in failed_states:
+                detail = state.last_error or state.state.value.replace("_", " ")
+                raise turntable2.TurntableError(f"Turntable SET failed: {detail}")
+            time.sleep(TURNTABLE_POLL_INTERVAL)
+        raise turntable2.TurntableError("Timed out waiting for the turntable SET command")
+
+    def _raise_if_cancelled(self) -> None:
+        if self.cancel_event.is_set():
+            raise ExperimentCancelled("Experiment cancelled")
+
+    def _notify_progress(self, **updates: Any) -> None:
+        if self.progress_callback is not None:
+            self.progress_callback(updates)
 
     def _run_points_experiment(
         self,

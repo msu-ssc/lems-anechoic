@@ -6,6 +6,7 @@ import hashlib
 import json
 import math
 import random
+import re
 import secrets
 import threading
 import time
@@ -21,7 +22,6 @@ from fastapi import FastAPI
 from fastapi import HTTPException
 from fastapi import Request
 from fastapi.responses import HTMLResponse
-from fastapi.responses import RedirectResponse
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -31,6 +31,7 @@ from scipy.spatial import cKDTree
 
 from msu_anechoic import experiment
 from msu_anechoic.turntable2 import TurntableError
+from msu_anechoic.web.experiment import experiment_service
 from msu_anechoic.web.grid import MAX_TURNTABLE_TILT
 from msu_anechoic.web.grid import AxisDefinition
 from msu_anechoic.web.grid import DesignedGrid
@@ -2003,6 +2004,177 @@ def _requested_grid(
     )
 
 
+def _experiment_cuts_from_grid(
+    grid: DesignedGrid,
+) -> dict[str, experiment.CutDefinition]:
+    """Convert a regular pan/tilt grid traversal into horizontal cuts."""
+    if grid.input_system != "pan_tilt":
+        raise GridValidationError(
+            "Experiment design currently supports only pan/tilt input grids."
+        )
+
+    rows: dict[int, list[GridPoint]] = {}
+    for point in grid.points:
+        rows.setdefault(point.row, []).append(point)
+
+    cuts: dict[str, experiment.CutDefinition] = {}
+    for cut_number, points in enumerate(rows.values(), start=1):
+        tilt = points[0].tilt
+        if any(
+            not math.isclose(point.tilt, tilt, abs_tol=1e-7)
+            for point in points
+        ):
+            raise GridValidationError(
+                f"Grid row {cut_number} does not have one fixed absolute tilt."
+            )
+
+        pans = [point.pan for point in points]
+        if len(pans) == 1:
+            step_size = 1.0
+        else:
+            deltas = [
+                current - previous
+                for previous, current in zip(pans, pans[1:])
+            ]
+            if any(math.isclose(delta, 0.0, abs_tol=1e-9) for delta in deltas):
+                raise GridValidationError(
+                    f"Grid row {cut_number} contains duplicate pan positions."
+                )
+            step_size = abs(deltas[0])
+            irregular_spacing = any(
+                not math.isclose(abs(delta), step_size, abs_tol=1e-7)
+                for delta in deltas[1:]
+            )
+
+        cut_id = f"row-{cut_number:03d}-tilt-{tilt:+g}"
+        cut = experiment.CutDefinition(
+            direction="horizontal",
+            start_angle=pans[0],
+            end_angle=pans[-1],
+            step_size=step_size,
+            fixed_angle=tilt,
+            reset_before=False,
+            angles=pans if len(pans) > 1 and irregular_spacing else None,
+        )
+        generated = cut.coordinates
+        if len(generated) != len(points) or any(
+            not math.isclose(coordinate.pan, pan, abs_tol=1e-7)
+            or not math.isclose(coordinate.tilt, tilt, abs_tol=1e-7)
+            for coordinate, pan in zip(generated, pans)
+        ):
+            raise GridValidationError(
+                f"Grid row {cut_number} cannot be represented exactly as an "
+                "experiment cut."
+            )
+        cuts[cut_id] = cut
+    return cuts
+
+
+def _experiment_design_parameters(
+    request: Request,
+    grid: DesignedGrid,
+    *,
+    relative_folder_path: Path,
+) -> experiment.ExperimentParameters:
+    folder_name = request.query_params.get("folder_name", "").strip()
+    short_description = (
+        request.query_params.get("short_description", "").strip()
+        or folder_name
+    )
+    long_description = request.query_params.get("long_description", "").strip()
+    center_frequency = _parse_number(
+        request.query_params.get("center_frequency", "8457300000"),
+        label="center frequency",
+    )
+    signal_power = _parse_number(
+        request.query_params.get("signal_power", "10"),
+        label="signal generator power",
+    )
+    vernier_power = _parse_number(
+        request.query_params.get("vernier_power", "0"),
+        label="signal generator vernier power",
+    )
+    reference_level = _parse_number(
+        request.query_params.get("reference_level", "-40"),
+        label="spectrum analyzer reference level",
+    )
+    span = _parse_number(
+        request.query_params.get("span", "10000"),
+        label="spectrum analyzer span",
+    )
+    if center_frequency <= 0:
+        raise GridValidationError("Center frequency must be greater than zero.")
+    if span <= 0:
+        raise GridValidationError(
+            "Spectrum analyzer span must be greater than zero."
+        )
+    polarization = request.query_params.get("polarization", "horizontal")
+    if polarization not in {"horizontal", "vertical"}:
+        raise GridValidationError("Select horizontal or vertical polarization.")
+    log_level = request.query_params.get("log_level", "DEBUG")
+    if log_level not in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
+        raise GridValidationError("Select a valid log level.")
+
+    return experiment.ExperimentParameters(
+        short_description=short_description,
+        long_description=long_description,
+        relative_folder_path=relative_folder_path,
+        cuts=_experiment_cuts_from_grid(grid),
+        sig_gen_config=experiment.SigGenConfig(
+            center_frequency=center_frequency,
+            power=signal_power,
+            vernier_power=vernier_power,
+        ),
+        spec_an_config=experiment.SpecAnConfig(
+            center_frequency=center_frequency,
+            reference_level=reference_level,
+            span=span,
+        ),
+        polarization_config=experiment.PolarizationConfig(kind=polarization),
+        log_level=log_level,
+        collect_center_frequency_data=(
+            request.query_params.get("collect_center_frequency_data") == "true"
+        ),
+        collect_peak_data=request.query_params.get("collect_peak_data") == "true",
+        collect_trace_data=request.query_params.get("collect_trace_data") == "true",
+    )
+
+
+def _save_experiment_design(
+    request: Request,
+    *,
+    experiments_root: Path | None = None,
+) -> tuple[Path, experiment.ExperimentParameters]:
+    folder_name = request.query_params.get("folder_name", "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,79}", folder_name):
+        raise GridValidationError(
+            "Folder name must start with a letter or number and contain only "
+            "letters, numbers, dots, underscores, or hyphens."
+        )
+    grid, _, _, _ = _requested_grid(request, include_info_rows=False)
+    root = (experiments_root or experiment.EXPERIMENTS_FOLDER_PATH).resolve()
+    output_folder = root / folder_name
+    if output_folder.exists():
+        raise GridValidationError(
+            f"Experiment folder already exists: {output_folder}"
+        )
+    try:
+        relative_folder = output_folder.relative_to(Path.cwd())
+    except ValueError:
+        relative_folder = output_folder
+    parameters = _experiment_design_parameters(
+        request,
+        grid,
+        relative_folder_path=relative_folder,
+    )
+    parameters_json = parameters.model_dump_json(indent=4, exclude_none=True)
+    root.mkdir(parents=True, exist_ok=True)
+    output_folder.mkdir()
+    parameters_path = output_folder / "parameters.json"
+    parameters_path.write_text(parameters_json + "\n", encoding="utf-8")
+    return parameters_path, parameters
+
+
 def _parse_optimization_time(request: Request) -> float:
     max_seconds = _parse_number(
         request.query_params.get(
@@ -2033,9 +2205,13 @@ def _parse_vertical_movement_multiplier(request: Request) -> float:
     return multiplier
 
 
-@app.get("/", include_in_schema=False)
-def index() -> RedirectResponse:
-    return RedirectResponse(url="/grid-designer", status_code=307)
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+def index(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request=request,
+        name="home.html",
+        context={},
+    )
 
 
 @app.get("/grid-designer", response_class=HTMLResponse)
@@ -2089,9 +2265,103 @@ def grid_designer(request: Request) -> HTMLResponse:
     )
 
 
+@app.get("/experiment/design", response_class=HTMLResponse)
+def experiment_designer(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request=request,
+        name="experiment_designer.html",
+        context={},
+    )
+
+
 class _TurntablePositionCommand(BaseModel):
     pan: float
     tilt: float
+
+
+class _ExperimentLoadRequest(BaseModel):
+    definition: dict[str, object]
+    filename: str | None = None
+
+
+class _ExperimentServerLoadRequest(BaseModel):
+    path: str
+
+
+class _ExperimentStartRequest(BaseModel):
+    output_mode: Literal["new", "continue", "append", "overwrite"] = "new"
+
+
+@app.get("/experiment", response_class=HTMLResponse)
+def experiment_control(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request=request,
+        name="experiment.html",
+        context={
+            "available_definitions": experiment_service.available_definitions(),
+        },
+    )
+
+
+@app.get("/experiment/graphs", response_class=HTMLResponse)
+def experiment_graphs(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request=request,
+        name="experiment_graphs.html",
+    )
+
+
+@app.get("/experiment/status")
+def experiment_status() -> dict:
+    return experiment_service.snapshot()
+
+
+@app.get("/experiment/results")
+def experiment_results() -> dict:
+    try:
+        return experiment_service.results_payload()
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/experiment/plan")
+def experiment_plan() -> dict:
+    try:
+        return experiment_service.plan_payload()
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/experiment/load")
+def load_experiment(command: _ExperimentLoadRequest) -> dict:
+    try:
+        return experiment_service.load_definition(command.definition, source_name=command.filename)
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/experiment/load-server")
+def load_server_experiment(command: _ExperimentServerLoadRequest) -> dict:
+    try:
+        return experiment_service.load_server_definition(command.path)
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/experiment/start")
+def start_experiment(command: _ExperimentStartRequest) -> dict:
+    try:
+        return experiment_service.start(output_mode=command.output_mode)
+    except (RuntimeError, TurntableError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/experiment/abort")
+def abort_experiment() -> dict:
+    try:
+        return experiment_service.abort()
+    except (RuntimeError, TurntableError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/turntable", response_class=HTMLResponse)
@@ -2168,6 +2438,23 @@ def grid_designer_preview(request: Request) -> HTMLResponse:
         name="_grid_preview.html",
         context=context,
     )
+
+
+@app.post("/experiment/design")
+def save_experiment_design(request: Request) -> dict:
+    try:
+        parameters_path, parameters = _save_experiment_design(request)
+    except (GridValidationError, OSError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "ok": True,
+        "path": str(parameters_path),
+        "folder": str(parameters_path.parent),
+        "cut_count": len(parameters.cuts or {}),
+        "point_count": sum(
+            len(cut) for cut in (parameters.cuts or {}).values()
+        ),
+    }
 
 
 @app.get("/grid-designer/optimize", response_class=HTMLResponse)

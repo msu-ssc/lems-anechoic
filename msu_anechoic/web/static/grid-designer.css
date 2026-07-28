@@ -152,12 +152,41 @@ body {
     text-decoration: none;
 }
 
-.current-page {
-    margin-left: 10px;
-    padding-left: 24px;
-    border-left: 1px solid var(--brand-yellow);
-    color: var(--header-muted);
+.breadcrumbs {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    overflow: hidden;
     font-size: 15px;
+    white-space: nowrap;
+}
+
+.breadcrumbs a {
+    color: var(--header-muted);
+    text-decoration: none;
+}
+
+.breadcrumbs a:hover {
+    color: var(--header-text);
+    text-decoration: underline;
+}
+
+.breadcrumbs .breadcrumb-home {
+    color: var(--brand-yellow);
+    font-size: 16px;
+    font-weight: 650;
+}
+
+.breadcrumb-separator {
+    color: var(--brand-yellow);
+}
+
+.breadcrumb-current {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--header-muted);
+    text-overflow: ellipsis;
 }
 
 .application-menu {
@@ -1168,10 +1197,13 @@ legend span {
         padding: 0 14px;
     }
 
-    .current-page {
-        margin-left: auto;
-        padding-left: 0;
-        border-left: 0;
+    .breadcrumbs {
+        gap: 7px;
+        font-size: 14px;
+    }
+
+    .breadcrumbs .breadcrumb-home {
+        font-size: 14px;
     }
 
     .application-menu {

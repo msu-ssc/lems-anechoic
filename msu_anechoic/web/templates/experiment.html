@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="description" content="Load, review, and run MSU anechoic chamber experiments.">
+        <title>Experiment · MSU Anechoic Chamber</title>
+        <script>
+            (() => {
+                let mode = null;
+                try {
+                    mode = window.localStorage.getItem("grid-designer-color-mode");
+                } catch {
+                    // Use the system preference when storage is unavailable.
+                }
+                if (mode !== "light" && mode !== "dark") {
+                    mode = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+                }
+                document.documentElement.dataset.colorMode = mode;
+            })();
+        </script>
+        <link rel="stylesheet" href="{{ url_for('static', path='grid-designer.css') }}">
+        <link rel="stylesheet" href="{{ url_for('static', path='experiment.css') }}">
+        <script src="{{ url_for('static', path='experiment.js') }}" defer></script>
+    </head>
+    <body>
+        <header class="site-header">
+            <button
+                id="menu-toggle"
+                class="menu-toggle"
+                type="button"
+                aria-label="Open navigation menu"
+                aria-controls="application-menu"
+                aria-expanded="false"
+            >
+                <span></span>
+                <span></span>
+                <span></span>
+            </button>
+            {% set breadcrumbs = [{"label": "Experiment"}] %}
+            {% include "_breadcrumbs.html" %}
+            <nav id="application-menu" class="application-menu" aria-label="Application navigation" hidden>
+                <p>Tools</p>
+                <a href="/grid-designer">
+                    <span>Grid Designer</span>
+                    <small>Plan azimuth/elevation and pan/tilt grids</small>
+                </a>
+                <a href="/experiment/design">
+                    <span>Experiment Designer</span>
+                    <small>Create parameters.json from a grid</small>
+                </a>
+                <a href="/experiment" aria-current="page">
+                    <span>Experiment</span>
+                    <small>Load and run a chamber measurement</small>
+                </a>
+                <a href="/turntable">
+                    <span>Turntable</span>
+                    <small>Monitor and control the chamber positioner</small>
+                </a>
+                <fieldset class="appearance-control">
+                    <legend>Appearance</legend>
+                    <div class="color-mode-switch" role="radiogroup" aria-label="Color mode">
+                        <label>
+                            <input id="color-mode-light" type="radio" name="color_mode" value="light">
+                            <span>Light</span>
+                        </label>
+                        <label>
+                            <input id="color-mode-dark" type="radio" name="color_mode" value="dark">
+                            <span>Dark</span>
+                        </label>
+                    </div>
+                </fieldset>
+            </nav>
+        </header>
+
+        <main>
+            <div class="page-heading experiment-page-heading">
+                <div>
+                    <h1>Experiment</h1>
+                    <p>Load a JSON experiment definition, review its measurement plan, and run it with the shared turntable controller.</p>
+                </div>
+                <div class="heading-actions">
+                    <a class="secondary-button" href="/experiment/design">Design experiment</a>
+                    <a class="secondary-button" href="/experiment/graphs">Open graphs</a>
+                    <span class="experiment-state" data-experiment-state>NO EXPERIMENT</span>
+                </div>
+            </div>
+
+            <div class="experiment-workspace">
+                <section class="experiment-panel load-panel" aria-labelledby="load-heading">
+                    <div class="experiment-panel-heading">
+                        <div>
+                            <p class="section-kicker">Definition</p>
+                            <h2 id="load-heading">Load experiment</h2>
+                        </div>
+                    </div>
+
+                    {% if available_definitions %}
+                        <form data-server-load-form class="load-option">
+                            <label for="server-definition">Saved on this computer</label>
+                            <div class="load-row">
+                                <select id="server-definition" name="path">
+                                    {% for definition in available_definitions %}
+                                        <option value="{{ definition.path }}">{{ definition.name }} — {{ definition.path }}</option>
+                                    {% endfor %}
+                                </select>
+                                <button class="secondary-button" type="submit">Load</button>
+                            </div>
+                        </form>
+                        <div class="load-divider"><span>or</span></div>
+                    {% endif %}
+
+                    <form data-file-load-form class="load-option">
+                        <label for="experiment-file">JSON file from this computer</label>
+                        <div class="load-row">
+                            <input id="experiment-file" name="experiment_file" type="file" accept=".json,application/json" required>
+                            <button class="secondary-button" type="submit">Load file</button>
+                        </div>
+                    </form>
+                    <p class="load-help">Definitions use the existing <code>ExperimentParameters</code> JSON format. Output must remain inside <code>./experiments</code>.</p>
+                </section>
+
+                <section class="experiment-panel plan-panel" aria-labelledby="plan-heading">
+                    <div class="experiment-panel-heading">
+                        <div>
+                            <p class="section-kicker">Measurement plan</p>
+                            <h2 id="plan-heading" data-experiment-name>No experiment loaded</h2>
+                        </div>
+                        <span data-source-name>—</span>
+                    </div>
+                    <p class="experiment-description" data-experiment-description>
+                        Choose a saved definition or load a JSON file to inspect it here.
+                    </p>
+                    <dl class="experiment-facts">
+                        <div><dt>Points</dt><dd data-total-points>—</dd></div>
+                        <div><dt>Total travel</dt><dd data-total-travel>—</dd></div>
+                        <div><dt>Output</dt><dd data-output-folder>—</dd></div>
+                        <div><dt>Data</dt><dd data-data-products>—</dd></div>
+                    </dl>
+                    <div class="cut-table-wrap">
+                        <table class="cut-table">
+                            <thead>
+                                <tr>
+                                    <th>Cut</th>
+                                    <th>Direction</th>
+                                    <th>Fixed</th>
+                                    <th>Range</th>
+                                    <th>Step</th>
+                                    <th>Points</th>
+                                    <th>Travel</th>
+                                </tr>
+                            </thead>
+                            <tbody data-cut-list>
+                                <tr><td colspan="7">No cuts loaded.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section class="experiment-panel run-panel" aria-labelledby="run-heading">
+                    <div class="experiment-panel-heading">
+                        <div>
+                            <p class="section-kicker">Execution</p>
+                            <h2 id="run-heading">Run experiment</h2>
+                        </div>
+                    </div>
+
+                    <div class="progress-stack" aria-live="polite">
+                        <div class="progress-summary">
+                            <div><span>Overall points visited</span><strong data-points-progress-count>—</strong></div>
+                            <progress data-points-progress-bar max="1" value="0">0%</progress>
+                            <small data-points-time>Waiting for an experiment.</small>
+                        </div>
+                        <div class="progress-summary">
+                            <div><span>Overall cuts</span><strong data-cuts-progress-count>—</strong></div>
+                            <progress data-cuts-progress-bar max="1" value="0">0%</progress>
+                            <small data-cuts-time>—</small>
+                        </div>
+                        <div class="progress-summary">
+                            <div><span>Points within current cut</span><strong data-cut-points-progress-count>—</strong></div>
+                            <progress data-cut-points-progress-bar max="1" value="0">0%</progress>
+                            <small data-cut-points-time>—</small>
+                        </div>
+                    </div>
+
+                    <form data-start-form>
+                        <fieldset class="output-mode">
+                            <legend>Existing output data</legend>
+                            <label><input type="radio" name="output_mode" value="new" checked> Stop if data already exists</label>
+                            <label><input type="radio" name="output_mode" value="continue"> Continue incomplete experiment (skip completed points)</label>
+                            <label><input type="radio" name="output_mode" value="append"> Append</label>
+                            <label><input type="radio" name="output_mode" value="overwrite"> Overwrite</label>
+                        </fieldset>
+                        <label class="readiness-check">
+                            <input name="ready" type="checkbox" required>
+                            <span>I have configured the signal generator and polarization, and set the turntable position.</span>
+                        </label>
+                        <div class="run-actions">
+                            <button class="primary-button" type="submit" data-start disabled>Start experiment</button>
+                            <button class="abort-button" type="button" data-abort disabled>Abort</button>
+                            <a class="secondary-button turntable-link" href="/turntable">Open turntable</a>
+                        </div>
+                    </form>
+                    <p class="experiment-feedback" data-feedback role="status" aria-live="polite">Load an experiment definition to begin.</p>
+                </section>
+
+            </div>
+        </main>
+    </body>
+</html>

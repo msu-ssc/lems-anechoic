@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="description" content="MSU Anechoic Chamber control and experiment tools.">
+        <title>MSU Anechoic Chamber</title>
+        <script>
+            (() => {
+                let mode = null;
+                try {
+                    mode = window.localStorage.getItem("grid-designer-color-mode");
+                } catch {
+                    // Use the system preference when storage is unavailable.
+                }
+                if (mode !== "light" && mode !== "dark") {
+                    mode = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+                }
+                document.documentElement.dataset.colorMode = mode;
+            })();
+        </script>
+        <link rel="stylesheet" href="{{ url_for('static', path='grid-designer.css') }}">
+        <link rel="stylesheet" href="{{ url_for('static', path='home.css') }}">
+    </head>
+    <body>
+        <header class="site-header home-header">
+            <a class="application-name" href="/">MSU Anechoic Chamber</a>
+        </header>
+
+        <main>
+            <div class="page-heading">
+                <h1>MSU Anechoic Chamber</h1>
+                <p>Choose a chamber tool.</p>
+            </div>
+
+            <nav class="home-link-grid" aria-label="Chamber tools">
+                <a class="home-link-card" href="/grid-designer">
+                    <strong>Grid Designer</strong>
+                    <span>Plan pan/tilt or azimuth/elevation measurement grids.</span>
+                </a>
+                <a class="home-link-card" href="/experiment/design">
+                    <strong>Experiment Designer</strong>
+                    <span>Create parameters.json from the current designed grid.</span>
+                </a>
+                <a class="home-link-card" href="/experiment">
+                    <strong>Experiment</strong>
+                    <span>Load, review, and run chamber measurements.</span>
+                </a>
+                <a class="home-link-card" href="/experiment/graphs">
+                    <strong>Experiment Graphs</strong>
+                    <span>View live paths, cuts, heatmaps, and measurement data.</span>
+                </a>
+                <a class="home-link-card" href="/turntable">
+                    <strong>Turntable</strong>
+                    <span>Monitor and control the chamber positioner.</span>
+                </a>
+            </nav>
+        </main>
+    </body>
+</html>
