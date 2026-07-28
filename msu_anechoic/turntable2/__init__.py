@@ -10,6 +10,7 @@ Typical use::
 """
 
 from msu_anechoic.turntable2.controller import ALLOWABLE_DISCREPANCY_DEG
+from msu_anechoic.turntable2.controller import CommandWrite
 from msu_anechoic.turntable2.controller import ControllerThread
 from msu_anechoic.turntable2.controller import PositionSample
 from msu_anechoic.turntable2.controller import TurntableActivity
@@ -29,6 +30,7 @@ from msu_anechoic.turntable2.turntable import find
 
 __all__ = [
     "ALLOWABLE_DISCREPANCY_DEG",
+    "CommandWrite",
     "ControllerThread",
     "PanTilt",
     "PositionSample",

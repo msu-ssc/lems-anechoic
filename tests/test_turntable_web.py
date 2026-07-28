@@ -9,6 +9,7 @@ from msu_anechoic.web.app import WEB_ROOT
 from msu_anechoic.web.app import _TurntablePositionCommand
 from msu_anechoic.web.app import abort_turntable
 from msu_anechoic.web.app import app
+from msu_anechoic.web.app import confirm_turntable_position
 from msu_anechoic.web.app import move_turntable
 from msu_anechoic.web.app import set_turntable_position
 from msu_anechoic.web.app import turntable_control
@@ -39,9 +40,10 @@ def page_request(path):
 
 
 class FakeTurntable:
-    def __init__(self, state, history=()):
+    def __init__(self, state, history=(), commands=()):
         self.state = state
         self.history = tuple(history)
+        self.commands_sent = tuple(commands)
         self.commands = []
 
     def get_complete_state(self):
@@ -50,11 +52,17 @@ class FakeTurntable:
     def position_history(self):
         return self.history
 
+    def command_history(self):
+        return self.commands_sent
+
     def set_position(self, *, pan, tilt, timeout=5.0):
         self.commands.append(("set", pan, tilt))
 
     def move_to(self, *, pan, tilt, move_timeout=120.0):
-        self.commands.append(("move", pan, tilt))
+        self.commands.append(("move", pan, tilt, move_timeout))
+
+    def confirm_position(self):
+        self.commands.append(("confirm",))
 
     def abort(self):
         self.commands.append(("abort",))
@@ -146,16 +154,36 @@ def test_turntable_page_contains_status_history_and_controls():
 
     assert response.status_code == 200
     assert "<h1>Turntable</h1>" in body
+    assert 'class="turntable-safety-dock"' in body
+    assert 'data-floating-position' in body
     assert 'id="history-max-time"' in body
-    assert 'value="3600"' in body
-    assert 'id="history-max-points"' in body
-    assert 'value="1000"' in body
+    assert 'value="7200"' in body
+    assert 'id="recent-history-time"' in body
+    assert 'value="60"' in body
+    assert 'id="recent-history-rate"' in body
+    assert 'value="10.0"' in body
+    assert 'id="history-rate"' in body
+    assert 'value="0.5"' in body
     assert 'id="refresh-interval"' in body
     assert 'value="1.0"' in body
     assert 'id="pan-tilt-plot"' in body
     assert 'id="yaw-pitch-plot"' in body
+    assert 'id="az-el-plot"' in body
+    assert 'id="three-dimensional-position-plot"' in body
+    assert "data-rotation-toggle" in body
+    assert "data-rotation-speed" in body
+    assert 'id="pan-tilt-kinematics-plot"' in body
+    assert 'id="yaw-pitch-kinematics-plot"' in body
+    assert 'id="az-el-kinematics-plot"' in body
+    assert 'id="reset-position-history"' in body
     assert 'data-command-form="set"' in body
     assert 'data-command-form="move"' in body
+    assert 'data-command-log' in body
+    assert "Exact commands sent" in body
+    assert 'data-control="confirm"' in body
+    assert 'id="centering-step"' in body
+    assert 'data-jog-pan="-1"' in body
+    assert 'name="timeout"' in body
     assert "Emergency stop" in body
     assert '<a class="breadcrumb-home" href="/">MSU Anechoic Chamber</a>' in body
     assert 'aria-current="page">Turntable</span>' in body
@@ -168,15 +196,53 @@ def test_status_returns_paired_filtered_history_and_move_targets(fake_turntable)
     assert payload["state"]["state"] == "moving"
     assert payload["state"]["corrected_position"] == {"pan": 15, "tilt": -40}
     assert payload["state"]["uncorrected_position"] == {"yaw": 15, "pitch": -13}
+    assert payload["state"]["az_el_position"]["azimuth"] == pytest.approx(19.2789604)
+    assert payload["state"]["az_el_position"]["elevation"] == pytest.approx(-38.3808019)
     assert payload["state"]["target_position"] == {"pan": 30, "tilt": -50}
     assert payload["state"]["internal_target"] == {"yaw": 30, "pitch": -23}
     assert payload["controls"] == {
         "set_enabled": True,
         "move_enabled": True,
+        "confirm_enabled": False,
         "abort_enabled": True,
     }
     assert [(point["pan"], point["tilt"]) for point in payload["history"]] == [(5, -32), (15, -40)]
     assert [(point["yaw"], point["pitch"]) for point in payload["history"]] == [(5, -5), (15, -13)]
+    assert all({"azimuth", "elevation"} <= point.keys() for point in payload["history"])
+
+
+def test_status_returns_exact_timestamped_serial_writes():
+    captured_at = datetime.datetime.now(tz=UTC)
+    commands = (
+        turntable2.CommandWrite(
+            timestamp=captured_at - datetime.timedelta(milliseconds=2),
+            command=b"CMD:MOV:1.000,-2.000;",
+        ),
+        turntable2.CommandWrite(
+            timestamp=captured_at - datetime.timedelta(milliseconds=1),
+            command=b"p",
+        ),
+    )
+    service = TurntableWebService(
+        turntable=FakeTurntable(complete_state(captured_at=captured_at), commands=commands)
+    )
+
+    payload = service.status_payload(max_time=3600, max_points=1000)
+
+    assert payload["commands"] == [
+        {
+            "timestamp": commands[0].timestamp.isoformat(),
+            "bytes": "b'CMD:MOV:1.000,-2.000;'",
+            "hex": "43 4d 44 3a 4d 4f 56 3a 31 2e 30 30 30 2c 2d 32 2e 30 30 30 3b",
+            "byte_count": 21,
+        },
+        {
+            "timestamp": commands[1].timestamp.isoformat(),
+            "bytes": "b'p'",
+            "hex": "70",
+            "byte_count": 1,
+        },
+    ]
 
 
 def test_status_honors_max_points_and_rejects_invalid_history_options(fake_turntable):
@@ -192,15 +258,36 @@ def test_status_honors_max_points_and_rejects_invalid_history_options(fake_turnt
     assert exc_info.value.status_code == 400
 
 
-def test_set_move_and_emergency_stop_routes_call_controller(fake_turntable):
+def test_set_move_confirm_and_emergency_stop_routes_call_controller(fake_turntable):
     assert set_turntable_position(_TurntablePositionCommand(pan=0, tilt=0))["ok"]
-    assert move_turntable(_TurntablePositionCommand(pan=30, tilt=-50))["ok"]
+    move_response = move_turntable(_TurntablePositionCommand(pan=30, tilt=-50))
+    assert move_response["ok"]
+    assert move_response["timeout"] == pytest.approx(
+        move_response["estimated_travel_time"] * 1.5 + 5
+    )
     assert abort_turntable()["ok"]
     assert fake_turntable.commands == [
         ("set", 0.0, 0.0),
-        ("move", 30.0, -50.0),
+        ("move", 30.0, -50.0, move_response["timeout"]),
         ("abort",),
     ]
+
+    fake_turntable.state = complete_state(
+        state=turntable2.TurntableState.NOT_SET,
+        has_been_set=False,
+        set_requested=False,
+    )
+    assert confirm_turntable_position()["ok"]
+    assert fake_turntable.commands[-1] == ("confirm",)
+
+
+def test_move_route_accepts_a_custom_timeout(fake_turntable):
+    response = move_turntable(
+        _TurntablePositionCommand(pan=20, tilt=-45, timeout=42.5)
+    )
+
+    assert response["timeout"] == 42.5
+    assert fake_turntable.commands[-1] == ("move", 20.0, -45.0, 42.5)
 
 
 def test_move_is_disabled_and_rejected_until_set_is_requested(fake_turntable):
@@ -212,6 +299,7 @@ def test_move_is_disabled_and_rejected_until_set_is_requested(fake_turntable):
     status = turntable_status()
     assert status["controls"]["set_enabled"] is True
     assert status["controls"]["move_enabled"] is False
+    assert status["controls"]["confirm_enabled"] is True
     assert status["controls"]["abort_enabled"] is True
     with pytest.raises(HTTPException) as exc_info:
         move_turntable(_TurntablePositionCommand(pan=5, tilt=5))
@@ -234,6 +322,7 @@ def test_failed_hardware_discovery_returns_a_disconnected_snapshot():
     assert payload["controls"] == {
         "set_enabled": False,
         "move_enabled": False,
+        "confirm_enabled": False,
         "abort_enabled": False,
     }
     assert "No USB turntable found" in payload["connection_error"]
@@ -248,4 +337,40 @@ def test_turntable_script_marks_current_green_target_red_and_posts_abort():
     assert 'cssColor("--target-red"' in script
     assert 'state.state === "moving"' in script
     assert 'sendCommand("/turntable/abort")' in script
-    assert 'document.querySelector(\'[data-control="set"]\').disabled' in script
+    assert 'sendCommand("/turntable/confirm")' in script
+    assert 'sampledHistory.recent' in script
+    assert 'sampledHistory.history' in script
+    assert "largestReceivedTimestamp - options.recentTime * 1000" in script
+    assert "largestReceivedTimestamp - options.historyTime * 1000" in script
+    assert "MOVE_TIMEOUT_SAFETY_FACTOR = 1.5" in script
+    assert "MOVE_TIMEOUT_MINIMUM = 5" in script
+    assert "receivedGeneration !== serverHistoryGeneration" in script
+    assert "function threeDimensionalPositionTraces(payload)" in script
+    assert 'type: "scatter3d"' in script
+    assert "sphericalScreenMesh(history, current)" in script
+    assert "x: [0, currentCoordinate.x * 1.15]" in script
+    assert '"three-dimensional-position-plot"' in script
+    assert "CAMERA_ROTATION_PERIOD_MS = 60000" in script
+    assert "function startCameraRotation(plotElement, initialEye)" in script
+    assert "function currentThreeDimensionalCamera(plotElement)" in script
+    assert "threeDimensionalPositionLayout(preservedCamera)" in script
+    assert 'uirevision: "turntable-three-dimensional-camera"' in script
+    assert 'eye: { x: -1.35, y: -1.65, z: 1.05 }' in script
+    assert "aspectratio: { x: 4.45, y: 2.4, z: 2.4 }" in script
+    assert "function renderCommandLog(commands)" in script
+    assert "timestamp.textContent = command.timestamp" in script
+    assert "bytes.textContent = command.bytes" in script
+    assert 'document.querySelectorAll(\'[data-control="set"]\')' in script
+
+    stylesheet = (WEB_ROOT / "static" / "turntable.css").read_text()
+    assert ".turntable-position-plot-grid" in stylesheet
+    assert "grid-template-columns: repeat(2, minmax(0, 1fr))" in stylesheet
+
+
+def test_status_can_return_only_samples_after_a_cursor(fake_turntable):
+    cursor = fake_turntable.history[-2].timestamp
+
+    payload = turntable_status(max_time=5000, max_points=1000, after=cursor)
+
+    assert len(payload["history"]) == 1
+    assert payload["history"][0]["timestamp"] == fake_turntable.history[-1].timestamp.isoformat()

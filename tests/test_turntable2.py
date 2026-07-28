@@ -127,6 +127,13 @@ def test_set_and_move_are_queued_and_tilt_regimes_are_transparent():
         assert b"CMD:MOV:0.000,-27.000;" in fake.writes
         assert b"CMD:MOV:15.000,-13.000;" in fake.writes
         assert turntable.most_recent_event(kind="position").pitch == -13
+        command_history = turntable.command_history()
+        assert [write.command for write in command_history] == fake.writes
+        assert all(write.timestamp.tzinfo is not None for write in command_history)
+        assert list(command_history) == sorted(
+            command_history,
+            key=lambda write: write.timestamp,
+        )
 
         complete_state = turntable.get_complete_state()
         assert complete_state.uncorrected_position == turntable2.YawPitch(yaw=15, pitch=-13)
@@ -137,6 +144,7 @@ def test_set_and_move_are_queued_and_tilt_regimes_are_transparent():
         assert complete_state.activity == turntable2.TurntableActivity.IDLE
         assert complete_state.activity_timeout_at is None
         assert complete_state.position_history_count == len(turntable.position_history())
+        assert complete_state.position_history_generation == 1
         assert turntable.position_history()[-1] == turntable2.PositionSample(
             timestamp=complete_state.most_recent_position_event.timestamp,
             internal_position=turntable2.YawPitch(yaw=15, pitch=-13),
@@ -147,6 +155,32 @@ def test_set_and_move_are_queued_and_tilt_regimes_are_transparent():
             and sample.corrected_position == turntable2.PanTilt(pan=0, tilt=-27)
             for sample in turntable.position_history()
         )
+        assert all(
+            sample.internal_position != turntable2.YawPitch(yaw=4, pitch=2)
+            for sample in turntable.position_history()
+        )
+    finally:
+        turntable.close()
+
+
+def test_confirm_trusts_the_current_position_without_sending_set():
+    fake = FakeSerial()
+    turntable = make_turntable(fake)
+    try:
+        fake.emit_internal_position(yaw=4, pitch=2)
+        wait_for(lambda: turntable.current_position() is not None)
+
+        turntable.confirm_position()
+
+        state = turntable.get_complete_state()
+        assert state.state == turntable2.TurntableState.STOPPED
+        assert state.has_been_set
+        assert state.corrected_position == turntable2.PanTilt(4, 2)
+        assert state.regime_offset == turntable2.PanTilt(0, 0)
+        assert not any(command.startswith(b"CMD:SET:") for command in fake.writes)
+
+        turntable.move_to(pan=5, tilt=3)
+        wait_for(lambda: b"CMD:MOV:5.000,3.000;" in fake.writes)
     finally:
         turntable.close()
 
@@ -278,6 +312,7 @@ def test_abort_stops_the_active_move_and_cancels_queued_moves():
 
         # ABORT bypasses the queue and performs the stop write before returning.
         assert fake.writes[-1] == b"p"
+        assert turntable.command_history()[-1].command == b"p"
         assert turntable.current_state() == turntable2.TurntableState.STOPPED
         time.sleep(0.03)
         assert b"CMD:MOV:20.000,0.000;" not in fake.writes

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime
 import hashlib
 import json
 import math
@@ -44,7 +45,12 @@ from msu_anechoic.web.grid import design_combined_grid
 from msu_anechoic.web.grid import pan_tilt_to_az_el
 from msu_anechoic.web.turntable import DEFAULT_HISTORY_MAX_POINTS
 from msu_anechoic.web.turntable import DEFAULT_HISTORY_MAX_TIME
+from msu_anechoic.web.turntable import DEFAULT_HISTORY_RATE
+from msu_anechoic.web.turntable import DEFAULT_RECENT_HISTORY_RATE
+from msu_anechoic.web.turntable import DEFAULT_RECENT_HISTORY_TIME
 from msu_anechoic.web.turntable import DEFAULT_REFRESH_INTERVAL
+from msu_anechoic.web.turntable import MOVE_TIMEOUT_MINIMUM
+from msu_anechoic.web.turntable import MOVE_TIMEOUT_SAFETY_FACTOR
 from msu_anechoic.web.turntable import turntable_service
 
 WEB_ROOT = Path(__file__).parent
@@ -2277,6 +2283,7 @@ def experiment_designer(request: Request) -> HTMLResponse:
 class _TurntablePositionCommand(BaseModel):
     pan: float
     tilt: float
+    timeout: float | None = None
 
 
 class _ExperimentLoadRequest(BaseModel):
@@ -2371,8 +2378,12 @@ def turntable_control(request: Request) -> HTMLResponse:
         name="turntable.html",
         context={
             "history_max_time": DEFAULT_HISTORY_MAX_TIME,
-            "history_max_points": DEFAULT_HISTORY_MAX_POINTS,
+            "history_rate": DEFAULT_HISTORY_RATE,
+            "recent_history_time": DEFAULT_RECENT_HISTORY_TIME,
+            "recent_history_rate": DEFAULT_RECENT_HISTORY_RATE,
             "refresh_interval": DEFAULT_REFRESH_INTERVAL,
+            "timeout_safety_factor": MOVE_TIMEOUT_SAFETY_FACTOR,
+            "timeout_minimum": MOVE_TIMEOUT_MINIMUM,
         },
     )
 
@@ -2381,9 +2392,10 @@ def turntable_control(request: Request) -> HTMLResponse:
 def turntable_status(
     max_time: float = DEFAULT_HISTORY_MAX_TIME,
     max_points: int = DEFAULT_HISTORY_MAX_POINTS,
+    after: datetime.datetime | None = None,
 ) -> dict:
     try:
-        return turntable_service.status_payload(max_time=max_time, max_points=max_points)
+        return turntable_service.status_payload(max_time=max_time, max_points=max_points, after=after)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -2400,10 +2412,33 @@ def set_turntable_position(command: _TurntablePositionCommand) -> dict:
 @app.post("/turntable/move")
 def move_turntable(command: _TurntablePositionCommand) -> dict:
     try:
-        turntable_service.move_to(pan=command.pan, tilt=command.tilt)
+        timing = turntable_service.move_to(
+            pan=command.pan,
+            tilt=command.tilt,
+            timeout=command.timeout,
+        )
     except (RuntimeError, TurntableError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"ok": True, "message": f"Queued move to pan={command.pan:g}°, tilt={command.tilt:g}°."}
+    return {
+        "ok": True,
+        "message": (
+            f"Queued move to pan={command.pan:g}°, tilt={command.tilt:g}° "
+            f"with a {timing['timeout']:.2f} sec timeout."
+        ),
+        **timing,
+    }
+
+
+@app.post("/turntable/confirm")
+def confirm_turntable_position() -> dict:
+    try:
+        turntable_service.confirm_position()
+    except (RuntimeError, TurntableError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "ok": True,
+        "message": "Confirmed the currently reported position without sending SET.",
+    }
 
 
 @app.post("/turntable/abort")

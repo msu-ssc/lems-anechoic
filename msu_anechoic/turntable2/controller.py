@@ -65,6 +65,14 @@ class PositionSample:
 
 
 @dataclasses.dataclass(frozen=True)
+class CommandWrite:
+    """Exact bytes successfully written to the serial connection."""
+
+    timestamp: datetime.datetime
+    command: bytes
+
+
+@dataclasses.dataclass(frozen=True)
 class TurntableCompleteState:
     """An immutable diagnostic snapshot of controller state."""
 
@@ -90,6 +98,7 @@ class TurntableCompleteState:
     last_error: str | None
     event_count: int
     position_history_count: int
+    position_history_generation: int = 0
 
 
 @dataclasses.dataclass(frozen=True)
@@ -182,6 +191,8 @@ class ControllerThread(threading.Thread):
         self._started_at = time.monotonic()
         self._events: "deque[ReceivedMessage]" = deque(maxlen=event_history_size)
         self._position_history: "deque[PositionSample]" = deque(maxlen=event_history_size)
+        self._command_history: "deque[CommandWrite]" = deque(maxlen=event_history_size)
+        self._position_history_generation = 0
         self._most_recent_by_kind: dict[str, ReceivedMessage] = {}
         self._last_error: Exception | None = None
 
@@ -191,6 +202,10 @@ class ControllerThread(threading.Thread):
         _validate_timeout(timeout)
         with self._lock:
             self._ensure_open()
+            # A SET changes the coordinate frame, so samples captured before it
+            # must never be plotted alongside samples captured after it.
+            self._position_history.clear()
+            self._position_history_generation += 1
             self._set_requested = True
             self._command_queue.put(
                 _SetCommand(
@@ -200,6 +215,28 @@ class ControllerThread(threading.Thread):
                     timeout=timeout,
                 )
             )
+
+    def confirm_position(self) -> None:
+        """Trust the firmware's current coordinates without sending a SET."""
+
+        with self._lock:
+            self._ensure_open()
+            if self._operation is not None or self._has_pending_commands():
+                raise TurntableError("The current position cannot be confirmed while commands are active or queued")
+            if self._state == TurntableState.NO_COMMUNICATION:
+                raise TurntableError("A live position report is required before the current position can be confirmed")
+            if self._internal_position is None:
+                raise TurntableError("A reported position is required before the current position can be confirmed")
+
+            self._has_been_set = True
+            self._set_requested = False
+            self._current_regime = find_best_regime(self._internal_position.pitch)
+            self._regime_offset = PanTilt(0.0, 0.0)
+            self._corrected_position = PanTilt(
+                pan=self._internal_position.yaw,
+                tilt=self._internal_position.pitch,
+            )
+            self._state = TurntableState.STOPPED
 
     def submit_move(self, *, pan: float, tilt: float, timeout: float) -> None:
         _validate_position(pan=pan, tilt=tilt)
@@ -301,6 +338,7 @@ class ControllerThread(threading.Thread):
                 last_error=error,
                 event_count=len(self._events),
                 position_history_count=len(self._position_history),
+                position_history_generation=self._position_history_generation,
             )
 
     @overload
@@ -329,6 +367,12 @@ class ControllerThread(threading.Thread):
 
         with self._lock:
             return tuple(self._position_history)
+
+    def command_history(self) -> tuple[CommandWrite, ...]:
+        """Return successful serial writes in the order they occurred."""
+
+        with self._lock:
+            return tuple(self._command_history)
 
     def last_error(self) -> Exception | None:
         with self._lock:
@@ -494,6 +538,7 @@ class ControllerThread(threading.Thread):
         with self._lock:
             if command.generation != self._command_generation:
                 return
+            self._position_history.clear()
             deadline, timeout_at = _make_deadline(command.timeout)
             self._operation = _SetOperation(deadline=deadline, timeout_at=timeout_at)
             self._state = TurntableState.NOT_SET
@@ -554,7 +599,16 @@ class ControllerThread(threading.Thread):
             repetitions = repetitions if repetitions is not None else self._command_repetitions
             try:
                 for _ in range(repetitions):
-                    self._serial.write(command)
+                    timestamp = _utc_now()
+                    written = self._serial.write(command)
+                    byte_count = len(command) if written is None else max(0, min(written, len(command)))
+                    if byte_count:
+                        self._command_history.append(
+                            CommandWrite(
+                                timestamp=timestamp,
+                                command=command[:byte_count],
+                            )
+                        )
             except Exception as exc:
                 self._logger.exception("Failed to write command to the turntable")
                 self._last_error = exc

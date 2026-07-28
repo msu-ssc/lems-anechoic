@@ -35,6 +35,16 @@ tilt-regime changes internally. `abort` is the exception: it immediately
 invalidates the active operation and every queued command, writes the stop
 command, and returns only after that write has been attempted.
 
+`confirm_position()` is available when the firmware is already reporting a
+trusted position and sending SET would be undesirable. It adopts the current
+firmware yaw/pitch as physical pan/tilt, establishes the corresponding tilt
+regime, and sends no command to the hardware.
+
+The web controller estimates move duration from the current and requested
+positions. When a move timeout is left blank, it uses
+`estimated_travel_time * 1.5 + 5 seconds`; a positive custom timeout can be
+provided for an individual move.
+
 ## Coordinate terminology
 
 `turntable2` deliberately distinguishes two coordinate layers:
@@ -95,3 +105,9 @@ pan and tilt.
 raw `YawPitch` and corrected `PanTilt` observed at each position-event
 timestamp. The web monitor uses these paired samples so its two coordinate
 plots always describe the same observations.
+
+`command_history()` returns bounded `CommandWrite` records for the actual
+successful serial writes. Each record contains the timezone-aware write
+timestamp and the exact bytes passed to the serial connection. Repeated
+firmware commands are retained as separate records rather than reconstructed
+or collapsed.

@@ -11,6 +11,7 @@ from typing import overload
 import serial
 
 from msu_anechoic import create_null_logger
+from msu_anechoic.turntable2.controller import CommandWrite
 from msu_anechoic.turntable2.controller import ControllerThread
 from msu_anechoic.turntable2.controller import PositionSample
 from msu_anechoic.turntable2.controller import TurntableCompleteState
@@ -152,6 +153,11 @@ class Turntable:
 
         self._controller.submit_move(pan=pan, tilt=tilt, timeout=move_timeout)
 
+    def confirm_position(self) -> None:
+        """Trust the currently reported coordinates without sending a SET."""
+
+        self._controller.confirm_position()
+
     def abort(self) -> None:
         """Immediately stop movement and invalidate all queued commands."""
 
@@ -193,6 +199,11 @@ class Turntable:
         """Return timestamped raw and corrected position samples."""
 
         return self._controller.position_history()
+
+    def command_history(self) -> tuple[CommandWrite, ...]:
+        """Return the exact timestamped serial writes retained by the controller."""
+
+        return self._controller.command_history()
 
     def time_since_last_communication(self) -> float:
         return self._controller.time_since_last_communication()

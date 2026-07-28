@@ -15,6 +15,7 @@ def test_spec_an_connection() -> None:
 
 
 def test_turn_table_connection() -> None:
+    tt = None
     try:
         tt = turn_table.find()
         position = tt.wait_for_position()

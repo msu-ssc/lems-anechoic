@@ -52,7 +52,50 @@
     background: var(--target-red);
 }
 
+.turntable-safety-dock {
+    position: fixed;
+    right: 18px;
+    bottom: 18px;
+    z-index: 30;
+    width: min(560px, calc(100vw - 36px));
+    padding: 12px;
+    display: grid;
+    grid-template-columns: minmax(150px, 1fr) auto auto;
+    align-items: center;
+    gap: 12px;
+    border: 2px solid var(--border-dark);
+    background: color-mix(in srgb, var(--surface) 94%, transparent);
+    box-shadow: 0 8px 32px color-mix(in srgb, #000000 24%, transparent);
+    backdrop-filter: blur(8px);
+}
+
+.turntable-safety-dock > div > span,
+.turntable-safety-dock > div > strong,
+.turntable-safety-dock > div > small {
+    display: block;
+}
+
+.turntable-safety-dock > div > span {
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 750;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.turntable-safety-dock > div > strong {
+    margin: 2px 0;
+    font-size: 20px;
+    font-variant-numeric: tabular-nums;
+}
+
+.turntable-safety-dock > div > small {
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+}
+
 .turntable-workspace {
+    padding-bottom: 76px;
     display: grid;
     gap: 22px;
 }
@@ -151,6 +194,96 @@
     color: var(--target-red-dark);
 }
 
+.command-log-card {
+    margin-top: 18px;
+    border: 1px solid var(--border);
+    background: var(--surface-muted);
+}
+
+.command-log-card > header {
+    min-height: 64px;
+    padding: 11px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    border-bottom: 1px solid var(--border);
+}
+
+.command-log-card h3 {
+    margin: 0;
+    font-size: 17px;
+}
+
+.command-log-card > header > strong {
+    color: var(--text-muted);
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+}
+
+.command-log {
+    max-height: 340px;
+    margin: 0;
+    padding: 0;
+    overflow: auto;
+    counter-reset: command-write;
+    list-style: none;
+    background: var(--input);
+}
+
+.command-log > li {
+    min-width: max-content;
+    padding: 10px 14px;
+    display: grid;
+    grid-template-columns: 54px minmax(235px, auto) minmax(220px, 1fr);
+    align-items: baseline;
+    gap: 12px;
+    border-bottom: 1px solid var(--border);
+    counter-increment: command-write;
+    font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+    font-size: 13px;
+}
+
+.command-log > li::before {
+    content: "#" counter(command-write);
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.command-log time,
+.command-log code,
+.command-log small {
+    white-space: nowrap;
+}
+
+.command-log time {
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.command-log code {
+    color: var(--text);
+    font: inherit;
+    font-weight: 700;
+}
+
+.command-log small {
+    color: var(--text-muted);
+    font: inherit;
+    font-size: 11px;
+}
+
+.command-log .command-log-empty {
+    min-width: 0;
+    display: block;
+    color: var(--text-muted);
+    font-family: inherit;
+}
+
+.command-log .command-log-empty::before {
+    content: none;
+}
+
 .history-controls {
     margin-top: 18px;
     padding: 14px;
@@ -185,11 +318,31 @@
     height: 38px;
 }
 
-.position-plot-grid {
+.history-controls .secondary-button {
+    min-height: 38px;
+}
+
+.history-help {
+    width: 100%;
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+.plot-group-heading {
+    margin: 22px 0 0;
+    font-size: 18px;
+}
+
+.turntable-plot-grid {
     margin-top: 18px;
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 16px;
+}
+
+.turntable-position-plot-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .turntable-plot-card {
@@ -222,6 +375,10 @@
 .turntable-plot {
     width: 100%;
     min-height: 400px;
+}
+
+.turntable-plot--3d {
+    min-height: 520px;
 }
 
 .command-grid {
@@ -278,6 +435,10 @@
     gap: 12px;
 }
 
+.command-fields .move-timeout-field {
+    grid-column: 1 / -1;
+}
+
 .command-fields label {
     color: var(--text-muted);
     font-size: 13px;
@@ -317,6 +478,99 @@
     border-left: 1px solid var(--border);
     color: var(--text-muted);
     font-size: 14px;
+}
+
+.confirm-position-readout {
+    margin: 16px 0;
+    padding: 12px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+}
+
+.confirm-position-readout span,
+.confirm-position-readout strong {
+    display: block;
+}
+
+.confirm-position-readout span {
+    margin-bottom: 5px;
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.confirm-position-readout strong {
+    font-size: 17px;
+    font-variant-numeric: tabular-nums;
+}
+
+.centering-step {
+    margin: 16px 0 10px;
+    color: var(--text-muted);
+    font-size: 13px;
+    font-weight: 650;
+}
+
+.centering-step > span {
+    margin-top: 5px;
+    display: flex;
+    border: 1px solid var(--border-dark);
+    background: var(--input);
+}
+
+.centering-step input {
+    width: 100%;
+    min-width: 0;
+    height: 42px;
+    padding: 8px 10px;
+    border: 0;
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+}
+
+.centering-step b {
+    padding: 0 11px;
+    display: flex;
+    align-items: center;
+    border-left: 1px solid var(--border);
+    color: var(--text-muted);
+}
+
+.centering-pad {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+}
+
+.centering-pad button {
+    min-height: 50px;
+    border: 1px solid var(--accent-dark);
+    background: var(--surface);
+    color: var(--accent-dark);
+    font: inherit;
+    font-size: 24px;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.centering-pad button:hover:not(:disabled) {
+    background: var(--accent);
+    color: var(--accent-ink);
+}
+
+.centering-pad button:disabled {
+    opacity: 0.42;
+    cursor: not-allowed;
+}
+
+.move-estimate {
+    min-height: 38px;
+    margin: -4px 0 13px !important;
+    color: var(--text-muted);
+    font-size: 12px !important;
 }
 
 .command-button {
@@ -375,6 +629,13 @@
     cursor: pointer;
 }
 
+.emergency-stop-button.compact {
+    min-width: 0;
+    min-height: 46px;
+    padding: 8px 13px;
+    font-size: 14px;
+}
+
 .emergency-stop-button span {
     margin-right: 8px;
 }
@@ -411,10 +672,14 @@
     .status-grid {
         grid-template-columns: repeat(3, minmax(0, 1fr));
     }
+
+    .turntable-plot-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
 }
 
 @media (max-width: 900px) {
-    .position-plot-grid,
+    .turntable-plot-grid,
     .command-grid {
         grid-template-columns: 1fr;
     }
@@ -436,6 +701,21 @@
         padding: 14px;
     }
 
+    .turntable-workspace {
+        padding-bottom: 132px;
+    }
+
+    .turntable-safety-dock {
+        right: 8px;
+        bottom: 8px;
+        width: calc(100vw - 16px);
+        grid-template-columns: 1fr auto;
+    }
+
+    .turntable-safety-dock .emergency-stop-button {
+        grid-column: 1 / -1;
+    }
+
     .status-grid {
         grid-template-columns: 1fr 1fr;
     }
@@ -451,6 +731,10 @@
 
     .turntable-plot {
         min-height: 330px;
+    }
+
+    .turntable-plot--3d {
+        min-height: 440px;
     }
 
     .command-fields {

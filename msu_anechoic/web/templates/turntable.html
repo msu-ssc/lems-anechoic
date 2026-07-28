@@ -82,6 +82,19 @@
                 </div>
             </div>
 
+            <aside class="turntable-safety-dock" aria-label="Persistent turntable status">
+                <div>
+                    <span>Current pan / tilt</span>
+                    <strong data-floating-position>—</strong>
+                    <small data-floating-az-el>Az / el: —</small>
+                </div>
+                <span class="state-badge" data-floating-state>DISCONNECTED</span>
+                <button class="emergency-stop-button compact" type="button" data-control="abort" disabled>
+                    <span aria-hidden="true">■</span>
+                    Emergency stop
+                </button>
+            </aside>
+
             <div class="turntable-workspace">
                 <section class="turntable-panel status-panel" aria-labelledby="status-heading">
                     <div class="turntable-panel-heading">
@@ -96,6 +109,7 @@
                         <div><span>Activity</span><strong data-status="activity">—</strong></div>
                         <div><span>Pan / tilt</span><strong data-status="pan-tilt">—</strong></div>
                         <div><span>Yaw / pitch</span><strong data-status="yaw-pitch">—</strong></div>
+                        <div><span>Azimuth / elevation</span><strong data-status="az-el">—</strong></div>
                         <div><span>Tilt regime</span><strong data-status="regime">—</strong></div>
                         <div><span>Regime offset</span><strong data-status="offset">—</strong></div>
                         <div><span>Target</span><strong data-status="target">—</strong></div>
@@ -111,10 +125,51 @@
                         <div class="status-error"><span>Latest error</span><strong data-status="error">None</strong></div>
                     </div>
 
+                    <section class="command-log-card" aria-labelledby="command-log-heading">
+                        <header>
+                            <div>
+                                <p class="section-kicker">Authoritative serial record</p>
+                                <h3 id="command-log-heading">Exact commands sent</h3>
+                            </div>
+                            <strong data-command-count>0 writes</strong>
+                        </header>
+                        <ol class="command-log" data-command-log aria-live="polite">
+                            <li class="command-log-empty">No commands have been sent during this connection.</li>
+                        </ol>
+                    </section>
+
                     <fieldset class="history-controls">
-                        <legend>History</legend>
+                        <legend>Client-side graph history</legend>
                         <label>
-                            Max time
+                            Recent window
+                            <span class="number-input">
+                                <input
+                                    id="recent-history-time"
+                                    type="number"
+                                    min="1"
+                                    max="3600"
+                                    step="1"
+                                    value="{{ recent_history_time | int }}"
+                                >
+                                <b>sec</b>
+                            </span>
+                        </label>
+                        <label>
+                            Recent rate
+                            <span class="number-input">
+                                <input
+                                    id="recent-history-rate"
+                                    type="number"
+                                    min="0.0166667"
+                                    max="100"
+                                    step="any"
+                                    value="{{ recent_history_rate }}"
+                                >
+                                <b>point/sec</b>
+                            </span>
+                        </label>
+                        <label>
+                            History window
                             <span class="number-input">
                                 <input
                                     id="history-max-time"
@@ -128,16 +183,17 @@
                             </span>
                         </label>
                         <label>
-                            Max points
+                            History rate
                             <span class="number-input">
                                 <input
-                                    id="history-max-points"
+                                    id="history-rate"
                                     type="number"
-                                    min="1"
-                                    max="50000"
-                                    step="1"
-                                    value="{{ history_max_points }}"
+                                    min="0.0166667"
+                                    max="100"
+                                    step="any"
+                                    value="{{ history_rate }}"
                                 >
+                                <b>point/sec</b>
                             </span>
                         </label>
                         <label>
@@ -154,9 +210,17 @@
                                 <b>sec</b>
                             </span>
                         </label>
+                        <button id="reset-position-history" class="secondary-button" type="button">
+                            Reset graphs
+                        </button>
+                        <p class="history-help">
+                            Rates must be a whole number or the reciprocal of a whole number.
+                            Defaults retain 60 sec at 10 points/sec and 7200 sec at 0.5 point/sec.
+                        </p>
                     </fieldset>
 
-                    <div class="position-plot-grid">
+                    <h3 class="plot-group-heading">Position</h3>
+                    <div class="turntable-plot-grid turntable-position-plot-grid">
                         <article class="turntable-plot-card">
                             <header>
                                 <div>
@@ -177,6 +241,80 @@
                             </header>
                             <div id="yaw-pitch-plot" class="turntable-plot" aria-label="Yaw and pitch position history"></div>
                         </article>
+                        <article class="turntable-plot-card">
+                            <header>
+                                <div>
+                                    <p class="section-kicker">Antenna coordinates</p>
+                                    <h3>Azimuth / elevation</h3>
+                                </div>
+                                <span>Converted position</span>
+                            </header>
+                            <div id="az-el-plot" class="turntable-plot" aria-label="Azimuth and elevation position history"></div>
+                        </article>
+                        <article class="turntable-plot-card">
+                            <header>
+                                <div>
+                                    <p class="section-kicker">Pointing geometry</p>
+                                    <h3>3D position</h3>
+                                </div>
+                                <div class="three-dimensional-controls">
+                                    <div class="rotation-controls" aria-label="3D view rotation controls">
+                                        <button type="button" data-rotation-toggle>Play</button>
+                                        <label>
+                                            <span>Rotation speed</span>
+                                            <input
+                                                type="range"
+                                                min="0.25"
+                                                max="10"
+                                                step="0.25"
+                                                value="1"
+                                                data-rotation-speed
+                                            >
+                                            <output data-rotation-speed-output>1×</output>
+                                        </label>
+                                    </div>
+                                </div>
+                            </header>
+                            <div
+                                id="three-dimensional-position-plot"
+                                class="turntable-plot turntable-plot--3d"
+                                aria-label="Three-dimensional turntable position history and current pointing ray"
+                            ></div>
+                        </article>
+                    </div>
+
+                    <h3 class="plot-group-heading">Velocity and acceleration</h3>
+                    <div class="turntable-plot-grid">
+                        <article class="turntable-plot-card">
+                            <header>
+                                <div>
+                                    <p class="section-kicker">Physical coordinates</p>
+                                    <h3>Pan / tilt kinematics</h3>
+                                </div>
+                                <span>Degrees by time</span>
+                            </header>
+                            <div id="pan-tilt-kinematics-plot" class="turntable-plot" aria-label="Pan and tilt velocity and acceleration"></div>
+                        </article>
+                        <article class="turntable-plot-card">
+                            <header>
+                                <div>
+                                    <p class="section-kicker">Firmware coordinates</p>
+                                    <h3>Yaw / pitch kinematics</h3>
+                                </div>
+                                <span>Degrees by time</span>
+                            </header>
+                            <div id="yaw-pitch-kinematics-plot" class="turntable-plot" aria-label="Yaw and pitch velocity and acceleration"></div>
+                        </article>
+                        <article class="turntable-plot-card">
+                            <header>
+                                <div>
+                                    <p class="section-kicker">Antenna coordinates</p>
+                                    <h3>Azimuth / elevation kinematics</h3>
+                                </div>
+                                <span>Degrees by time</span>
+                            </header>
+                            <div id="az-el-kinematics-plot" class="turntable-plot" aria-label="Azimuth and elevation velocity and acceleration"></div>
+                        </article>
                     </div>
                 </section>
 
@@ -194,7 +332,7 @@
                                 <span class="command-number">01</span>
                                 <div>
                                     <h3>Set position</h3>
-                                    <p>Declare the current physical position. Firmware currently accepts zero only.</p>
+                                    <p>Declare the current physical position. Firmware currently accepts zero only. This resets every position graph.</p>
                                 </div>
                             </header>
                             <div class="command-fields">
@@ -204,9 +342,46 @@
                             <button class="command-button" type="submit" data-control="set" disabled>Set position</button>
                         </form>
 
-                        <form class="command-card" data-command-form="move">
+                        <article class="command-card">
                             <header>
                                 <span class="command-number">02</span>
+                                <div>
+                                    <h3>Confirm reported position</h3>
+                                    <p>Trust the firmware's current coordinates and regime without sending a SET command.</p>
+                                </div>
+                            </header>
+                            <div class="confirm-position-readout">
+                                <span>Reported yaw / pitch</span>
+                                <strong data-status="confirm-position">—</strong>
+                            </div>
+                            <button class="command-button" type="button" data-control="confirm" disabled>
+                                Confirm current position
+                            </button>
+                        </article>
+
+                        <article class="command-card centering-card">
+                            <header>
+                                <span class="command-number">03</span>
+                                <div>
+                                    <h3>Interactive centering</h3>
+                                    <p>Jog from the current physical position. Confirm or SET the position first.</p>
+                                </div>
+                            </header>
+                            <label class="centering-step">
+                                Jog step
+                                <span><input id="centering-step" type="number" min="0.01" max="45" step="0.01" value="1"><b>°</b></span>
+                            </label>
+                            <div class="centering-pad" aria-label="Centering jog controls">
+                                <button type="button" data-jog-pan="-1" data-jog-tilt="0" aria-label="Jog left">←</button>
+                                <button type="button" data-jog-pan="0" data-jog-tilt="1" aria-label="Jog up">↑</button>
+                                <button type="button" data-jog-pan="0" data-jog-tilt="-1" aria-label="Jog down">↓</button>
+                                <button type="button" data-jog-pan="1" data-jog-tilt="0" aria-label="Jog right">→</button>
+                            </div>
+                        </article>
+
+                        <form class="command-card" data-command-form="move">
+                            <header>
+                                <span class="command-number">04</span>
                                 <div>
                                     <h3>Move</h3>
                                     <p>Queue a safe move in physical, regime-compensated pan and tilt coordinates.</p>
@@ -215,7 +390,14 @@
                             <div class="command-fields">
                                 <label>Pan <span><input name="pan" type="text" inputmode="decimal" value="0"><b>°</b></span></label>
                                 <label>Tilt <span><input name="tilt" type="text" inputmode="decimal" value="0"><b>°</b></span></label>
+                                <label class="move-timeout-field">
+                                    Timeout
+                                    <span><input name="timeout" type="text" inputmode="decimal" placeholder="Automatic"><b>sec</b></span>
+                                </label>
                             </div>
+                            <p class="move-estimate" data-move-estimate>
+                                Automatic timeout = estimated travel × {{ timeout_safety_factor }} + {{ timeout_minimum }} sec.
+                            </p>
                             <button class="command-button" type="submit" data-control="move" disabled>Move to position</button>
                         </form>
                     </div>
