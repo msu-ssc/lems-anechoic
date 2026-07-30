@@ -598,6 +598,51 @@
     filter: grayscale(0.35);
 }
 
+.confirmation-dialog {
+    width: min(520px, calc(100vw - 32px));
+    padding: 24px;
+    border: 2px solid var(--accent-dark);
+    background: var(--surface);
+    color: var(--text);
+    box-shadow: 0 18px 60px rgb(0 0 0 / 0.35);
+}
+
+.confirmation-dialog::backdrop {
+    background: rgb(8 20 48 / 0.72);
+}
+
+.confirmation-dialog h2 {
+    margin: 4px 0 12px;
+}
+
+.confirmation-dialog .confirmation-position {
+    margin-top: 16px;
+    font-weight: 750;
+}
+
+.confirmation-actions {
+    margin-top: 24px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.confirmation-actions button {
+    min-height: 42px;
+    padding: 0 18px;
+    border: 1px solid var(--accent-dark);
+    background: var(--surface-muted);
+    color: var(--text);
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.confirmation-actions .confirmation-submit {
+    background: var(--accent);
+    color: var(--accent-ink);
+}
+
 .emergency-card {
     margin-top: 16px;
     padding: 18px;

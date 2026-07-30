@@ -134,11 +134,7 @@ class Turntable:
         tilt: float,
         timeout: float = 5.0,
     ) -> None:
-        """Queue a SET command.
-
-        The firmware ignores values other than zero, so this method rejects
-        them instead of providing a false impression that they were applied.
-        """
+        """Queue a SET command for a valid physical pan and tilt position."""
 
         self._controller.submit_set(pan=pan, tilt=tilt, timeout=timeout)
 

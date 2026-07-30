@@ -1106,6 +1106,14 @@ function commandValues(form) {
     if (!Number.isFinite(pan) || !Number.isFinite(tilt)) {
         throw new Error("Enter finite numeric values for both pan and tilt.");
     }
+    if (form.dataset.commandForm === "set") {
+        if (pan < -180 || pan > 180) {
+            throw new Error("SET pan must be between -180° and 180°.");
+        }
+        if (tilt < -90 || tilt > 90) {
+            throw new Error("SET tilt must be between -90° and 90°.");
+        }
+    }
     const values = { pan, tilt };
     const timeoutText = form.elements.timeout?.value.trim();
     if (timeoutText) {
@@ -1182,13 +1190,43 @@ async function sendCommand(path, body = null) {
     return payload;
 }
 
+function confirmNonzeroSet(values) {
+    const dialog = document.getElementById("nonzero-set-confirmation");
+    if (!dialog || typeof dialog.showModal !== "function") {
+        return Promise.resolve(window.confirm("Are you sure? Make sure you're using new firmware."));
+    }
+    const position = dialog.querySelector("[data-set-confirmation-position]");
+    if (position) {
+        position.textContent = `Pan ${values.pan}° · Tilt ${values.tilt}°`;
+    }
+    dialog.returnValue = "cancel";
+    dialog.showModal();
+    return new Promise((resolve) => {
+        dialog.addEventListener(
+            "close",
+            () => resolve(dialog.returnValue === "confirm"),
+            { once: true },
+        );
+    });
+}
+
 async function submitCommandForm(form) {
     const command = form.dataset.commandForm;
     const button = form.querySelector("button[type=submit]");
     try {
         button.disabled = true;
+        const values = commandValues(form);
+        if (
+            command === "set"
+            && (values.pan !== 0 || values.tilt !== 0)
+            && !(await confirmNonzeroSet(values))
+        ) {
+            setFeedback("SET command cancelled.");
+            if (lastStatusPayload) applyControlState(lastStatusPayload.controls);
+            return;
+        }
         setFeedback(`Sending ${command.toUpperCase()} command…`);
-        await sendCommand(`/turntable/${command}`, commandValues(form));
+        await sendCommand(`/turntable/${command}`, values);
         if (command === "set") resetPositionHistory({ preserveCursor: true });
         await refreshStatus();
     } catch (error) {

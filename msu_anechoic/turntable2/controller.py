@@ -26,6 +26,7 @@ from msu_anechoic.turntable2.serial_listener import SerialConnection
 ALLOWABLE_DISCREPANCY_DEG = 0.11
 ABSOLUTE_PAN_BOUNDS = (-180.0, 180.0)
 ABSOLUTE_TILT_BOUNDS = (-90.0, 45.0)
+SET_TILT_BOUNDS = (-90.0, 90.0)
 REGIME_PITCH_BOUNDS = (-29.5, 29.5)
 
 
@@ -122,6 +123,8 @@ _Command = _SetCommand | _MoveCommand
 
 @dataclasses.dataclass
 class _SetOperation:
+    pan: float
+    tilt: float
     deadline: float
     timeout_at: datetime.datetime
 
@@ -197,8 +200,7 @@ class ControllerThread(threading.Thread):
         self._last_error: Exception | None = None
 
     def submit_set(self, *, pan: float, tilt: float, timeout: float) -> None:
-        if pan != 0 or tilt != 0:
-            raise ValueError("The turntable firmware only supports setting pan=0 and tilt=0")
+        _validate_set_position(pan=pan, tilt=tilt)
         _validate_timeout(timeout)
         with self._lock:
             self._ensure_open()
@@ -294,8 +296,8 @@ class ControllerThread(threading.Thread):
                 activity = TurntableActivity.SETTING_POSITION
                 activity_phase = "set"
                 timeout_at = operation.timeout_at
-                target_position = PanTilt(0.0, 0.0)
-                internal_target = YawPitch(0.0, 0.0)
+                target_position = PanTilt(operation.pan, operation.tilt)
+                internal_target = YawPitch(operation.pan, operation.tilt)
             elif isinstance(operation, _MoveOperation):
                 activity = (
                     TurntableActivity.CHANGING_REGIME
@@ -438,10 +440,14 @@ class ControllerThread(threading.Thread):
             self._corrected_position = _apply_offset(internal_position, offset)
 
             if isinstance(self._operation, _SetOperation):
-                if _position_matches(internal_position, YawPitch(0.0, 0.0)):
+                operation = self._operation
+                if _position_matches(
+                    internal_position,
+                    YawPitch(operation.pan, operation.tilt),
+                ):
                     self._has_been_set = True
                     self._set_requested = any(isinstance(command, _SetCommand) for command in self._queued_commands)
-                    self._current_regime = find_best_regime(0.0)
+                    self._current_regime = find_best_regime(operation.tilt)
                     self._regime_offset = PanTilt(0.0, 0.0)
                     self._corrected_position = PanTilt(internal_position.yaw, internal_position.pitch)
                     self._operation = None
@@ -540,7 +546,12 @@ class ControllerThread(threading.Thread):
                 return
             self._position_history.clear()
             deadline, timeout_at = _make_deadline(command.timeout)
-            self._operation = _SetOperation(deadline=deadline, timeout_at=timeout_at)
+            self._operation = _SetOperation(
+                pan=command.pan,
+                tilt=command.tilt,
+                deadline=deadline,
+                timeout_at=timeout_at,
+            )
             self._state = TurntableState.NOT_SET
             self._write_command(_format_set_command(yaw=command.pan, pitch=command.tilt))
 
@@ -646,6 +657,13 @@ def _validate_position(*, pan: float, tilt: float) -> None:
         raise ValueError(f"pan must be within {ABSOLUTE_PAN_BOUNDS}")
     if not math.isfinite(tilt) or not ABSOLUTE_TILT_BOUNDS[0] <= tilt <= ABSOLUTE_TILT_BOUNDS[1]:
         raise ValueError(f"tilt must be within {ABSOLUTE_TILT_BOUNDS}")
+
+
+def _validate_set_position(*, pan: float, tilt: float) -> None:
+    if not math.isfinite(pan) or not ABSOLUTE_PAN_BOUNDS[0] <= pan <= ABSOLUTE_PAN_BOUNDS[1]:
+        raise ValueError(f"pan must be within {ABSOLUTE_PAN_BOUNDS}")
+    if not math.isfinite(tilt) or not SET_TILT_BOUNDS[0] <= tilt <= SET_TILT_BOUNDS[1]:
+        raise ValueError(f"tilt must be within {SET_TILT_BOUNDS}")
 
 
 def _validate_regime_pitch(pitch: float) -> None:

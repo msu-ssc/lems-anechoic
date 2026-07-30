@@ -9,8 +9,9 @@ from msu_anechoic import turntable2
 
 
 class FakeSerial:
-    def __init__(self, *, respond_to_moves=True):
+    def __init__(self, *, respond_to_moves=True, respond_to_sets=True):
         self.respond_to_moves = respond_to_moves
+        self.respond_to_sets = respond_to_sets
         self.writes = []
         self.closed = False
         self._input = bytearray()
@@ -30,8 +31,10 @@ class FakeSerial:
     def write(self, data):
         with self._lock:
             self.writes.append(data)
-        if data.startswith(b"CMD:SET:"):
-            self.emit_internal_position(yaw=0, pitch=0)
+        if data.startswith(b"CMD:SET:") and self.respond_to_sets:
+            coordinates = data.removeprefix(b"CMD:SET:").removesuffix(b";")
+            yaw, pitch = (float(value) for value in coordinates.split(b","))
+            self.emit_internal_position(yaw=yaw, pitch=pitch)
         elif data.startswith(b"CMD:MOV:") and self.respond_to_moves:
             coordinates = data.removeprefix(b"CMD:MOV:").removesuffix(b";")
             yaw, pitch = (float(value) for value in coordinates.split(b","))
@@ -286,13 +289,72 @@ def test_move_requires_set_and_valid_physical_bounds():
         turntable.close()
 
 
-def test_invalid_set_position_is_rejected_without_a_write():
+def test_nonzero_set_position_is_accepted_and_applied():
     fake = FakeSerial()
     turntable = make_turntable(fake)
     try:
-        with pytest.raises(ValueError, match="only supports"):
-            turntable.set_position(pan=1, tilt=0)
+        turntable.set_position(pan=20, tilt=10)
+        wait_for(lambda: turntable.current_state() == turntable2.TurntableState.STOPPED)
+
+        assert b"CMD:SET:20.000,10.000;" in fake.writes
+        state = turntable.get_complete_state()
+        assert state.corrected_position == turntable2.PanTilt(20, 10)
+        assert state.current_regime == turntable2.TiltRegime(center_tilt=0, allowable_offset=29)
+        assert state.regime_offset == turntable2.PanTilt(0, 0)
+    finally:
+        turntable.close()
+
+
+@pytest.mark.parametrize(
+    ("pan", "tilt"),
+    [
+        (-180, -90),
+        (180, 90),
+    ],
+)
+def test_set_position_accepts_inclusive_boundaries(pan, tilt):
+    fake = FakeSerial()
+    turntable = make_turntable(fake)
+    try:
+        turntable.set_position(pan=pan, tilt=tilt)
+        wait_for(lambda: turntable.current_state() == turntable2.TurntableState.STOPPED)
+        assert turntable.current_position() == turntable2.PanTilt(pan, tilt)
+    finally:
+        turntable.close()
+
+
+@pytest.mark.parametrize(
+    ("pan", "tilt", "message"),
+    [
+        (-180.001, 0, "pan"),
+        (180.001, 0, "pan"),
+        (0, -90.001, "tilt"),
+        (0, 90.001, "tilt"),
+        (float("nan"), 0, "pan"),
+        (0, float("inf"), "tilt"),
+    ],
+)
+def test_invalid_set_position_is_rejected_without_a_write(pan, tilt, message):
+    fake = FakeSerial()
+    turntable = make_turntable(fake)
+    try:
+        with pytest.raises(ValueError, match=message):
+            turntable.set_position(pan=pan, tilt=tilt)
         assert fake.writes == []
+    finally:
+        turntable.close()
+
+
+def test_complete_state_describes_active_nonzero_set():
+    fake = FakeSerial(respond_to_sets=False)
+    turntable = make_turntable(fake)
+    try:
+        turntable.set_position(pan=20, tilt=10, timeout=10)
+        wait_for(lambda: turntable.get_complete_state().activity == turntable2.TurntableActivity.SETTING_POSITION)
+
+        state = turntable.get_complete_state()
+        assert state.target_position == turntable2.PanTilt(20, 10)
+        assert state.internal_target == turntable2.YawPitch(20, 10)
     finally:
         turntable.close()
 

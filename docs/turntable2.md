@@ -50,7 +50,8 @@ provided for an individual move.
 `turntable2` deliberately distinguishes two coordinate layers:
 
 - **Yaw and pitch** are the relative numbers maintained and reported by the
-  turntable firmware. A SET command resets both to zero. Raw
+  turntable firmware. A SET command declares them as the requested coordinates
+  (pan from -180° through 180° and tilt from -90° through 90°). Raw
   `ReceivedMessagePosition` events therefore expose `yaw` and `pitch`.
 - **Pan and tilt** are physical, regime-compensated angles. Public command
   arguments and `current_position()` use `pan` and `tilt`.

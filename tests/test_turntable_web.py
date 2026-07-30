@@ -177,6 +177,10 @@ def test_turntable_page_contains_status_history_and_controls():
     assert 'id="az-el-kinematics-plot"' in body
     assert 'id="reset-position-history"' in body
     assert 'data-command-form="set"' in body
+    assert 'id="nonzero-set-confirmation"' in body
+    assert "Are you sure? Make sure you're using new firmware." in body
+    assert 'name="pan" type="number" min="-180" max="180"' in body
+    assert 'name="tilt" type="number" min="-90" max="90"' in body
     assert 'data-command-form="move"' in body
     assert 'data-command-log' in body
     assert "Exact commands sent" in body
@@ -259,7 +263,7 @@ def test_status_honors_max_points_and_rejects_invalid_history_options(fake_turnt
 
 
 def test_set_move_confirm_and_emergency_stop_routes_call_controller(fake_turntable):
-    assert set_turntable_position(_TurntablePositionCommand(pan=0, tilt=0))["ok"]
+    assert set_turntable_position(_TurntablePositionCommand(pan=20, tilt=10))["ok"]
     move_response = move_turntable(_TurntablePositionCommand(pan=30, tilt=-50))
     assert move_response["ok"]
     assert move_response["timeout"] == pytest.approx(
@@ -267,7 +271,7 @@ def test_set_move_confirm_and_emergency_stop_routes_call_controller(fake_turntab
     )
     assert abort_turntable()["ok"]
     assert fake_turntable.commands == [
-        ("set", 0.0, 0.0),
+        ("set", 20.0, 10.0),
         ("move", 30.0, -50.0, move_response["timeout"]),
         ("abort",),
     ]
@@ -360,6 +364,12 @@ def test_turntable_script_marks_current_green_target_red_and_posts_abort():
     assert "function renderCommandLog(commands)" in script
     assert "timestamp.textContent = command.timestamp" in script
     assert "bytes.textContent = command.bytes" in script
+    assert "function confirmNonzeroSet(values)" in script
+    assert 'document.getElementById("nonzero-set-confirmation")' in script
+    assert """window.confirm("Are you sure? Make sure you're using new firmware.")""" in script
+    assert "&& (values.pan !== 0 || values.tilt !== 0)" in script
+    assert "SET pan must be between -180° and 180°." in script
+    assert "SET tilt must be between -90° and 90°." in script
     assert 'document.querySelectorAll(\'[data-control="set"]\')' in script
 
     stylesheet = (WEB_ROOT / "static" / "turntable.css").read_text()

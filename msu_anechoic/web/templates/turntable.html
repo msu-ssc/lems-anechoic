@@ -332,12 +332,12 @@
                                 <span class="command-number">01</span>
                                 <div>
                                     <h3>Set position</h3>
-                                    <p>Declare the current physical position. Firmware currently accepts zero only. This resets every position graph.</p>
+                                    <p>Declare the current physical position. Requires new firmware for non-zero values. This resets every position graph.</p>
                                 </div>
                             </header>
                             <div class="command-fields">
-                                <label>Pan <span><input name="pan" type="text" inputmode="decimal" value="0"><b>°</b></span></label>
-                                <label>Tilt <span><input name="tilt" type="text" inputmode="decimal" value="0"><b>°</b></span></label>
+                                <label>Pan <span><input name="pan" type="number" min="-180" max="180" step="any" value="0"><b>°</b></span></label>
+                                <label>Tilt <span><input name="tilt" type="number" min="-90" max="90" step="any" value="0"><b>°</b></span></label>
                             </div>
                             <button class="command-button" type="submit" data-control="set" disabled>Set position</button>
                         </form>
@@ -420,5 +420,17 @@
                 </section>
             </div>
         </main>
+        <dialog id="nonzero-set-confirmation" class="confirmation-dialog" aria-labelledby="nonzero-set-confirmation-title">
+            <form method="dialog">
+                <p class="section-kicker">Firmware compatibility warning</p>
+                <h2 id="nonzero-set-confirmation-title">Confirm non-zero SET</h2>
+                <p>Are you sure? Make sure you're using new firmware.</p>
+                <p class="confirmation-position" data-set-confirmation-position></p>
+                <div class="confirmation-actions">
+                    <button type="submit" value="cancel">Cancel</button>
+                    <button class="confirmation-submit" type="submit" value="confirm">Send SET command</button>
+                </div>
+            </form>
+        </dialog>
     </body>
 </html>
