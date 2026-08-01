@@ -27,9 +27,43 @@
                 height: 100%;
                 background: #111;
             }
+
+            .controls {
+                position: fixed;
+                z-index: 1;
+                top: 1rem;
+                left: 1rem;
+                display: grid;
+                gap: 0.65rem;
+                padding: 1rem;
+                color: white;
+                background: rgb(15 18 22 / 85%);
+                border: 1px solid #68717c;
+                border-radius: 0.5rem;
+                font: 16px sans-serif;
+            }
+
+            .controls label {
+                display: grid;
+                grid-template-columns: 4rem 7rem 2rem;
+                align-items: center;
+                gap: 0.5rem;
+            }
+
+            .controls input {
+                width: 100%;
+                box-sizing: border-box;
+                padding: 0.35rem 0.45rem;
+                font: inherit;
+            }
         </style>
     </head>
     <body>
+        <div class="controls">
+            <label>Pan <input id="pan" type="number" value="0" step="1"> deg</label>
+            <label>Tilt <input id="tilt" type="number" value="0" step="1"> deg</label>
+            <label>Height <input id="height" type="number" value="0" step="0.01"> m</label>
+        </div>
         <canvas id="chamber-canvas"></canvas>
         <script type="module" src="{{ url_for('static', path='3d.js') }}"></script>
     </body>

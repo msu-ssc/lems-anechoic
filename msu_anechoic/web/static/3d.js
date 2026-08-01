@@ -133,9 +133,13 @@ turntable.name = "turntable";
 turntable.position.set(-3, 1.225, 0);
 scene.add(turntable);
 
+const tiltAssembly = new THREE.Group();
+tiltAssembly.name = "tilt-assembly";
+turntable.add(tiltAssembly);
+
 const panAssembly = new THREE.Group();
 panAssembly.name = "pan-assembly";
-turntable.add(panAssembly);
+tiltAssembly.add(panAssembly);
 
 const turningSurface = new THREE.Mesh(
     new THREE.CylinderGeometry(0.4, 0.4, 0.05, 64),
@@ -178,7 +182,7 @@ tiltDisk.rotation.x = Math.PI / 2;
 tiltDisk.position.set(0, 0.025, -0.3);
 tiltDisk.castShadow = true;
 tiltDisk.receiveShadow = true;
-turntable.add(tiltDisk);
+tiltAssembly.add(tiltDisk);
 
 const tiltDiskEdges = new THREE.LineSegments(
     new THREE.EdgesGeometry(tiltDisk.geometry),
@@ -287,6 +291,30 @@ function makeAxisLabel(text, color, position) {
 makeAxisLabel("X / FORWARD", "#ff5555", new THREE.Vector3(1.75, 0, 0));
 makeAxisLabel("Y / UP", "#55dd77", new THREE.Vector3(0, 1.75, 0));
 makeAxisLabel("Z / RIGHT", "#5599ff", new THREE.Vector3(0, 0, 1.75));
+
+const panInput = document.getElementById("pan");
+const tiltInput = document.getElementById("tilt");
+const heightInput = document.getElementById("height");
+
+function numericInputValue(input) {
+    const value = Number.parseFloat(input.value);
+    return Number.isFinite(value) ? value : 0;
+}
+
+function updateTurntablePose() {
+    const pan = numericInputValue(panInput);
+    const tilt = numericInputValue(tiltInput);
+    const height = numericInputValue(heightInput);
+
+    panAssembly.rotation.y = -THREE.MathUtils.degToRad(pan);
+    tiltAssembly.rotation.z = THREE.MathUtils.degToRad(tilt);
+    turntable.position.y = 1.225 + height;
+}
+
+panInput.addEventListener("input", updateTurntablePose);
+tiltInput.addEventListener("input", updateTurntablePose);
+heightInput.addEventListener("input", updateTurntablePose);
+updateTurntablePose();
 
 function resize() {
     const width = canvas.clientWidth;
