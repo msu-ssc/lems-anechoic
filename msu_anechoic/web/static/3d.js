@@ -67,25 +67,52 @@ addWallSection(wall, 1, 1.5, -2.5, 2.75);
 // Left wall: solid, parallel to and 5 m from the right wall.
 addWallSection(leftWall, 10, 3.5, 0, 1.75);
 
-function addEndWall(x) {
-    const endWall = new THREE.Mesh(
-        new THREE.BoxGeometry(0.15, 3.5, 5),
+function addEndWallSection(parent, width, height, z, y) {
+    const section = new THREE.Mesh(
+        new THREE.BoxGeometry(0.15, height, width),
         wallMaterial,
     );
-    endWall.position.set(x, 1.75, 0);
-    endWall.castShadow = true;
-    endWall.receiveShadow = true;
-    scene.add(endWall);
+    section.position.set(0, y, z);
+    section.castShadow = true;
+    section.receiveShadow = true;
+    parent.add(section);
 
     const edges = new THREE.LineSegments(
-        new THREE.EdgesGeometry(endWall.geometry),
+        new THREE.EdgesGeometry(section.geometry),
         new THREE.LineBasicMaterial({ color: 0x151515 }),
     );
-    endWall.add(edges);
+    section.add(edges);
 }
 
-addEndWall(-5);
-addEndWall(5);
+const backWall = new THREE.Group();
+backWall.name = "back-wall";
+backWall.position.x = -5;
+scene.add(backWall);
+addEndWallSection(backWall, 5, 3.5, 0, 1.75);
+
+const frontWall = new THREE.Group();
+frontWall.name = "front-wall";
+frontWall.position.x = 5;
+scene.add(frontWall);
+
+// Four sections surround a 75 cm square opening centered at y=2.5, z=0.
+addEndWallSection(frontWall, 2.125, 3.5, -1.4375, 1.75);
+addEndWallSection(frontWall, 2.125, 3.5, 1.4375, 1.75);
+addEndWallSection(frontWall, 0.75, 2.125, 0, 1.0625);
+addEndWallSection(frontWall, 0.75, 0.625, 0, 3.1875);
+
+const sourceAntenna = new THREE.Mesh(
+    new THREE.SphereGeometry(0.125, 32, 16),
+    new THREE.MeshStandardMaterial({
+        color: 0x2ecc71,
+        metalness: 0.15,
+        roughness: 0.5,
+    }),
+);
+sourceAntenna.name = "source-antenna";
+sourceAntenna.position.set(5, 2.5, 0);
+sourceAntenna.castShadow = true;
+scene.add(sourceAntenna);
 
 const floor = new THREE.Mesh(
     new THREE.BoxGeometry(10, 0.15, 5),
@@ -211,9 +238,55 @@ addAutSection(new THREE.BoxGeometry(0.05, 0.2, 0.05), 0, 0.325, 0);
 // A 20 cm arm extending forward (+X) from the top of the stem.
 addAutSection(new THREE.BoxGeometry(0.2, 0.05, 0.05), 0.1, 0.4, 0);
 
+const autBoresight = new THREE.ArrowHelper(
+    new THREE.Vector3(1, 0, 0),
+    new THREE.Vector3(0.2, 0.4, 0),
+    2.5,
+    0x00e5ff,
+    0.15,
+    0.08,
+);
+autBoresight.name = "aut-boresight";
+antennaUnderTest.add(autBoresight);
+
 const grid = new THREE.GridHelper(14, 14, 0x7f8c99, 0x4c5661);
 grid.position.y = 0.005;
 scene.add(grid);
+
+const axes = new THREE.Group();
+axes.name = "chamber-axes";
+axes.position.y = 1.015;
+axes.scale.setScalar(0.25);
+axes.add(new THREE.AxesHelper(1.5));
+scene.add(axes);
+
+function makeAxisLabel(text, color, position) {
+    const labelCanvas = document.createElement("canvas");
+    labelCanvas.width = 512;
+    labelCanvas.height = 128;
+    const context = labelCanvas.getContext("2d");
+    context.font = "bold 42px sans-serif";
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    context.fillStyle = color;
+    context.fillText(text, 256, 64);
+
+    const texture = new THREE.CanvasTexture(labelCanvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    const label = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: texture,
+        transparent: true,
+        depthTest: false,
+    }));
+    label.position.copy(position);
+    label.scale.set(1.6, 0.4, 1);
+    label.renderOrder = 10;
+    axes.add(label);
+}
+
+makeAxisLabel("X / FORWARD", "#ff5555", new THREE.Vector3(1.75, 0, 0));
+makeAxisLabel("Y / UP", "#55dd77", new THREE.Vector3(0, 1.75, 0));
+makeAxisLabel("Z / RIGHT", "#5599ff", new THREE.Vector3(0, 0, 1.75));
 
 function resize() {
     const width = canvas.clientWidth;
