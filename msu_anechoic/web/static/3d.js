@@ -101,6 +101,116 @@ floor.position.y = -0.075;
 floor.receiveShadow = true;
 scene.add(floor);
 
+const turntable = new THREE.Group();
+turntable.name = "turntable";
+turntable.position.set(-3, 1.225, 0);
+scene.add(turntable);
+
+const panAssembly = new THREE.Group();
+panAssembly.name = "pan-assembly";
+turntable.add(panAssembly);
+
+const turningSurface = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.4, 0.4, 0.05, 64),
+    new THREE.MeshStandardMaterial({
+        color: 0x365f91,
+        metalness: 0.35,
+        roughness: 0.55,
+    }),
+);
+turningSurface.name = "turning-surface";
+turningSurface.castShadow = true;
+turningSurface.receiveShadow = true;
+panAssembly.add(turningSurface);
+
+const turningSurfaceEdges = new THREE.LineSegments(
+    new THREE.EdgesGeometry(turningSurface.geometry),
+    new THREE.LineBasicMaterial({ color: 0x101820 }),
+);
+turningSurface.add(turningSurfaceEdges);
+
+const tiltDisk = new THREE.Mesh(
+    new THREE.CylinderGeometry(
+        0.4,
+        0.4,
+        0.05,
+        64,
+        1,
+        false,
+        -Math.PI / 2,
+        Math.PI,
+    ),
+    new THREE.MeshStandardMaterial({
+        color: 0xd46a1f,
+        metalness: 0.35,
+        roughness: 0.55,
+    }),
+);
+tiltDisk.name = "tilt-disk";
+tiltDisk.rotation.x = Math.PI / 2;
+tiltDisk.position.set(0, 0.025, -0.3);
+tiltDisk.castShadow = true;
+tiltDisk.receiveShadow = true;
+turntable.add(tiltDisk);
+
+const tiltDiskEdges = new THREE.LineSegments(
+    new THREE.EdgesGeometry(tiltDisk.geometry),
+    new THREE.LineBasicMaterial({ color: 0x401c08 }),
+);
+tiltDisk.add(tiltDiskEdges);
+
+const autMount = new THREE.Mesh(
+    new THREE.BoxGeometry(0.3, 0.2, 0.6),
+    new THREE.MeshStandardMaterial({
+        color: 0x6f42c1,
+        roughness: 0.65,
+        transparent: true,
+        opacity: 0.5,
+        depthWrite: false,
+    }),
+);
+autMount.name = "aut-mount";
+autMount.position.y = 0.125;
+autMount.castShadow = true;
+autMount.receiveShadow = true;
+panAssembly.add(autMount);
+
+const autMountEdges = new THREE.LineSegments(
+    new THREE.EdgesGeometry(autMount.geometry),
+    new THREE.LineBasicMaterial({ color: 0x24143f }),
+);
+autMount.add(autMountEdges);
+
+const antennaUnderTest = new THREE.Group();
+antennaUnderTest.name = "antenna-under-test";
+panAssembly.add(antennaUnderTest);
+
+const autMaterial = new THREE.MeshStandardMaterial({
+    color: 0xe0b323,
+    metalness: 0.2,
+    roughness: 0.55,
+});
+
+function addAutSection(geometry, x, y, z) {
+    const section = new THREE.Mesh(geometry, autMaterial);
+    section.position.set(x, y, z);
+    section.castShadow = true;
+    section.receiveShadow = true;
+    antennaUnderTest.add(section);
+
+    const edges = new THREE.LineSegments(
+        new THREE.EdgesGeometry(section.geometry),
+        new THREE.LineBasicMaterial({ color: 0x4d3900 }),
+    );
+    section.add(edges);
+}
+
+// A 5 cm square stem rising 20 cm from the mounting box.
+addAutSection(new THREE.BoxGeometry(0.05, 0.2, 0.05), 0, 0.325, 0);
+
+// A 20 cm arm extending forward (+X) from the top of the stem.
+addAutSection(new THREE.BoxGeometry(0.2, 0.05, 0.05), 0.1, 0.4, 0);
+
 const grid = new THREE.GridHelper(14, 14, 0x7f8c99, 0x4c5661);
 grid.position.y = 0.005;
 scene.add(grid);
