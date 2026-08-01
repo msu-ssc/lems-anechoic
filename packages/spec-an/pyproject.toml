@@ -1,0 +1,21 @@
+[project]
+name = "lems-anechoic-spec-an"
+dynamic = ["version"]
+description = "Spectrum analyzer control for the LEMS anechoic chamber"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=2.2.2",
+    "pydantic>=2.10.6",
+    "pyvisa>=1.14.1",
+]
+
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
+
+[tool.pdm.version]
+source = "scm"
+fallback_version = "0.0.0"
+
+[tool.pdm.build]
+includes = ["msu_anechoic"]

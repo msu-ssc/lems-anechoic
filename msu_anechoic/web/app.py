@@ -2214,6 +2214,15 @@ def index(request: Request) -> HTMLResponse:
     )
 
 
+@app.get("/3d", response_class=HTMLResponse)
+def three_dimensional_experiment(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request=request,
+        name="3d.html",
+        context={},
+    )
+
+
 @app.get("/grid-designer", response_class=HTMLResponse)
 def grid_designer(request: Request) -> HTMLResponse:
     simple_grids = (
