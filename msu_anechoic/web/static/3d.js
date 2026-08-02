@@ -128,10 +128,64 @@ floor.position.y = -0.075;
 floor.receiveShadow = true;
 scene.add(floor);
 
+const fixedTable = new THREE.Mesh(
+    new THREE.BoxGeometry(1.5, 0.5, 0.75),
+    new THREE.MeshStandardMaterial({
+        color: 0x777d84,
+        metalness: 0.15,
+        roughness: 0.8,
+    }),
+);
+fixedTable.name = "fixed-turntable-table";
+fixedTable.position.set(-3.5, 0.25, 0);
+fixedTable.castShadow = true;
+fixedTable.receiveShadow = true;
+scene.add(fixedTable);
+
+const fixedTableEdges = new THREE.LineSegments(
+    new THREE.EdgesGeometry(fixedTable.geometry),
+    new THREE.LineBasicMaterial({ color: 0x202428 }),
+);
+fixedTable.add(fixedTableEdges);
+
+const liftMaterial = new THREE.MeshStandardMaterial({
+    color: 0x4f5964,
+    metalness: 0.4,
+    roughness: 0.55,
+});
+
+function makeLiftPlate(name, y) {
+    const plate = new THREE.Mesh(
+        new THREE.BoxGeometry(1.5, 0.1, 0.75),
+        liftMaterial,
+    );
+    plate.name = name;
+    plate.position.set(-3.5, y, 0);
+    plate.castShadow = true;
+    plate.receiveShadow = true;
+
+    const edges = new THREE.LineSegments(
+        new THREE.EdgesGeometry(plate.geometry),
+        new THREE.LineBasicMaterial({ color: 0x15191d }),
+    );
+    plate.add(edges);
+    return plate;
+}
+
+const liftBottom = makeLiftPlate("scissor-lift-bottom", 0.55);
+scene.add(liftBottom);
+
+const heightAssembly = new THREE.Group();
+heightAssembly.name = "height-assembly";
+scene.add(heightAssembly);
+
+const liftTop = makeLiftPlate("scissor-lift-top", 0.65);
+heightAssembly.add(liftTop);
+
 const turntable = new THREE.Group();
 turntable.name = "turntable";
 turntable.position.set(-3, 1.225, 0);
-scene.add(turntable);
+heightAssembly.add(turntable);
 
 const tiltAssembly = new THREE.Group();
 tiltAssembly.name = "tilt-assembly";
@@ -304,11 +358,11 @@ function numericInputValue(input) {
 function updateTurntablePose() {
     const pan = numericInputValue(panInput);
     const tilt = numericInputValue(tiltInput);
-    const height = numericInputValue(heightInput);
+    const height = Math.max(0, numericInputValue(heightInput));
 
     panAssembly.rotation.y = -THREE.MathUtils.degToRad(pan);
     tiltAssembly.rotation.z = THREE.MathUtils.degToRad(tilt);
-    turntable.position.y = 1.225 + height;
+    heightAssembly.position.y = height;
 }
 
 panInput.addEventListener("input", updateTurntablePose);

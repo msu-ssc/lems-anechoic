@@ -62,7 +62,7 @@
         <div class="controls">
             <label>Pan <input id="pan" type="number" value="0" step="1"> deg</label>
             <label>Tilt <input id="tilt" type="number" value="0" step="1"> deg</label>
-            <label>Height <input id="height" type="number" value="0" step="0.01"> m</label>
+            <label>Height <input id="height" type="number" value="0" min="0" step="0.01"> m</label>
         </div>
         <canvas id="chamber-canvas"></canvas>
         <script type="module" src="{{ url_for('static', path='3d.js') }}"></script>
