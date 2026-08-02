@@ -13,8 +13,10 @@ const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
 camera.position.set(7, 5.5, 13);
 
 const controls = new OrbitControls(camera, canvas);
-controls.target.set(0, 1.75, 0);
+controls.target.set(-3, 1.325, 0);
 controls.enableDamping = true;
+controls.autoRotate = false;
+controls.autoRotateSpeed = 0.5;
 
 scene.add(new THREE.HemisphereLight(0xffffff, 0x303840, 2.4));
 
@@ -344,7 +346,7 @@ const tiltHousingEdges = new THREE.LineSegments(
 tiltHousing.add(tiltHousingEdges);
 
 const tiltShaft = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.025, 0.025, 1, 32),
+    new THREE.CylinderGeometry(0.025, 0.025, 0.8, 32),
     tiltMaterial,
 );
 tiltShaft.name = "tilt-shaft";
@@ -458,6 +460,14 @@ makeAxisLabel("Z / RIGHT", "#5599ff", new THREE.Vector3(0, 0, 1.75));
 const panInput = document.getElementById("pan");
 const tiltInput = document.getElementById("tilt");
 const heightInput = document.getElementById("height");
+const panSlider = document.getElementById("pan-slider");
+const tiltSlider = document.getElementById("tilt-slider");
+const heightSlider = document.getElementById("height-slider");
+const wallOpacitySlider = document.getElementById("wall-opacity");
+const wallOpacityOutput = document.getElementById("wall-opacity-output");
+const rotationToggle = document.getElementById("rotation-toggle");
+const rotationSpeedSlider = document.getElementById("rotation-speed");
+const rotationSpeedOutput = document.getElementById("rotation-speed-output");
 
 function numericInputValue(input) {
     const value = Number.parseFloat(input.value);
@@ -465,9 +475,9 @@ function numericInputValue(input) {
 }
 
 function updateTurntablePose() {
-    const pan = numericInputValue(panInput);
-    const tilt = numericInputValue(tiltInput);
-    const height = Math.max(0, numericInputValue(heightInput));
+    const pan = THREE.MathUtils.clamp(numericInputValue(panInput), -180, 180);
+    const tilt = THREE.MathUtils.clamp(numericInputValue(tiltInput), -90, 45);
+    const height = THREE.MathUtils.clamp(numericInputValue(heightInput), 0, 1);
 
     panAssembly.rotation.y = -THREE.MathUtils.degToRad(pan);
     tiltAssembly.rotation.z = THREE.MathUtils.degToRad(tilt);
@@ -475,9 +485,111 @@ function updateTurntablePose() {
     updateScissorForks(height);
 }
 
-panInput.addEventListener("input", updateTurntablePose);
-tiltInput.addEventListener("input", updateTurntablePose);
-heightInput.addEventListener("input", updateTurntablePose);
+function bindSlider(numberInput, slider) {
+    numberInput.addEventListener("input", () => {
+        slider.value = numberInput.value;
+        updateTurntablePose();
+    });
+    slider.addEventListener("input", () => {
+        numberInput.value = slider.value;
+        updateTurntablePose();
+    });
+}
+
+bindSlider(panInput, panSlider);
+bindSlider(tiltInput, tiltSlider);
+bindSlider(heightInput, heightSlider);
+
+const parameterAnimations = [
+    {
+        input: panInput,
+        slider: panSlider,
+        toggle: document.getElementById("pan-animation-toggle"),
+        speed: document.getElementById("pan-animation-speed"),
+        speedOutput: document.getElementById("pan-animation-speed-output"),
+        minimum: -180,
+        maximum: 180,
+        direction: 1,
+        active: false,
+    },
+    {
+        input: tiltInput,
+        slider: tiltSlider,
+        toggle: document.getElementById("tilt-animation-toggle"),
+        speed: document.getElementById("tilt-animation-speed"),
+        speedOutput: document.getElementById("tilt-animation-speed-output"),
+        minimum: -90,
+        maximum: 45,
+        direction: 1,
+        active: false,
+    },
+    {
+        input: heightInput,
+        slider: heightSlider,
+        toggle: document.getElementById("height-animation-toggle"),
+        speed: document.getElementById("height-animation-speed"),
+        speedOutput: document.getElementById("height-animation-speed-output"),
+        minimum: 0,
+        maximum: 1,
+        direction: 1,
+        active: false,
+    },
+];
+
+for (const animation of parameterAnimations) {
+    animation.toggle.addEventListener("click", () => {
+        animation.active = !animation.active;
+        animation.toggle.textContent = animation.active ? "Stop" : "Start";
+    });
+    animation.speed.addEventListener("input", () => {
+        const speed = Number.parseFloat(animation.speed.value);
+        animation.speedOutput.value = `${speed.toFixed(1)}x`;
+        animation.speedOutput.textContent = animation.speedOutput.value;
+    });
+}
+
+function updateParameterAnimations(deltaSeconds) {
+    let changed = false;
+    for (const animation of parameterAnimations) {
+        if (!animation.active) continue;
+
+        const span = animation.maximum - animation.minimum;
+        const speed = Number.parseFloat(animation.speed.value);
+        let value = numericInputValue(animation.input)
+            + animation.direction * span * speed * deltaSeconds / 10;
+
+        if (value >= animation.maximum) {
+            value = animation.maximum - (value - animation.maximum);
+            animation.direction = -1;
+        } else if (value <= animation.minimum) {
+            value = animation.minimum + (animation.minimum - value);
+            animation.direction = 1;
+        }
+
+        const precision = animation.maximum <= 1 ? 3 : 2;
+        animation.input.value = value.toFixed(precision);
+        animation.slider.value = String(value);
+        changed = true;
+    }
+    if (changed) updateTurntablePose();
+}
+
+wallOpacitySlider.addEventListener("input", () => {
+    wallMaterial.opacity = Number.parseFloat(wallOpacitySlider.value);
+    wallOpacityOutput.value = `${Math.round(wallMaterial.opacity * 100)}%`;
+    wallOpacityOutput.textContent = wallOpacityOutput.value;
+});
+
+rotationToggle.addEventListener("click", () => {
+    controls.autoRotate = !controls.autoRotate;
+    rotationToggle.textContent = controls.autoRotate ? "Stop" : "Start";
+});
+
+rotationSpeedSlider.addEventListener("input", () => {
+    controls.autoRotateSpeed = Number.parseFloat(rotationSpeedSlider.value);
+    rotationSpeedOutput.value = `${controls.autoRotateSpeed.toFixed(1)}x`;
+    rotationSpeedOutput.textContent = rotationSpeedOutput.value;
+});
 updateTurntablePose();
 
 function resize() {
@@ -488,9 +600,13 @@ function resize() {
     camera.updateProjectionMatrix();
 }
 
+const clock = new THREE.Clock();
+
 function render() {
+    const deltaSeconds = clock.getDelta();
     resize();
-    controls.update();
+    updateParameterAnimations(deltaSeconds);
+    controls.update(deltaSeconds);
     renderer.render(scene, camera);
     requestAnimationFrame(render);
 }

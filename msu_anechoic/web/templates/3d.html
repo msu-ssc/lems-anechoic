@@ -45,9 +45,18 @@
 
             .controls label {
                 display: grid;
-                grid-template-columns: 4rem 7rem 2rem;
+                grid-template-columns: 4rem 6rem 2.5rem minmax(10rem, 20vw);
                 align-items: center;
                 gap: 0.5rem;
+            }
+
+            .animation-controls {
+                display: grid;
+                grid-template-columns: 4rem 6rem 2.5rem minmax(10rem, 20vw);
+                align-items: center;
+                gap: 0.5rem;
+                margin-top: -0.35rem;
+                margin-bottom: 0.25rem;
             }
 
             .controls input {
@@ -56,13 +65,72 @@
                 padding: 0.35rem 0.45rem;
                 font: inherit;
             }
+
+            .controls input[type="range"] {
+                padding: 0;
+            }
+
+            .controls button {
+                padding: 0.4rem 0.6rem;
+                color: white;
+                background: #3d536b;
+                border: 1px solid #8291a1;
+                border-radius: 0.3rem;
+                font: inherit;
+                cursor: pointer;
+            }
         </style>
     </head>
     <body>
         <div class="controls">
-            <label>Pan <input id="pan" type="number" value="0" step="1"> deg</label>
-            <label>Tilt <input id="tilt" type="number" value="0" step="1"> deg</label>
-            <label>Height <input id="height" type="number" value="0" min="0" step="0.01"> m</label>
+            <label>
+                <span>Pan</span>
+                <input id="pan" type="number" value="0" min="-180" max="180" step="1">
+                <span>deg</span>
+                <input id="pan-slider" type="range" value="0" min="-180" max="180" step="1">
+            </label>
+            <div class="animation-controls">
+                <span>Animate</span>
+                <button id="pan-animation-toggle" type="button">Start</button>
+                <output id="pan-animation-speed-output">1.0x</output>
+                <input id="pan-animation-speed" type="range" value="1" min="0.1" max="5" step="0.1">
+            </div>
+            <label>
+                <span>Tilt</span>
+                <input id="tilt" type="number" value="0" min="-90" max="45" step="1">
+                <span>deg</span>
+                <input id="tilt-slider" type="range" value="0" min="-90" max="45" step="1">
+            </label>
+            <div class="animation-controls">
+                <span>Animate</span>
+                <button id="tilt-animation-toggle" type="button">Start</button>
+                <output id="tilt-animation-speed-output">1.0x</output>
+                <input id="tilt-animation-speed" type="range" value="1" min="0.1" max="5" step="0.1">
+            </div>
+            <label>
+                <span>Height</span>
+                <input id="height" type="number" value="0" min="0" max="1" step="0.01">
+                <span>m</span>
+                <input id="height-slider" type="range" value="0" min="0" max="1" step="0.01">
+            </label>
+            <div class="animation-controls">
+                <span>Animate</span>
+                <button id="height-animation-toggle" type="button">Start</button>
+                <output id="height-animation-speed-output">1.0x</output>
+                <input id="height-animation-speed" type="range" value="1" min="0.1" max="5" step="0.1">
+            </div>
+            <label>
+                <span>Walls</span>
+                <output id="wall-opacity-output">30%</output>
+                <span></span>
+                <input id="wall-opacity" type="range" value="0.3" min="0" max="1" step="0.01">
+            </label>
+            <label>
+                <span>Rotation</span>
+                <button id="rotation-toggle" type="button">Start</button>
+                <output id="rotation-speed-output">0.5x</output>
+                <input id="rotation-speed" type="range" value="0.5" min="0.1" max="5" step="0.1">
+            </label>
         </div>
         <canvas id="chamber-canvas"></canvas>
         <script type="module" src="{{ url_for('static', path='3d.js') }}"></script>
