@@ -1,5 +1,8 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { RectAreaLightUniformsLib } from "three/addons/lights/RectAreaLightUniformsLib.js";
+
+RectAreaLightUniformsLib.init();
 
 const canvas = document.getElementById("chamber-canvas");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -8,6 +11,7 @@ renderer.shadowMap.enabled = true;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x20242a);
+scene.background = new THREE.Color(0x000000);
 
 const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
 camera.position.set(7, 5.5, 13);
@@ -18,9 +22,10 @@ controls.enableDamping = true;
 controls.autoRotate = false;
 controls.autoRotateSpeed = 5;
 
-scene.add(new THREE.HemisphereLight(0xffffff, 0x303840, 2.4));
+const fillLight = new THREE.HemisphereLight(0xffffff, 0x303840, 0);
+scene.add(fillLight);
 
-const sunlight = new THREE.DirectionalLight(0xffffff, 2.5);
+const sunlight = new THREE.DirectionalLight(0xffffff, 0);
 sunlight.position.set(2, 8, 8);
 sunlight.castShadow = true;
 scene.add(sunlight);
@@ -36,8 +41,9 @@ leftWall.position.z = -2.5;
 scene.add(leftWall);
 
 const wallMaterial = new THREE.MeshStandardMaterial({
-    color: 0xaaaaaa,
-    roughness: 0.85,
+    color: 0x183149,
+    roughness: 1,
+    metalness: 0,
     transparent: true,
     opacity: 0.05,
     depthWrite: false,
@@ -91,6 +97,131 @@ backWall.name = "back-wall";
 backWall.position.x = -5;
 scene.add(backWall);
 addEndWallSection(backWall, 5, 3.5, 0, 1.75);
+
+const backLightMaterial = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    emissive: 0xffffff,
+    emissiveIntensity: 800,
+    roughness: 0.35,
+});
+const backAreaLights = [];
+
+for (const z of [-1.5, 1.5]) {
+    const fixture = new THREE.Mesh(
+        new THREE.BoxGeometry(0.02, 0.3, 0.1),
+        backLightMaterial,
+    );
+    fixture.name = "back-wall-light-fixture";
+    fixture.position.set(-4.915, 2.5, z);
+    scene.add(fixture);
+
+    const areaLight = new THREE.RectAreaLight(0xffffff, 800, 0.1, 0.3);
+    areaLight.name = "back-wall-area-light";
+    areaLight.position.set(-4.9, 2.5, z);
+    areaLight.lookAt(0, 2.5, z);
+    scene.add(areaLight);
+    backAreaLights.push(areaLight);
+}
+
+const floodStand = new THREE.Group();
+floodStand.name = "flood-light-stand";
+floodStand.position.set(-2, 0, 1.5);
+scene.add(floodStand);
+
+const floodStandMaterial = new THREE.MeshStandardMaterial({
+    color: 0xe4b51b,
+    metalness: 0.25,
+    roughness: 0.55,
+});
+const floodFrameMaterial = new THREE.MeshStandardMaterial({
+    color: 0x151719,
+    metalness: 0.35,
+    roughness: 0.65,
+});
+const floodPanelMaterial = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    emissive: 0xffffff,
+    emissiveIntensity: 800,
+    roughness: 0.25,
+});
+
+const floodPole = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.025, 0.025, 1.4, 20),
+    floodStandMaterial,
+);
+floodPole.position.y = 0.7;
+floodPole.castShadow = true;
+floodStand.add(floodPole);
+
+function makeRodBetween(start, end, radius, material) {
+    const direction = end.clone().sub(start);
+    const rod = new THREE.Mesh(
+        new THREE.CylinderGeometry(radius, radius, direction.length(), 12),
+        material,
+    );
+    rod.position.copy(start).add(end).multiplyScalar(0.5);
+    rod.quaternion.setFromUnitVectors(
+        new THREE.Vector3(0, 1, 0),
+        direction.normalize(),
+    );
+    rod.castShadow = true;
+    return rod;
+}
+
+for (const foot of [
+    new THREE.Vector3(0.45, 0.02, 0.3),
+    new THREE.Vector3(-0.45, 0.02, 0.3),
+    new THREE.Vector3(0, 0.02, -0.5),
+]) {
+    floodStand.add(makeRodBetween(
+        new THREE.Vector3(0, 0.28, 0),
+        foot,
+        0.018,
+        floodStandMaterial,
+    ));
+}
+
+const floodCrossbar = new THREE.Mesh(
+    new THREE.BoxGeometry(0.8, 0.04, 0.04),
+    floodStandMaterial,
+);
+floodCrossbar.position.y = 1.38;
+floodCrossbar.castShadow = true;
+floodStand.add(floodCrossbar);
+
+const floodHeadAssembly = new THREE.Group();
+floodHeadAssembly.name = "fixed-flood-heads";
+floodHeadAssembly.position.set(-2, 1.5, 1.5);
+const defaultAutTarget = new THREE.Vector3(-2.9, 1.925, 0);
+floodHeadAssembly.lookAt(defaultAutTarget);
+scene.add(floodHeadAssembly);
+
+const floodAreaLights = [];
+for (const x of [-0.22, 0.22]) {
+    const head = new THREE.Group();
+    head.position.x = x;
+    floodHeadAssembly.add(head);
+
+    const frame = new THREE.Mesh(
+        new THREE.BoxGeometry(0.32, 0.22, 0.07),
+        floodFrameMaterial,
+    );
+    frame.castShadow = true;
+    head.add(frame);
+
+    const panel = new THREE.Mesh(
+        new THREE.BoxGeometry(0.26, 0.16, 0.012),
+        floodPanelMaterial,
+    );
+    panel.position.z = 0.041;
+    head.add(panel);
+
+    const areaLight = new THREE.RectAreaLight(0xffffff, 800, 0.26, 0.16);
+    areaLight.position.z = 0.05;
+    areaLight.rotation.y = Math.PI;
+    head.add(areaLight);
+    floodAreaLights.push(areaLight);
+}
 
 const frontWall = new THREE.Group();
 frontWall.name = "front-wall";
@@ -281,7 +412,7 @@ tiltAssembly.add(panAssembly);
 const turningSurface = new THREE.Mesh(
     new THREE.CylinderGeometry(0.4, 0.4, 0.05, 64),
     new THREE.MeshStandardMaterial({
-        color: 0x365f91,
+        color: 0x6f42c1,
         metalness: 0.35,
         roughness: 0.55,
     }),
@@ -360,9 +491,6 @@ const autMount = new THREE.Mesh(
     new THREE.MeshStandardMaterial({
         color: 0x6f42c1,
         roughness: 0.65,
-        transparent: true,
-        opacity: 0.5,
-        depthWrite: false,
     }),
 );
 autMount.name = "aut-mount";
@@ -532,6 +660,21 @@ const trailEnabledInput = document.getElementById("trail-enabled");
 const trailClearButton = document.getElementById("trail-clear");
 const trailSampleIntervalSlider = document.getElementById("trail-sample-interval");
 const trailSampleIntervalOutput = document.getElementById("trail-sample-interval-output");
+const backLightIntensitySlider = document.getElementById("back-light-intensity");
+const backLightIntensityOutput = document.getElementById("back-light-intensity-output");
+const fillLightIntensitySlider = document.getElementById("fill-light-intensity");
+const fillLightIntensityOutput = document.getElementById("fill-light-intensity-output");
+const directionalLightIntensitySlider = document.getElementById("directional-light-intensity");
+const directionalLightIntensityOutput = document.getElementById("directional-light-intensity-output");
+const floodLightIntensitySlider = document.getElementById("flood-light-intensity");
+const floodLightIntensityOutput = document.getElementById("flood-light-intensity-output");
+const settingsToggle = document.getElementById("settings-toggle");
+const settingsPanel = document.getElementById("settings-panel");
+
+settingsToggle.addEventListener("click", () => {
+    settingsPanel.hidden = !settingsPanel.hidden;
+    settingsToggle.setAttribute("aria-expanded", String(!settingsPanel.hidden));
+});
 
 function numericInputValue(input) {
     const value = Number.parseFloat(input.value);
@@ -643,6 +786,34 @@ trailEnabledInput.addEventListener("change", () => {
 });
 
 trailClearButton.addEventListener("click", clearBoresightTrail);
+
+backLightIntensitySlider.addEventListener("input", () => {
+    const intensity = Number.parseFloat(backLightIntensitySlider.value);
+    backLightMaterial.emissiveIntensity = intensity;
+    for (const light of backAreaLights) light.intensity = intensity;
+    backLightIntensityOutput.value = intensity.toFixed(1);
+    backLightIntensityOutput.textContent = backLightIntensityOutput.value;
+});
+
+floodLightIntensitySlider.addEventListener("input", () => {
+    const intensity = Number.parseFloat(floodLightIntensitySlider.value);
+    floodPanelMaterial.emissiveIntensity = intensity;
+    for (const light of floodAreaLights) light.intensity = intensity;
+    floodLightIntensityOutput.value = intensity.toFixed(1);
+    floodLightIntensityOutput.textContent = floodLightIntensityOutput.value;
+});
+
+fillLightIntensitySlider.addEventListener("input", () => {
+    fillLight.intensity = Number.parseFloat(fillLightIntensitySlider.value);
+    fillLightIntensityOutput.value = fillLight.intensity.toFixed(1);
+    fillLightIntensityOutput.textContent = fillLightIntensityOutput.value;
+});
+
+directionalLightIntensitySlider.addEventListener("input", () => {
+    sunlight.intensity = Number.parseFloat(directionalLightIntensitySlider.value);
+    directionalLightIntensityOutput.value = sunlight.intensity.toFixed(1);
+    directionalLightIntensityOutput.textContent = directionalLightIntensityOutput.value;
+});
 
 function animationBounds(animation) {
     const minimum = THREE.MathUtils.clamp(

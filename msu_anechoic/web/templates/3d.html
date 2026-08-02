@@ -45,6 +45,24 @@
                 overflow-y: auto;
             }
 
+            .controls[hidden] {
+                display: none;
+            }
+
+            .settings-toggle {
+                position: fixed;
+                z-index: 2;
+                top: 1rem;
+                right: 1rem;
+                padding: 0.4rem 0.65rem;
+                color: white;
+                background: rgb(15 18 22 / 85%);
+                border: 1px solid #68717c;
+                border-radius: 0.4rem;
+                font: 14px sans-serif;
+                cursor: pointer;
+            }
+
             .controls label {
                 display: grid;
                 grid-template-columns: 7rem 6rem 2.5rem minmax(10rem, 20vw);
@@ -109,7 +127,8 @@
         </style>
     </head>
     <body>
-        <div class="controls">
+        <button id="settings-toggle" class="settings-toggle" type="button" aria-controls="settings-panel" aria-expanded="true">Settings</button>
+        <div id="settings-panel" class="controls">
             <label>
                 <span>Pan</span>
                 <input id="pan" type="number" value="0" min="-180" max="180" step="1">
@@ -194,6 +213,30 @@
                 <label><input id="trail-enabled" type="checkbox" checked> Track boresight</label>
                 <button id="trail-clear" type="button">Clear</button>
             </div>
+            <label>
+                <span>Back lights</span>
+                <output id="back-light-intensity-output">800.0</output>
+                <span></span>
+                <input id="back-light-intensity" type="range" value="800" min="0" max="5000" step="10">
+            </label>
+            <label>
+                <span>Flood lights</span>
+                <output id="flood-light-intensity-output">800.0</output>
+                <span></span>
+                <input id="flood-light-intensity" type="range" value="800" min="0" max="5000" step="10">
+            </label>
+            <label>
+                <span>Fill light</span>
+                <output id="fill-light-intensity-output">0.0</output>
+                <span></span>
+                <input id="fill-light-intensity" type="range" value="0" min="0" max="10" step="0.1">
+            </label>
+            <label>
+                <span>Directional</span>
+                <output id="directional-light-intensity-output">0.0</output>
+                <span></span>
+                <input id="directional-light-intensity" type="range" value="0" min="0" max="10" step="0.1">
+            </label>
             <label>
                 <span>Walls</span>
                 <output id="wall-opacity-output">5%</output>
