@@ -45,9 +45,9 @@ const wallMaterial = new THREE.MeshStandardMaterial({
     roughness: 1,
     metalness: 0,
     side: THREE.FrontSide,
-    transparent: true,
-    opacity: 0.05,
-    depthWrite: false,
+    transparent: false,
+    opacity: 1,
+    depthWrite: true,
 });
 
 function addWallSection(parent, width, height, x, y) {
@@ -96,6 +96,23 @@ function addEndWallSection(parent, width, height, z, y) {
     );
     section.add(edges);
 }
+
+function addExteriorFramePart(parent, geometry, x, y, z) {
+    const part = new THREE.Mesh(geometry, wallMaterial);
+    part.position.set(x, y, z);
+    part.castShadow = true;
+    part.receiveShadow = true;
+    parent.add(part);
+}
+
+const doorExteriorFrame = new THREE.Group();
+doorExteriorFrame.name = "door-exterior-frame";
+wall.add(doorExteriorFrame);
+
+// A 50 cm-wide, 15 cm-thick frame wholly outside the side-wall plane.
+addExteriorFramePart(doorExteriorFrame, new THREE.BoxGeometry(0.5, 2.5, 0.15), -3.25, 1.25, 0.076);
+addExteriorFramePart(doorExteriorFrame, new THREE.BoxGeometry(0.5, 2.5, 0.15), -1.75, 1.25, 0.076);
+addExteriorFramePart(doorExteriorFrame, new THREE.BoxGeometry(1, 0.5, 0.15), -2.5, 2.25, 0.076);
 
 const backWall = new THREE.Group();
 backWall.name = "back-wall";
@@ -238,6 +255,40 @@ addEndWallSection(frontWall, 2.125, 3.5, -1.4375, 1.75);
 addEndWallSection(frontWall, 2.125, 3.5, 1.4375, 1.75);
 addEndWallSection(frontWall, 0.75, 2.125, 0, 1.0625);
 addEndWallSection(frontWall, 0.75, 0.625, 0, 3.1875);
+
+const sourceExteriorFrame = new THREE.Group();
+sourceExteriorFrame.name = "source-exterior-frame";
+frontWall.add(sourceExteriorFrame);
+
+// A 50 cm-wide, 15 cm-thick frame wholly outside the front-wall plane.
+addExteriorFramePart(
+    sourceExteriorFrame,
+    new THREE.BoxGeometry(0.15, 1.75, 0.5),
+    0.076,
+    2.5,
+    -0.625,
+);
+addExteriorFramePart(
+    sourceExteriorFrame,
+    new THREE.BoxGeometry(0.15, 1.75, 0.5),
+    0.076,
+    2.5,
+    0.625,
+);
+addExteriorFramePart(
+    sourceExteriorFrame,
+    new THREE.BoxGeometry(0.15, 0.5, 0.75),
+    0.076,
+    1.875,
+    0,
+);
+addExteriorFramePart(
+    sourceExteriorFrame,
+    new THREE.BoxGeometry(0.15, 0.5, 0.75),
+    0.076,
+    3.125,
+    0,
+);
 
 const sourceAntenna = new THREE.Mesh(
     new THREE.SphereGeometry(0.125, 32, 16),
@@ -1195,7 +1246,12 @@ function updateBoresightTrail(deltaSeconds) {
 }
 
 wallOpacitySlider.addEventListener("input", () => {
-    wallMaterial.opacity = Number.parseFloat(wallOpacitySlider.value);
+    const opacity = Number.parseFloat(wallOpacitySlider.value);
+    const isOpaque = opacity >= 0.999;
+    wallMaterial.opacity = opacity;
+    wallMaterial.transparent = !isOpaque;
+    wallMaterial.depthWrite = isOpaque;
+    wallMaterial.needsUpdate = true;
     wallOpacityOutput.value = `${Math.round(wallMaterial.opacity * 100)}%`;
     wallOpacityOutput.textContent = wallOpacityOutput.value;
 });
