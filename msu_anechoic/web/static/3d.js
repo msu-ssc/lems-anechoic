@@ -488,24 +488,40 @@ tiltShaft.position.set(tiltDisk.position.x, tiltDisk.position.y, 0);
 tiltShaft.castShadow = true;
 tiltAssembly.add(tiltShaft);
 
-const autMount = new THREE.Mesh(
-    new THREE.BoxGeometry(0.3, 0.2, 0.6),
-    new THREE.MeshStandardMaterial({
-        color: 0x6f42c1,
-        roughness: 0.65,
-    }),
-);
+const autMount = new THREE.Group();
 autMount.name = "aut-mount";
 autMount.position.y = 0.125;
-autMount.castShadow = true;
-autMount.receiveShadow = true;
 panAssembly.add(autMount);
 
-const autMountEdges = new THREE.LineSegments(
-    new THREE.EdgesGeometry(autMount.geometry),
-    new THREE.LineBasicMaterial({ color: 0x24143f }),
-);
-autMount.add(autMountEdges);
+const autMountMaterial = new THREE.MeshStandardMaterial({
+    color: 0x6f42c1,
+    roughness: 0.65,
+});
+
+function addAutMountPart(geometry, x, y, z) {
+    const part = new THREE.Mesh(geometry, autMountMaterial);
+    part.position.set(x, y, z);
+    part.castShadow = true;
+    part.receiveShadow = true;
+    autMount.add(part);
+
+    const edges = new THREE.LineSegments(
+        new THREE.EdgesGeometry(geometry),
+        new THREE.LineBasicMaterial({ color: 0x24143f }),
+    );
+    part.add(edges);
+}
+
+// Two-centimeter top and bottom plates preserve the original 20 cm height.
+addAutMountPart(new THREE.BoxGeometry(0.3, 0.02, 0.6), 0, -0.09, 0);
+addAutMountPart(new THREE.BoxGeometry(0.3, 0.02, 0.6), 0, 0.09, 0);
+
+// Two-centimeter square posts fill the 16 cm gap between the plates.
+for (const x of [-0.14, 0.14]) {
+    for (const z of [-0.29, 0.29]) {
+        addAutMountPart(new THREE.BoxGeometry(0.02, 0.16, 0.02), x, 0, z);
+    }
+}
 
 const antennaUnderTest = new THREE.Group();
 antennaUnderTest.name = "antenna-under-test";
