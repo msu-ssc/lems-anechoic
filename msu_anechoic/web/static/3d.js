@@ -182,6 +182,40 @@ scene.add(heightAssembly);
 const liftTop = makeLiftPlate("scissor-lift-top", 0.65);
 heightAssembly.add(liftTop);
 
+const housingShape = new THREE.Shape();
+housingShape.moveTo(0, 0);
+housingShape.lineTo(0.875, 0);
+housingShape.lineTo(0.625, 0.55);
+housingShape.closePath();
+
+const turntableHousing = new THREE.Mesh(
+    new THREE.ExtrudeGeometry(housingShape, {
+        depth: 0.05,
+        bevelEnabled: false,
+    }),
+    new THREE.MeshStandardMaterial({
+        color: 0x59636e,
+        metalness: 0.3,
+        roughness: 0.65,
+    }),
+);
+turntableHousing.name = "right-turntable-housing";
+turntableHousing.position.set(-3.625, 0.7, 0.325);
+turntableHousing.castShadow = true;
+turntableHousing.receiveShadow = true;
+heightAssembly.add(turntableHousing);
+
+const turntableHousingEdges = new THREE.LineSegments(
+    new THREE.EdgesGeometry(turntableHousing.geometry),
+    new THREE.LineBasicMaterial({ color: 0x171b20 }),
+);
+turntableHousing.add(turntableHousingEdges);
+
+const leftTurntableHousing = turntableHousing.clone(true);
+leftTurntableHousing.name = "left-turntable-housing";
+leftTurntableHousing.position.z = -0.375;
+heightAssembly.add(leftTurntableHousing);
+
 const scissorForks = new THREE.Group();
 scissorForks.name = "scissor-forks";
 scene.add(scissorForks);
@@ -239,7 +273,7 @@ turntable.add(tiltAssembly);
 
 const panAssembly = new THREE.Group();
 panAssembly.name = "pan-assembly";
-panAssembly.position.y = 0.05;
+panAssembly.position.y = 0.1;
 tiltAssembly.add(panAssembly);
 
 const turningSurface = new THREE.Mesh(
@@ -308,6 +342,16 @@ const tiltHousingEdges = new THREE.LineSegments(
     new THREE.LineBasicMaterial({ color: 0x401c08 }),
 );
 tiltHousing.add(tiltHousingEdges);
+
+const tiltShaft = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.025, 0.025, 1, 32),
+    tiltMaterial,
+);
+tiltShaft.name = "tilt-shaft";
+tiltShaft.rotation.x = Math.PI / 2;
+tiltShaft.position.set(tiltDisk.position.x, tiltDisk.position.y, 0);
+tiltShaft.castShadow = true;
+tiltAssembly.add(tiltShaft);
 
 const autMount = new THREE.Mesh(
     new THREE.BoxGeometry(0.3, 0.2, 0.6),
