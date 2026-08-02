@@ -44,6 +44,7 @@ const wallMaterial = new THREE.MeshStandardMaterial({
     color: 0x183149,
     roughness: 1,
     metalness: 0,
+    side: THREE.FrontSide,
     transparent: true,
     opacity: 0.05,
     depthWrite: false,
@@ -51,10 +52,12 @@ const wallMaterial = new THREE.MeshStandardMaterial({
 
 function addWallSection(parent, width, height, x, y) {
     const section = new THREE.Mesh(
-        new THREE.BoxGeometry(width, height, 0.15),
+        new THREE.PlaneGeometry(width, height),
         wallMaterial,
     );
     section.position.set(x, y, 0);
+    // The right wall faces inward toward -Z; the left wall faces +Z.
+    if (parent === wall) section.rotation.y = Math.PI;
     section.castShadow = true;
     section.receiveShadow = true;
     parent.add(section);
@@ -77,10 +80,12 @@ addWallSection(leftWall, 10, 3.5, 0, 1.75);
 
 function addEndWallSection(parent, width, height, z, y) {
     const section = new THREE.Mesh(
-        new THREE.BoxGeometry(0.15, height, width),
+        new THREE.PlaneGeometry(width, height),
         wallMaterial,
     );
     section.position.set(0, y, z);
+    // The back wall faces +X; the front wall faces -X.
+    section.rotation.y = parent === backWall ? Math.PI / 2 : -Math.PI / 2;
     section.castShadow = true;
     section.receiveShadow = true;
     parent.add(section);
@@ -248,18 +253,31 @@ sourceAntenna.castShadow = true;
 scene.add(sourceAntenna);
 
 const floor = new THREE.Mesh(
-    new THREE.BoxGeometry(10, 0.15, 5),
+    new THREE.PlaneGeometry(10, 5),
     new THREE.MeshStandardMaterial({
         color: 0x353b42,
         roughness: 1,
+        side: THREE.FrontSide,
         transparent: true,
         opacity: 0.3,
         depthWrite: false,
     }),
 );
-floor.position.y = -0.075;
+floor.rotation.x = -Math.PI / 2;
+floor.position.y = 0;
 floor.receiveShadow = true;
 scene.add(floor);
+
+const roof = new THREE.Mesh(
+    new THREE.PlaneGeometry(10, 5),
+    wallMaterial,
+);
+roof.name = "chamber-roof";
+roof.rotation.x = Math.PI / 2;
+roof.position.y = 3.5;
+roof.castShadow = true;
+roof.receiveShadow = true;
+scene.add(roof);
 
 const fixedTable = new THREE.Mesh(
     new THREE.BoxGeometry(1.5, 0.5, 0.75),
