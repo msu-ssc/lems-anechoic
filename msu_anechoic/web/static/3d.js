@@ -436,18 +436,6 @@ trailLine.name = "boresight-trail-line";
 trailLine.frustumCulled = false;
 scene.add(trailLine);
 
-const trailPointsObject = new THREE.Points(
-    trailGeometry,
-    new THREE.PointsMaterial({
-        color: 0xff8bea,
-        size: 0.04,
-        sizeAttenuation: true,
-    }),
-);
-trailPointsObject.name = "boresight-trail-points";
-trailPointsObject.frustumCulled = false;
-scene.add(trailPointsObject);
-
 let trailPointCount = 0;
 let trailSampleElapsed = 0;
 
