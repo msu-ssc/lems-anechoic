@@ -90,10 +90,10 @@
                 <input id="pan-slider" type="range" value="0" min="-180" max="180" step="1">
             </label>
             <div class="animation-controls">
-                <span>Animate</span>
-                <button id="pan-animation-toggle" type="button">Start</button>
+                <span>Pan speed</span>
+                <span></span>
                 <output id="pan-animation-speed-output">1.0x</output>
-                <input id="pan-animation-speed" type="range" value="1" min="0.1" max="5" step="0.1">
+                <input id="pan-animation-speed" type="range" value="1" min="0" max="5" step="0.1">
             </div>
             <label>
                 <span>Tilt</span>
@@ -102,10 +102,10 @@
                 <input id="tilt-slider" type="range" value="0" min="-90" max="45" step="1">
             </label>
             <div class="animation-controls">
-                <span>Animate</span>
-                <button id="tilt-animation-toggle" type="button">Start</button>
+                <span>Tilt speed</span>
+                <span></span>
                 <output id="tilt-animation-speed-output">1.0x</output>
-                <input id="tilt-animation-speed" type="range" value="1" min="0.1" max="5" step="0.1">
+                <input id="tilt-animation-speed" type="range" value="1" min="0" max="5" step="0.1">
             </div>
             <label>
                 <span>Height</span>
@@ -114,10 +114,16 @@
                 <input id="height-slider" type="range" value="0" min="0" max="1" step="0.01">
             </label>
             <div class="animation-controls">
-                <span>Animate</span>
-                <button id="height-animation-toggle" type="button">Start</button>
+                <span>Lift speed</span>
+                <span></span>
                 <output id="height-animation-speed-output">1.0x</output>
-                <input id="height-animation-speed" type="range" value="1" min="0.1" max="5" step="0.1">
+                <input id="height-animation-speed" type="range" value="1" min="0" max="5" step="0.1">
+            </div>
+            <div class="animation-controls">
+                <span>Motion</span>
+                <button id="motion-animation-toggle" type="button">Start</button>
+                <span></span>
+                <span>Animate enabled axes</span>
             </div>
             <label>
                 <span>Walls</span>

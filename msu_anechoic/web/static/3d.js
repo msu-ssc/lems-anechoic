@@ -468,6 +468,7 @@ const wallOpacityOutput = document.getElementById("wall-opacity-output");
 const rotationToggle = document.getElementById("rotation-toggle");
 const rotationSpeedSlider = document.getElementById("rotation-speed");
 const rotationSpeedOutput = document.getElementById("rotation-speed-output");
+const motionAnimationToggle = document.getElementById("motion-animation-toggle");
 
 function numericInputValue(input) {
     const value = Number.parseFloat(input.value);
@@ -504,43 +505,33 @@ const parameterAnimations = [
     {
         input: panInput,
         slider: panSlider,
-        toggle: document.getElementById("pan-animation-toggle"),
         speed: document.getElementById("pan-animation-speed"),
         speedOutput: document.getElementById("pan-animation-speed-output"),
         minimum: -180,
         maximum: 180,
         direction: 1,
-        active: false,
     },
     {
         input: tiltInput,
         slider: tiltSlider,
-        toggle: document.getElementById("tilt-animation-toggle"),
         speed: document.getElementById("tilt-animation-speed"),
         speedOutput: document.getElementById("tilt-animation-speed-output"),
         minimum: -90,
         maximum: 45,
         direction: 1,
-        active: false,
     },
     {
         input: heightInput,
         slider: heightSlider,
-        toggle: document.getElementById("height-animation-toggle"),
         speed: document.getElementById("height-animation-speed"),
         speedOutput: document.getElementById("height-animation-speed-output"),
         minimum: 0,
         maximum: 1,
         direction: 1,
-        active: false,
     },
 ];
 
 for (const animation of parameterAnimations) {
-    animation.toggle.addEventListener("click", () => {
-        animation.active = !animation.active;
-        animation.toggle.textContent = animation.active ? "Stop" : "Start";
-    });
     animation.speed.addEventListener("input", () => {
         const speed = Number.parseFloat(animation.speed.value);
         animation.speedOutput.value = `${speed.toFixed(1)}x`;
@@ -548,13 +539,20 @@ for (const animation of parameterAnimations) {
     });
 }
 
+let motionAnimationActive = false;
+motionAnimationToggle.addEventListener("click", () => {
+    motionAnimationActive = !motionAnimationActive;
+    motionAnimationToggle.textContent = motionAnimationActive ? "Stop" : "Start";
+});
+
 function updateParameterAnimations(deltaSeconds) {
+    if (!motionAnimationActive) return;
+
     let changed = false;
     for (const animation of parameterAnimations) {
-        if (!animation.active) continue;
-
         const span = animation.maximum - animation.minimum;
         const speed = Number.parseFloat(animation.speed.value);
+        if (speed === 0) continue;
         let value = numericInputValue(animation.input)
             + animation.direction * span * speed * deltaSeconds / 10;
 
