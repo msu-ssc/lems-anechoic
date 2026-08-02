@@ -729,6 +729,119 @@ const autWorldPosition = new THREE.Vector3();
 const sourceWorldPosition = new THREE.Vector3();
 const autToSourceDirection = new THREE.Vector3();
 const sourceInAutCoordinates = new THREE.Vector3();
+const MAX_SOURCE_ANGLE_TRAIL_POINTS = 2000;
+const SOURCE_ANGLE_MINIMUM_MOVEMENT_DEGREES = 0.05;
+const sourceAngleTrail = [];
+let currentSourceAngle = null;
+
+function anglePlotX(azimuth) {
+    const left = 43;
+    const right = 10;
+    return left + ((azimuth + 180) / 360) * (sourceAnglePlotCanvas.width - left - right);
+}
+
+function anglePlotY(elevation) {
+    const top = 10;
+    const bottom = 34;
+    return top + ((90 - elevation) / 180) * (sourceAnglePlotCanvas.height - top - bottom);
+}
+
+function drawSourceAnglePlot() {
+    const context = sourceAnglePlotContext;
+    const width = sourceAnglePlotCanvas.width;
+    const height = sourceAnglePlotCanvas.height;
+    context.clearRect(0, 0, width, height);
+    context.fillStyle = "#090d10";
+    context.fillRect(0, 0, width, height);
+
+    context.strokeStyle = "#34404a";
+    context.fillStyle = "#aeb8c2";
+    context.lineWidth = 1;
+    context.font = "11px sans-serif";
+    context.textAlign = "center";
+    context.textBaseline = "top";
+    for (const azimuth of [-180, -90, 0, 90, 180]) {
+        const x = anglePlotX(azimuth);
+        context.beginPath();
+        context.moveTo(x, anglePlotY(90));
+        context.lineTo(x, anglePlotY(-90));
+        context.stroke();
+        context.fillText(String(azimuth), x, anglePlotY(-90) + 5);
+    }
+
+    context.textAlign = "right";
+    context.textBaseline = "middle";
+    for (const elevation of [-90, -45, 0, 45, 90]) {
+        const y = anglePlotY(elevation);
+        context.beginPath();
+        context.moveTo(anglePlotX(-180), y);
+        context.lineTo(anglePlotX(180), y);
+        context.stroke();
+        context.fillText(String(elevation), anglePlotX(-180) - 5, y);
+    }
+
+    context.fillStyle = "#d6dde4";
+    context.textAlign = "center";
+    context.textBaseline = "bottom";
+    context.fillText("Azimuth (deg)", (anglePlotX(-180) + anglePlotX(180)) / 2, height - 1);
+    context.save();
+    context.translate(11, (anglePlotY(90) + anglePlotY(-90)) / 2);
+    context.rotate(-Math.PI / 2);
+    context.fillText("Elevation (deg)", 0, 0);
+    context.restore();
+
+    if (sourceAngleTrail.length > 1) {
+        context.strokeStyle = "#2ecc71";
+        context.lineWidth = 2;
+        context.beginPath();
+        for (let index = 0; index < sourceAngleTrail.length; index += 1) {
+            const point = sourceAngleTrail[index];
+            const previous = sourceAngleTrail[index - 1];
+            const x = anglePlotX(point.azimuth);
+            const y = anglePlotY(point.elevation);
+            if (index === 0 || Math.abs(point.azimuth - previous.azimuth) > 180) {
+                context.moveTo(x, y);
+            } else {
+                context.lineTo(x, y);
+            }
+        }
+        context.stroke();
+    }
+
+    if (currentSourceAngle) {
+        context.fillStyle = "#55ff88";
+        context.beginPath();
+        context.arc(
+            anglePlotX(currentSourceAngle.azimuth),
+            anglePlotY(currentSourceAngle.elevation),
+            5,
+            0,
+            Math.PI * 2,
+        );
+        context.fill();
+    }
+}
+
+function recordSourceAngle(azimuth, elevation) {
+    currentSourceAngle = { azimuth, elevation };
+    const last = sourceAngleTrail[sourceAngleTrail.length - 1];
+    if (
+        !last
+        || Math.hypot(azimuth - last.azimuth, elevation - last.elevation)
+            >= SOURCE_ANGLE_MINIMUM_MOVEMENT_DEGREES
+    ) {
+        sourceAngleTrail.push(currentSourceAngle);
+        if (sourceAngleTrail.length > MAX_SOURCE_ANGLE_TRAIL_POINTS) {
+            sourceAngleTrail.shift();
+        }
+    }
+    drawSourceAnglePlot();
+}
+
+function clearSourceAngleTrail() {
+    sourceAngleTrail.length = 0;
+    drawSourceAnglePlot();
+}
 
 function updateSourceCoordinateReadout() {
     sourceInAutCoordinates.copy(sourceWorldPosition);
@@ -747,6 +860,7 @@ function updateSourceCoordinateReadout() {
     sourceAutAzimuthOutput.textContent = `${azimuth.toFixed(2)}°`;
     sourceAutElevationOutput.textContent = `${elevation.toFixed(2)}°`;
     sourceAutRangeOutput.textContent = `${range.toFixed(3)} m`;
+    recordSourceAngle(azimuth, elevation);
 }
 
 function updateAutToSourceVector() {
@@ -778,7 +892,7 @@ trailGeometry.setDrawRange(0, 0);
 
 const trailLine = new THREE.Line(
     trailGeometry,
-    new THREE.LineBasicMaterial({ color: 0xff3bd5 }),
+    new THREE.LineBasicMaterial({ color: 0xe0b323 }),
 );
 trailLine.name = "boresight-trail-line";
 trailLine.frustumCulled = false;
@@ -908,6 +1022,8 @@ const sourceAutZOutput = document.getElementById("source-aut-z");
 const sourceAutAzimuthOutput = document.getElementById("source-aut-azimuth");
 const sourceAutElevationOutput = document.getElementById("source-aut-elevation");
 const sourceAutRangeOutput = document.getElementById("source-aut-range");
+const sourceAnglePlotCanvas = document.getElementById("source-angle-plot");
+const sourceAnglePlotContext = sourceAnglePlotCanvas.getContext("2d");
 
 settingsToggle.addEventListener("click", () => {
     settingsPanel.hidden = !settingsPanel.hidden;
@@ -1048,7 +1164,10 @@ trailEnabledInput.addEventListener("change", () => {
     }
 });
 
-trailClearButton.addEventListener("click", clearBoresightTrail);
+trailClearButton.addEventListener("click", () => {
+    clearBoresightTrail();
+    clearSourceAngleTrail();
+});
 
 backLightIntensitySlider.addEventListener("input", () => {
     const intensity = Number.parseFloat(backLightIntensitySlider.value);

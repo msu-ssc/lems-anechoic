@@ -21,7 +21,7 @@
                 overflow: hidden;
             }
 
-            canvas {
+            #chamber-canvas {
                 display: block;
                 width: 100%;
                 height: 100%;
@@ -68,7 +68,7 @@
                 z-index: 1;
                 top: 4rem;
                 right: 1rem;
-                min-width: 16rem;
+                width: 20rem;
                 padding: 0.85rem 1rem;
                 color: white;
                 background: rgb(15 18 22 / 85%);
@@ -98,6 +98,15 @@
                 grid-column: 1 / -1;
                 margin: 0.3rem 0;
                 border-top: 1px solid #68717c;
+            }
+
+            .source-angle-plot {
+                display: block;
+                width: 100%;
+                height: auto;
+                margin-top: 0.85rem;
+                background: #090d10;
+                border: 1px solid #68717c;
             }
 
             .controls label {
@@ -176,6 +185,7 @@
                 <span>Elevation</span><output id="source-aut-elevation">0.00°</output>
                 <span>Range</span><output id="source-aut-range">0.000 m</output>
             </div>
+            <canvas id="source-angle-plot" class="source-angle-plot" width="360" height="220" aria-label="Source azimuth and elevation in the AUT coordinate frame"></canvas>
         </aside>
         <div id="settings-panel" class="controls">
             <label>
@@ -295,7 +305,7 @@
                 <input id="trail-sample-interval" type="range" value="100" min="20" max="2000" step="20">
             </label>
             <div class="trail-actions">
-                <label><input id="trail-enabled" type="checkbox" checked> Track boresight</label>
+                <label><input id="trail-enabled" type="checkbox" checked> Track AUT boresight</label>
                 <button id="trail-clear" type="button">Clear</button>
             </div>
             <label>
