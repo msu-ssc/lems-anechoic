@@ -586,6 +586,11 @@ const autBoresight = new THREE.ArrowHelper(
 autBoresight.name = "aut-boresight";
 autAntennaPivot.add(autBoresight);
 
+const autCoordinateFrame = new THREE.Object3D();
+autCoordinateFrame.name = "aut-coordinate-frame";
+autCoordinateFrame.position.copy(autBoresightOrigin);
+autAntennaPivot.add(autCoordinateFrame);
+
 function updateAutMounting(height, depth, horizontalPosition, pitch, roll, yaw) {
     const tubeThickness = 0.025;
     const antennaThickness = 0.02;
@@ -604,6 +609,7 @@ function updateAutMounting(height, depth, horizontalPosition, pitch, roll, yaw) 
 
     autBoresightOrigin.set(antennaThickness, 0, 0);
     autBoresight.position.copy(autBoresightOrigin);
+    autCoordinateFrame.position.copy(autBoresightOrigin);
 
     // +X is forward, +Y is up, and +Z is right. Rotate only the patch
     // antenna about its connection to the fixed periscope arm.
@@ -651,13 +657,32 @@ scene.add(autToSourceVector);
 const autWorldPosition = new THREE.Vector3();
 const sourceWorldPosition = new THREE.Vector3();
 const autToSourceDirection = new THREE.Vector3();
+const sourceInAutCoordinates = new THREE.Vector3();
+
+function updateSourceCoordinateReadout() {
+    sourceInAutCoordinates.copy(sourceWorldPosition);
+    autCoordinateFrame.worldToLocal(sourceInAutCoordinates);
+
+    const { x, y, z } = sourceInAutCoordinates;
+    const range = sourceInAutCoordinates.length();
+    const azimuth = THREE.MathUtils.radToDeg(Math.atan2(z, x));
+    const elevation = THREE.MathUtils.radToDeg(
+        Math.atan2(y, Math.hypot(x, z)),
+    );
+
+    sourceAutXOutput.textContent = `${x.toFixed(3)} m`;
+    sourceAutYOutput.textContent = `${y.toFixed(3)} m`;
+    sourceAutZOutput.textContent = `${z.toFixed(3)} m`;
+    sourceAutAzimuthOutput.textContent = `${azimuth.toFixed(2)}°`;
+    sourceAutElevationOutput.textContent = `${elevation.toFixed(2)}°`;
+    sourceAutRangeOutput.textContent = `${range.toFixed(3)} m`;
+}
 
 function updateAutToSourceVector() {
-    autAntennaPivot.updateWorldMatrix(true, false);
+    autCoordinateFrame.updateWorldMatrix(true, false);
     sourceAntenna.updateWorldMatrix(true, false);
 
-    autWorldPosition.copy(autBoresightOrigin);
-    autAntennaPivot.localToWorld(autWorldPosition);
+    autCoordinateFrame.getWorldPosition(autWorldPosition);
     sourceAntenna.getWorldPosition(sourceWorldPosition);
 
     autToSourceDirection.subVectors(sourceWorldPosition, autWorldPosition);
@@ -667,6 +692,7 @@ function updateAutToSourceVector() {
     autToSourceVector.position.copy(autWorldPosition);
     autToSourceVector.setDirection(autToSourceDirection.normalize());
     autToSourceVector.setLength(length, 0.15, 0.08);
+    updateSourceCoordinateReadout();
 }
 
 const MAX_TRAIL_POINTS = 2000;
@@ -805,6 +831,12 @@ const floodLightIntensitySlider = document.getElementById("flood-light-intensity
 const floodLightIntensityOutput = document.getElementById("flood-light-intensity-output");
 const settingsToggle = document.getElementById("settings-toggle");
 const settingsPanel = document.getElementById("settings-panel");
+const sourceAutXOutput = document.getElementById("source-aut-x");
+const sourceAutYOutput = document.getElementById("source-aut-y");
+const sourceAutZOutput = document.getElementById("source-aut-z");
+const sourceAutAzimuthOutput = document.getElementById("source-aut-azimuth");
+const sourceAutElevationOutput = document.getElementById("source-aut-elevation");
+const sourceAutRangeOutput = document.getElementById("source-aut-range");
 
 settingsToggle.addEventListener("click", () => {
     settingsPanel.hidden = !settingsPanel.hidden;

@@ -63,6 +63,43 @@
                 cursor: pointer;
             }
 
+            .coordinate-panel {
+                position: fixed;
+                z-index: 1;
+                top: 4rem;
+                right: 1rem;
+                min-width: 16rem;
+                padding: 0.85rem 1rem;
+                color: white;
+                background: rgb(15 18 22 / 85%);
+                border: 1px solid #68717c;
+                border-radius: 0.5rem;
+                font: 15px sans-serif;
+            }
+
+            .coordinate-panel h2 {
+                margin: 0 0 0.65rem;
+                color: #e0b323;
+                font-size: 1rem;
+            }
+
+            .coordinate-values {
+                display: grid;
+                grid-template-columns: auto 1fr;
+                gap: 0.35rem 1rem;
+            }
+
+            .coordinate-values output {
+                text-align: right;
+                font-variant-numeric: tabular-nums;
+            }
+
+            .coordinate-divider {
+                grid-column: 1 / -1;
+                margin: 0.3rem 0;
+                border-top: 1px solid #68717c;
+            }
+
             .controls label {
                 display: grid;
                 grid-template-columns: 7rem 6rem 2.5rem minmax(10rem, 20vw);
@@ -128,6 +165,18 @@
     </head>
     <body>
         <button id="settings-toggle" class="settings-toggle" type="button" aria-controls="settings-panel" aria-expanded="true">Settings</button>
+        <aside class="coordinate-panel" aria-label="Source position in AUT coordinates">
+            <h2>Source in AUT frame</h2>
+            <div class="coordinate-values">
+                <span>X (forward)</span><output id="source-aut-x">0.000 m</output>
+                <span>Y (up)</span><output id="source-aut-y">0.000 m</output>
+                <span>Z (right)</span><output id="source-aut-z">0.000 m</output>
+                <div class="coordinate-divider"></div>
+                <span>Azimuth</span><output id="source-aut-azimuth">0.00°</output>
+                <span>Elevation</span><output id="source-aut-elevation">0.00°</output>
+                <span>Range</span><output id="source-aut-range">0.000 m</output>
+            </div>
+        </aside>
         <div id="settings-panel" class="controls">
             <label>
                 <span>Pan</span>
