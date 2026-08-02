@@ -579,7 +579,7 @@ const autBoresight = new THREE.ArrowHelper(
     new THREE.Vector3(1, 0, 0),
     autBoresightOrigin,
     2.5,
-    0x00e5ff,
+    0xe0b323,
     0.15,
     0.08,
 );
@@ -619,7 +619,7 @@ const tiltAssemblyBoresight = new THREE.ArrowHelper(
     new THREE.Vector3(1, 0, 0),
     new THREE.Vector3(0, 0, 0),
     1.25,
-    0xff5a36,
+    0xd46a1f,
     0.12,
     0.06,
 );
@@ -630,7 +630,7 @@ const panAssemblyBoresight = new THREE.ArrowHelper(
     new THREE.Vector3(1, 0, 0),
     new THREE.Vector3(0, 0, 0),
     1.25,
-    0xb56cff,
+    0x6f42c1,
     0.12,
     0.06,
 );
