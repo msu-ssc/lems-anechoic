@@ -41,18 +41,20 @@
                 border: 1px solid #68717c;
                 border-radius: 0.5rem;
                 font: 16px sans-serif;
+                max-height: calc(100vh - 4rem);
+                overflow-y: auto;
             }
 
             .controls label {
                 display: grid;
-                grid-template-columns: 4rem 6rem 2.5rem minmax(10rem, 20vw);
+                grid-template-columns: 7rem 6rem 2.5rem minmax(10rem, 20vw);
                 align-items: center;
                 gap: 0.5rem;
             }
 
             .animation-controls {
                 display: grid;
-                grid-template-columns: 4rem 6rem 2.5rem minmax(10rem, 20vw);
+                grid-template-columns: 7rem 6rem 2.5rem minmax(10rem, 20vw);
                 align-items: center;
                 gap: 0.5rem;
                 margin-top: -0.35rem;
@@ -78,6 +80,22 @@
                 border-radius: 0.3rem;
                 font: inherit;
                 cursor: pointer;
+            }
+
+            .trail-actions {
+                display: flex;
+                align-items: center;
+                gap: 1rem;
+            }
+
+            .controls .trail-actions label {
+                display: flex;
+                align-items: center;
+                gap: 0.4rem;
+            }
+
+            .controls .trail-actions input {
+                width: auto;
             }
         </style>
     </head>
@@ -124,6 +142,22 @@
                 <button id="motion-animation-toggle" type="button">Start</button>
                 <span></span>
                 <span>Animate enabled axes</span>
+            </div>
+            <label>
+                <span>Screen radius</span>
+                <output id="screen-radius-output">1.50 m</output>
+                <span></span>
+                <input id="screen-radius" type="range" value="1.5" min="0.1" max="5" step="0.05">
+            </label>
+            <label>
+                <span>Sample interval</span>
+                <output id="trail-sample-interval-output">200 ms</output>
+                <span></span>
+                <input id="trail-sample-interval" type="range" value="200" min="20" max="2000" step="20">
+            </label>
+            <div class="trail-actions">
+                <label><input id="trail-enabled" type="checkbox"> Track boresight</label>
+                <button id="trail-clear" type="button">Clear</button>
             </div>
             <label>
                 <span>Walls</span>

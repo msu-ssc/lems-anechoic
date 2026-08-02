@@ -418,6 +418,75 @@ const autBoresight = new THREE.ArrowHelper(
 autBoresight.name = "aut-boresight";
 antennaUnderTest.add(autBoresight);
 
+const MAX_TRAIL_POINTS = 2000;
+const TRAIL_MINIMUM_MOVEMENT_METERS = 0.001;
+const trailPositions = new Float32Array(MAX_TRAIL_POINTS * 3);
+const trailPositionAttribute = new THREE.BufferAttribute(trailPositions, 3);
+trailPositionAttribute.setUsage(THREE.DynamicDrawUsage);
+
+const trailGeometry = new THREE.BufferGeometry();
+trailGeometry.setAttribute("position", trailPositionAttribute);
+trailGeometry.setDrawRange(0, 0);
+
+const trailLine = new THREE.Line(
+    trailGeometry,
+    new THREE.LineBasicMaterial({ color: 0xff3bd5 }),
+);
+trailLine.name = "boresight-trail-line";
+trailLine.frustumCulled = false;
+scene.add(trailLine);
+
+const trailPointsObject = new THREE.Points(
+    trailGeometry,
+    new THREE.PointsMaterial({
+        color: 0xff8bea,
+        size: 0.04,
+        sizeAttenuation: true,
+    }),
+);
+trailPointsObject.name = "boresight-trail-points";
+trailPointsObject.frustumCulled = false;
+scene.add(trailPointsObject);
+
+let trailPointCount = 0;
+let trailSampleElapsed = 0;
+
+function clearBoresightTrail() {
+    trailPointCount = 0;
+    trailGeometry.setDrawRange(0, 0);
+    trailPositionAttribute.needsUpdate = true;
+}
+
+function sampleBoresightTrailPoint(radius) {
+    antennaUnderTest.updateWorldMatrix(true, false);
+    const point = antennaUnderTest.localToWorld(
+        new THREE.Vector3(0.2 + radius, 0.4, 0),
+    );
+
+    if (trailPointCount > 0) {
+        const lastOffset = (trailPointCount - 1) * 3;
+        const distanceFromLast = point.distanceTo(new THREE.Vector3(
+            trailPositions[lastOffset],
+            trailPositions[lastOffset + 1],
+            trailPositions[lastOffset + 2],
+        ));
+        if (distanceFromLast < TRAIL_MINIMUM_MOVEMENT_METERS) return;
+    }
+
+    if (trailPointCount === MAX_TRAIL_POINTS) {
+        trailPositions.copyWithin(0, 3);
+        trailPointCount -= 1;
+    }
+
+    const offset = trailPointCount * 3;
+    trailPositions[offset] = point.x;
+    trailPositions[offset + 1] = point.y;
+    trailPositions[offset + 2] = point.z;
+    trailPointCount += 1;
+    trailGeometry.setDrawRange(0, trailPointCount);
+    trailPositionAttribute.needsUpdate = true;
+}
+
 const grid = new THREE.GridHelper(14, 14, 0x7f8c99, 0x4c5661);
 grid.position.y = 0.005;
 scene.add(grid);
@@ -469,6 +538,12 @@ const rotationToggle = document.getElementById("rotation-toggle");
 const rotationSpeedSlider = document.getElementById("rotation-speed");
 const rotationSpeedOutput = document.getElementById("rotation-speed-output");
 const motionAnimationToggle = document.getElementById("motion-animation-toggle");
+const screenRadiusSlider = document.getElementById("screen-radius");
+const screenRadiusOutput = document.getElementById("screen-radius-output");
+const trailEnabledInput = document.getElementById("trail-enabled");
+const trailClearButton = document.getElementById("trail-clear");
+const trailSampleIntervalSlider = document.getElementById("trail-sample-interval");
+const trailSampleIntervalOutput = document.getElementById("trail-sample-interval-output");
 
 function numericInputValue(input) {
     const value = Number.parseFloat(input.value);
@@ -545,6 +620,28 @@ motionAnimationToggle.addEventListener("click", () => {
     motionAnimationToggle.textContent = motionAnimationActive ? "Stop" : "Start";
 });
 
+screenRadiusSlider.addEventListener("input", () => {
+    const radius = Number.parseFloat(screenRadiusSlider.value);
+    screenRadiusOutput.value = `${radius.toFixed(2)} m`;
+    screenRadiusOutput.textContent = screenRadiusOutput.value;
+});
+
+trailSampleIntervalSlider.addEventListener("input", () => {
+    const milliseconds = Number.parseInt(trailSampleIntervalSlider.value, 10);
+    trailSampleIntervalOutput.value = `${milliseconds} ms`;
+    trailSampleIntervalOutput.textContent = trailSampleIntervalOutput.value;
+    trailSampleElapsed = 0;
+});
+
+trailEnabledInput.addEventListener("change", () => {
+    trailSampleElapsed = 0;
+    if (trailEnabledInput.checked) {
+        sampleBoresightTrailPoint(Number.parseFloat(screenRadiusSlider.value));
+    }
+});
+
+trailClearButton.addEventListener("click", clearBoresightTrail);
+
 function updateParameterAnimations(deltaSeconds) {
     if (!motionAnimationActive) return;
 
@@ -570,6 +667,19 @@ function updateParameterAnimations(deltaSeconds) {
         changed = true;
     }
     if (changed) updateTurntablePose();
+}
+
+function updateBoresightTrail(deltaSeconds) {
+    if (!trailEnabledInput.checked) {
+        trailSampleElapsed = 0;
+        return;
+    }
+
+    trailSampleElapsed += deltaSeconds;
+    const intervalSeconds = Number.parseFloat(trailSampleIntervalSlider.value) / 1000;
+    if (trailSampleElapsed < intervalSeconds) return;
+    trailSampleElapsed %= intervalSeconds;
+    sampleBoresightTrailPoint(Number.parseFloat(screenRadiusSlider.value));
 }
 
 wallOpacitySlider.addEventListener("input", () => {
@@ -604,6 +714,7 @@ function render() {
     const deltaSeconds = clock.getDelta();
     resize();
     updateParameterAnimations(deltaSeconds);
+    updateBoresightTrail(deltaSeconds);
     controls.update(deltaSeconds);
     renderer.render(scene, camera);
     requestAnimationFrame(render);
