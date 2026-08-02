@@ -97,22 +97,29 @@ function addEndWallSection(parent, width, height, z, y) {
     section.add(edges);
 }
 
-function addExteriorFramePart(parent, geometry, x, y, z) {
-    const part = new THREE.Mesh(geometry, wallMaterial);
-    part.position.set(x, y, z);
-    part.castShadow = true;
-    part.receiveShadow = true;
-    parent.add(part);
-}
+const doorFrameShape = new THREE.Shape();
+doorFrameShape.moveTo(-3.5, 0);
+doorFrameShape.lineTo(-3, 0);
+doorFrameShape.lineTo(-3, 2);
+doorFrameShape.lineTo(-2, 2);
+doorFrameShape.lineTo(-2, 0);
+doorFrameShape.lineTo(-1.5, 0);
+doorFrameShape.lineTo(-1.5, 2.5);
+doorFrameShape.lineTo(-3.5, 2.5);
+doorFrameShape.closePath();
 
-const doorExteriorFrame = new THREE.Group();
+const doorExteriorFrame = new THREE.Mesh(
+    new THREE.ExtrudeGeometry(doorFrameShape, {
+        depth: 0.15,
+        bevelEnabled: false,
+    }),
+    wallMaterial,
+);
 doorExteriorFrame.name = "door-exterior-frame";
+doorExteriorFrame.position.z = 0.001;
+doorExteriorFrame.castShadow = true;
+doorExteriorFrame.receiveShadow = true;
 wall.add(doorExteriorFrame);
-
-// A 50 cm-wide, 15 cm-thick frame wholly outside the side-wall plane.
-addExteriorFramePart(doorExteriorFrame, new THREE.BoxGeometry(0.5, 2.5, 0.15), -3.25, 1.25, 0.076);
-addExteriorFramePart(doorExteriorFrame, new THREE.BoxGeometry(0.5, 2.5, 0.15), -1.75, 1.25, 0.076);
-addExteriorFramePart(doorExteriorFrame, new THREE.BoxGeometry(1, 0.5, 0.15), -2.5, 2.25, 0.076);
 
 const backWall = new THREE.Group();
 backWall.name = "back-wall";
@@ -256,39 +263,34 @@ addEndWallSection(frontWall, 2.125, 3.5, 1.4375, 1.75);
 addEndWallSection(frontWall, 0.75, 2.125, 0, 1.0625);
 addEndWallSection(frontWall, 0.75, 0.625, 0, 3.1875);
 
-const sourceExteriorFrame = new THREE.Group();
-sourceExteriorFrame.name = "source-exterior-frame";
-frontWall.add(sourceExteriorFrame);
+const sourceFrameShape = new THREE.Shape();
+sourceFrameShape.moveTo(-0.875, 1.625);
+sourceFrameShape.lineTo(0.875, 1.625);
+sourceFrameShape.lineTo(0.875, 3.375);
+sourceFrameShape.lineTo(-0.875, 3.375);
+sourceFrameShape.closePath();
 
-// A 50 cm-wide, 15 cm-thick frame wholly outside the front-wall plane.
-addExteriorFramePart(
-    sourceExteriorFrame,
-    new THREE.BoxGeometry(0.15, 1.75, 0.5),
-    0.076,
-    2.5,
-    -0.625,
+const sourceOpening = new THREE.Path();
+sourceOpening.moveTo(-0.375, 2.125);
+sourceOpening.lineTo(-0.375, 2.875);
+sourceOpening.lineTo(0.375, 2.875);
+sourceOpening.lineTo(0.375, 2.125);
+sourceOpening.closePath();
+sourceFrameShape.holes.push(sourceOpening);
+
+const sourceExteriorFrame = new THREE.Mesh(
+    new THREE.ExtrudeGeometry(sourceFrameShape, {
+        depth: 0.15,
+        bevelEnabled: false,
+    }),
+    wallMaterial,
 );
-addExteriorFramePart(
-    sourceExteriorFrame,
-    new THREE.BoxGeometry(0.15, 1.75, 0.5),
-    0.076,
-    2.5,
-    0.625,
-);
-addExteriorFramePart(
-    sourceExteriorFrame,
-    new THREE.BoxGeometry(0.15, 0.5, 0.75),
-    0.076,
-    1.875,
-    0,
-);
-addExteriorFramePart(
-    sourceExteriorFrame,
-    new THREE.BoxGeometry(0.15, 0.5, 0.75),
-    0.076,
-    3.125,
-    0,
-);
+sourceExteriorFrame.name = "source-exterior-frame";
+sourceExteriorFrame.position.x = 0.001;
+sourceExteriorFrame.rotation.y = Math.PI / 2;
+sourceExteriorFrame.castShadow = true;
+sourceExteriorFrame.receiveShadow = true;
+frontWall.add(sourceExteriorFrame);
 
 const sourceAntenna = new THREE.Mesh(
     new THREE.SphereGeometry(0.125, 32, 16),
