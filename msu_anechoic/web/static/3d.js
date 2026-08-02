@@ -525,6 +525,7 @@ for (const x of [-0.14, 0.14]) {
 
 const antennaUnderTest = new THREE.Group();
 antennaUnderTest.name = "antenna-under-test";
+antennaUnderTest.position.y = 0.225;
 panAssembly.add(antennaUnderTest);
 
 const autMaterial = new THREE.MeshStandardMaterial({
@@ -533,36 +534,140 @@ const autMaterial = new THREE.MeshStandardMaterial({
     roughness: 0.55,
 });
 
-function addAutSection(geometry, x, y, z) {
+function addAutSection(geometry, x, y, z, parent = antennaUnderTest) {
     const section = new THREE.Mesh(geometry, autMaterial);
     section.position.set(x, y, z);
     section.castShadow = true;
     section.receiveShadow = true;
-    antennaUnderTest.add(section);
+    parent.add(section);
 
     const edges = new THREE.LineSegments(
         new THREE.EdgesGeometry(section.geometry),
         new THREE.LineBasicMaterial({ color: 0x4d3900 }),
     );
     section.add(edges);
+    return section;
 }
 
-// A 5 cm square stem rising 20 cm from the mounting box.
-addAutSection(new THREE.BoxGeometry(0.05, 0.2, 0.05), 0, 0.325, 0);
+// A 2.5 cm square stem rising 20 cm from the mounting box.
+const autStem = addAutSection(new THREE.BoxGeometry(1, 1, 1), 0, 0.1, 0);
+autStem.scale.set(0.025, 0.2, 0.025);
 
 // A 20 cm arm extending forward (+X) from the top of the stem.
-addAutSection(new THREE.BoxGeometry(0.2, 0.05, 0.05), 0.1, 0.4, 0);
+const autArm = addAutSection(new THREE.BoxGeometry(1, 1, 1), 0.1, 0.175, 0);
+autArm.scale.set(0.2, 0.025, 0.025);
+
+// Only the antenna plate rotates. Its pivot is the forward end of the fixed arm.
+const autAntennaPivot = new THREE.Group();
+autAntennaPivot.name = "aut-antenna-pivot";
+autAntennaPivot.position.set(0.2, 0.175, 0);
+antennaUnderTest.add(autAntennaPivot);
+
+// A 10 cm square, 2 cm thick patch antenna.
+const autAntenna = addAutSection(
+    new THREE.BoxGeometry(1, 1, 1),
+    0.01,
+    0,
+    0,
+    autAntennaPivot,
+);
+autAntenna.scale.set(0.02, 0.1, 0.1);
+
+const autBoresightOrigin = new THREE.Vector3(0.02, 0, 0);
 
 const autBoresight = new THREE.ArrowHelper(
     new THREE.Vector3(1, 0, 0),
-    new THREE.Vector3(0.2, 0.4, 0),
+    autBoresightOrigin,
     2.5,
     0x00e5ff,
     0.15,
     0.08,
 );
 autBoresight.name = "aut-boresight";
-antennaUnderTest.add(autBoresight);
+autAntennaPivot.add(autBoresight);
+
+function updateAutMounting(height, depth, horizontalPosition, pitch, roll, yaw) {
+    const tubeThickness = 0.025;
+    const antennaThickness = 0.02;
+
+    antennaUnderTest.position.z = horizontalPosition;
+
+    autStem.scale.set(tubeThickness, height, tubeThickness);
+    autStem.position.set(0, height / 2, 0);
+
+    autArm.scale.set(depth, tubeThickness, tubeThickness);
+    autArm.position.set(depth / 2, height - tubeThickness / 2, 0);
+
+    autAntennaPivot.position.set(depth, height - tubeThickness / 2, 0);
+    autAntenna.scale.set(antennaThickness, 0.1, 0.1);
+    autAntenna.position.set(antennaThickness / 2, 0, 0);
+
+    autBoresightOrigin.set(antennaThickness, 0, 0);
+    autBoresight.position.copy(autBoresightOrigin);
+
+    // +X is forward, +Y is up, and +Z is right. Rotate only the patch
+    // antenna about its connection to the fixed periscope arm.
+    autAntennaPivot.rotation.set(
+        THREE.MathUtils.degToRad(roll),
+        -THREE.MathUtils.degToRad(yaw),
+        THREE.MathUtils.degToRad(pitch),
+        "YZX",
+    );
+}
+
+const tiltAssemblyBoresight = new THREE.ArrowHelper(
+    new THREE.Vector3(1, 0, 0),
+    new THREE.Vector3(0, 0, 0),
+    1.25,
+    0xff5a36,
+    0.12,
+    0.06,
+);
+tiltAssemblyBoresight.name = "tilt-assembly-boresight";
+tiltAssembly.add(tiltAssemblyBoresight);
+
+const panAssemblyBoresight = new THREE.ArrowHelper(
+    new THREE.Vector3(1, 0, 0),
+    new THREE.Vector3(0, 0, 0),
+    1.25,
+    0xb56cff,
+    0.12,
+    0.06,
+);
+panAssemblyBoresight.name = "pan-assembly-boresight";
+panAssembly.add(panAssemblyBoresight);
+
+const autToSourceVector = new THREE.ArrowHelper(
+    new THREE.Vector3(1, 0, 0),
+    new THREE.Vector3(0, 0, 0),
+    1,
+    0x4cff70,
+    0.15,
+    0.08,
+);
+autToSourceVector.name = "aut-to-source-vector";
+scene.add(autToSourceVector);
+
+const autWorldPosition = new THREE.Vector3();
+const sourceWorldPosition = new THREE.Vector3();
+const autToSourceDirection = new THREE.Vector3();
+
+function updateAutToSourceVector() {
+    autAntennaPivot.updateWorldMatrix(true, false);
+    sourceAntenna.updateWorldMatrix(true, false);
+
+    autWorldPosition.copy(autBoresightOrigin);
+    autAntennaPivot.localToWorld(autWorldPosition);
+    sourceAntenna.getWorldPosition(sourceWorldPosition);
+
+    autToSourceDirection.subVectors(sourceWorldPosition, autWorldPosition);
+    const length = autToSourceDirection.length();
+    if (length <= 1e-9) return;
+
+    autToSourceVector.position.copy(autWorldPosition);
+    autToSourceVector.setDirection(autToSourceDirection.normalize());
+    autToSourceVector.setLength(length, 0.15, 0.08);
+}
 
 const MAX_TRAIL_POINTS = 2000;
 const TRAIL_MINIMUM_MOVEMENT_METERS = 0.001;
@@ -592,9 +697,9 @@ function clearBoresightTrail() {
 }
 
 function sampleBoresightTrailPoint(radius) {
-    antennaUnderTest.updateWorldMatrix(true, false);
-    const point = antennaUnderTest.localToWorld(
-        new THREE.Vector3(0.2 + radius, 0.4, 0),
+    autAntennaPivot.updateWorldMatrix(true, false);
+    const point = autAntennaPivot.localToWorld(
+        autBoresightOrigin.clone().add(new THREE.Vector3(radius, 0, 0)),
     );
 
     if (trailPointCount > 0) {
@@ -663,9 +768,21 @@ makeAxisLabel("Z / RIGHT", "#5599ff", new THREE.Vector3(0, 0, 1.75));
 const panInput = document.getElementById("pan");
 const tiltInput = document.getElementById("tilt");
 const heightInput = document.getElementById("height");
+const autHeightInput = document.getElementById("aut-height");
+const autDepthInput = document.getElementById("aut-depth");
+const autHorizontalPositionInput = document.getElementById("aut-horizontal-position");
+const autPitchInput = document.getElementById("aut-pitch");
+const autRollInput = document.getElementById("aut-roll");
+const autYawInput = document.getElementById("aut-yaw");
 const panSlider = document.getElementById("pan-slider");
 const tiltSlider = document.getElementById("tilt-slider");
 const heightSlider = document.getElementById("height-slider");
+const autHeightSlider = document.getElementById("aut-height-slider");
+const autDepthSlider = document.getElementById("aut-depth-slider");
+const autHorizontalPositionSlider = document.getElementById("aut-horizontal-position-slider");
+const autPitchSlider = document.getElementById("aut-pitch-slider");
+const autRollSlider = document.getElementById("aut-roll-slider");
+const autYawSlider = document.getElementById("aut-yaw-slider");
 const wallOpacitySlider = document.getElementById("wall-opacity");
 const wallOpacityOutput = document.getElementById("wall-opacity-output");
 const rotationToggle = document.getElementById("rotation-toggle");
@@ -703,11 +820,30 @@ function updateTurntablePose() {
     const pan = THREE.MathUtils.clamp(numericInputValue(panInput), -180, 180);
     const tilt = THREE.MathUtils.clamp(numericInputValue(tiltInput), -90, 45);
     const height = THREE.MathUtils.clamp(numericInputValue(heightInput), 0, 1);
+    const autHeight = THREE.MathUtils.clamp(numericInputValue(autHeightInput), 0.05, 1);
+    const autDepth = THREE.MathUtils.clamp(numericInputValue(autDepthInput), 0.05, 1);
+    const autHorizontalPosition = THREE.MathUtils.clamp(
+        numericInputValue(autHorizontalPositionInput),
+        -0.3,
+        0.3,
+    );
+    const autPitch = THREE.MathUtils.clamp(numericInputValue(autPitchInput), -180, 180);
+    const autRoll = THREE.MathUtils.clamp(numericInputValue(autRollInput), -180, 180);
+    const autYaw = THREE.MathUtils.clamp(numericInputValue(autYawInput), -180, 180);
 
     panAssembly.rotation.y = -THREE.MathUtils.degToRad(pan);
     tiltAssembly.rotation.z = THREE.MathUtils.degToRad(tilt);
     heightAssembly.position.y = height;
+    updateAutMounting(
+        autHeight,
+        autDepth,
+        autHorizontalPosition,
+        autPitch,
+        autRoll,
+        autYaw,
+    );
     updateScissorForks(height);
+    updateAutToSourceVector();
 }
 
 function bindSlider(numberInput, slider) {
@@ -724,6 +860,12 @@ function bindSlider(numberInput, slider) {
 bindSlider(panInput, panSlider);
 bindSlider(tiltInput, tiltSlider);
 bindSlider(heightInput, heightSlider);
+bindSlider(autHeightInput, autHeightSlider);
+bindSlider(autDepthInput, autDepthSlider);
+bindSlider(autHorizontalPositionInput, autHorizontalPositionSlider);
+bindSlider(autPitchInput, autPitchSlider);
+bindSlider(autRollInput, autRollSlider);
+bindSlider(autYawInput, autYawSlider);
 
 const parameterAnimations = [
     {
