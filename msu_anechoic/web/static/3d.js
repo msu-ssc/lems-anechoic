@@ -182,6 +182,52 @@ scene.add(heightAssembly);
 const liftTop = makeLiftPlate("scissor-lift-top", 0.65);
 heightAssembly.add(liftTop);
 
+const scissorForks = new THREE.Group();
+scissorForks.name = "scissor-forks";
+scene.add(scissorForks);
+
+const forkMaterial = liftMaterial;
+
+const forkPairs = [];
+for (const sideZ of [-0.3, 0.3]) {
+    const risingForward = new THREE.Mesh(
+        new THREE.BoxGeometry(1, 0.05, 0.05),
+        forkMaterial,
+    );
+    const risingBackward = new THREE.Mesh(
+        new THREE.BoxGeometry(1, 0.05, 0.05),
+        forkMaterial,
+    );
+    risingForward.position.z = sideZ - 0.015;
+    risingBackward.position.z = sideZ + 0.015;
+    risingForward.castShadow = true;
+    risingBackward.castShadow = true;
+    scissorForks.add(risingForward, risingBackward);
+    forkPairs.push({ risingForward, risingBackward });
+}
+
+function updateScissorForks(height) {
+    const nominalForkLength = 1.2;
+    const horizontalSpan = Math.sqrt(Math.max(
+        0.05 ** 2,
+        nominalForkLength ** 2 - height ** 2,
+    ));
+    const actualForkLength = Math.hypot(horizontalSpan, height);
+    const angle = Math.atan2(height, horizontalSpan);
+
+    for (const { risingForward, risingBackward } of forkPairs) {
+        risingForward.position.x = -3.5;
+        risingForward.position.y = 0.6 + height / 2;
+        risingForward.scale.x = actualForkLength;
+        risingForward.rotation.z = angle;
+
+        risingBackward.position.x = -3.5;
+        risingBackward.position.y = 0.6 + height / 2;
+        risingBackward.scale.x = actualForkLength;
+        risingBackward.rotation.z = -angle;
+    }
+}
+
 const turntable = new THREE.Group();
 turntable.name = "turntable";
 turntable.position.set(-3, 1.225, 0);
@@ -193,6 +239,7 @@ turntable.add(tiltAssembly);
 
 const panAssembly = new THREE.Group();
 panAssembly.name = "pan-assembly";
+panAssembly.position.y = 0.05;
 tiltAssembly.add(panAssembly);
 
 const turningSurface = new THREE.Mesh(
@@ -214,6 +261,12 @@ const turningSurfaceEdges = new THREE.LineSegments(
 );
 turningSurface.add(turningSurfaceEdges);
 
+const tiltMaterial = new THREE.MeshStandardMaterial({
+    color: 0xd46a1f,
+    metalness: 0.35,
+    roughness: 0.55,
+});
+
 const tiltDisk = new THREE.Mesh(
     new THREE.CylinderGeometry(
         0.4,
@@ -225,11 +278,7 @@ const tiltDisk = new THREE.Mesh(
         -Math.PI / 2,
         Math.PI,
     ),
-    new THREE.MeshStandardMaterial({
-        color: 0xd46a1f,
-        metalness: 0.35,
-        roughness: 0.55,
-    }),
+    tiltMaterial,
 );
 tiltDisk.name = "tilt-disk";
 tiltDisk.rotation.x = Math.PI / 2;
@@ -243,6 +292,22 @@ const tiltDiskEdges = new THREE.LineSegments(
     new THREE.LineBasicMaterial({ color: 0x401c08 }),
 );
 tiltDisk.add(tiltDiskEdges);
+
+const tiltHousing = new THREE.Mesh(
+    new THREE.BoxGeometry(0.4, 0.2, 0.6),
+    tiltMaterial,
+);
+tiltHousing.name = "tilt-housing";
+tiltHousing.position.y = -0.075;
+tiltHousing.castShadow = true;
+tiltHousing.receiveShadow = true;
+tiltAssembly.add(tiltHousing);
+
+const tiltHousingEdges = new THREE.LineSegments(
+    new THREE.EdgesGeometry(tiltHousing.geometry),
+    new THREE.LineBasicMaterial({ color: 0x401c08 }),
+);
+tiltHousing.add(tiltHousingEdges);
 
 const autMount = new THREE.Mesh(
     new THREE.BoxGeometry(0.3, 0.2, 0.6),
@@ -363,6 +428,7 @@ function updateTurntablePose() {
     panAssembly.rotation.y = -THREE.MathUtils.degToRad(pan);
     tiltAssembly.rotation.z = THREE.MathUtils.degToRad(tilt);
     heightAssembly.position.y = height;
+    updateScissorForks(height);
 }
 
 panInput.addEventListener("input", updateTurntablePose);
