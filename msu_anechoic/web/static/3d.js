@@ -14,10 +14,10 @@ scene.background = new THREE.Color(0x20242a);
 scene.background = new THREE.Color(0x000000);
 
 const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
-camera.position.set(7, 5.5, 13);
+camera.position.set(13, 5.5, -7);
 
 const controls = new OrbitControls(camera, canvas);
-controls.target.set(-3, 1.325, 0);
+controls.target.set(0, 1.325, 3);
 controls.enableDamping = true;
 controls.autoRotate = false;
 controls.autoRotateSpeed = 5;
@@ -26,18 +26,18 @@ const fillLight = new THREE.HemisphereLight(0xffffff, 0x303840, 0);
 scene.add(fillLight);
 
 const sunlight = new THREE.DirectionalLight(0xffffff, 0);
-sunlight.position.set(2, 8, 8);
+sunlight.position.set(8, 8, -2);
 sunlight.castShadow = true;
 scene.add(sunlight);
 
 const wall = new THREE.Group();
 wall.name = "right-wall";
-wall.position.z = 2.5;
+wall.position.x = 2.5;
 scene.add(wall);
 
 const leftWall = new THREE.Group();
 leftWall.name = "left-wall";
-leftWall.position.z = -2.5;
+leftWall.position.x = -2.5;
 scene.add(leftWall);
 
 const wallMaterial = new THREE.MeshStandardMaterial({
@@ -50,14 +50,14 @@ const wallMaterial = new THREE.MeshStandardMaterial({
     depthWrite: true,
 });
 
-function addWallSection(parent, width, height, x, y) {
+function addWallSection(parent, width, height, forwardPosition, y) {
     const section = new THREE.Mesh(
         new THREE.PlaneGeometry(width, height),
         wallMaterial,
     );
-    section.position.set(x, y, 0);
-    // The right wall faces inward toward -Z; the left wall faces +Z.
-    if (parent === wall) section.rotation.y = Math.PI;
+    section.position.set(0, y, -forwardPosition);
+    // The right wall faces inward toward -X; the left wall faces +X.
+    section.rotation.y = parent === wall ? -Math.PI / 2 : Math.PI / 2;
     section.castShadow = true;
     section.receiveShadow = true;
     parent.add(section);
@@ -78,14 +78,14 @@ addWallSection(wall, 1, 1.5, -2.5, 2.75);
 // Left wall: solid, parallel to and 5 m from the right wall.
 addWallSection(leftWall, 10, 3.5, 0, 1.75);
 
-function addEndWallSection(parent, width, height, z, y) {
+function addEndWallSection(parent, width, height, x, y) {
     const section = new THREE.Mesh(
         new THREE.PlaneGeometry(width, height),
         wallMaterial,
     );
-    section.position.set(0, y, z);
-    // The back wall faces +X; the front wall faces -X.
-    section.rotation.y = parent === backWall ? Math.PI / 2 : -Math.PI / 2;
+    section.position.set(x, y, 0);
+    // The back wall faces forward toward -Z; the front wall faces +Z.
+    section.rotation.y = parent === backWall ? Math.PI : 0;
     section.castShadow = true;
     section.receiveShadow = true;
     parent.add(section);
@@ -116,14 +116,15 @@ const doorExteriorFrame = new THREE.Mesh(
     wallMaterial,
 );
 doorExteriorFrame.name = "door-exterior-frame";
-doorExteriorFrame.position.z = 0.001;
+doorExteriorFrame.position.x = 0.001;
+doorExteriorFrame.rotation.y = Math.PI / 2;
 doorExteriorFrame.castShadow = true;
 doorExteriorFrame.receiveShadow = true;
 wall.add(doorExteriorFrame);
 
 const backWall = new THREE.Group();
 backWall.name = "back-wall";
-backWall.position.x = -5;
+backWall.position.z = 5;
 scene.add(backWall);
 addEndWallSection(backWall, 5, 3.5, 0, 1.75);
 
@@ -135,26 +136,26 @@ const backLightMaterial = new THREE.MeshStandardMaterial({
 });
 const backAreaLights = [];
 
-for (const z of [-1.5, 1.5]) {
+for (const x of [-1.5, 1.5]) {
     const fixture = new THREE.Mesh(
-        new THREE.BoxGeometry(0.02, 0.3, 0.1),
+        new THREE.BoxGeometry(0.1, 0.3, 0.02),
         backLightMaterial,
     );
     fixture.name = "back-wall-light-fixture";
-    fixture.position.set(-4.915, 2.5, z);
+    fixture.position.set(x, 2.5, 4.915);
     scene.add(fixture);
 
     const areaLight = new THREE.RectAreaLight(0xffffff, 800, 0.1, 0.3);
     areaLight.name = "back-wall-area-light";
-    areaLight.position.set(-4.9, 2.5, z);
-    areaLight.lookAt(0, 2.5, z);
+    areaLight.position.set(x, 2.5, 4.9);
+    areaLight.lookAt(x, 2.5, 0);
     scene.add(areaLight);
     backAreaLights.push(areaLight);
 }
 
 const floodStand = new THREE.Group();
 floodStand.name = "flood-light-stand";
-floodStand.position.set(-2, 0, 1.5);
+floodStand.position.set(1.5, 0, 2);
 scene.add(floodStand);
 
 const floodStandMaterial = new THREE.MeshStandardMaterial({
@@ -198,9 +199,9 @@ function makeRodBetween(start, end, radius, material) {
 }
 
 for (const foot of [
-    new THREE.Vector3(0.45, 0.02, 0.3),
-    new THREE.Vector3(-0.45, 0.02, 0.3),
-    new THREE.Vector3(0, 0.02, -0.5),
+    new THREE.Vector3(0.3, 0.02, -0.45),
+    new THREE.Vector3(0.3, 0.02, 0.45),
+    new THREE.Vector3(-0.5, 0.02, 0),
 ]) {
     floodStand.add(makeRodBetween(
         new THREE.Vector3(0, 0.28, 0),
@@ -211,7 +212,7 @@ for (const foot of [
 }
 
 const floodCrossbar = new THREE.Mesh(
-    new THREE.BoxGeometry(0.8, 0.04, 0.04),
+    new THREE.BoxGeometry(0.04, 0.04, 0.8),
     floodStandMaterial,
 );
 floodCrossbar.position.y = 1.38;
@@ -220,8 +221,8 @@ floodStand.add(floodCrossbar);
 
 const floodHeadAssembly = new THREE.Group();
 floodHeadAssembly.name = "fixed-flood-heads";
-floodHeadAssembly.position.set(-2, 1.5, 1.5);
-const defaultAutTarget = new THREE.Vector3(-2.9, 1.925, 0);
+floodHeadAssembly.position.set(1.5, 1.5, 2);
+const defaultAutTarget = new THREE.Vector3(0, 1.925, 2.9);
 floodHeadAssembly.lookAt(defaultAutTarget);
 scene.add(floodHeadAssembly);
 
@@ -254,7 +255,7 @@ for (const x of [-0.22, 0.22]) {
 
 const frontWall = new THREE.Group();
 frontWall.name = "front-wall";
-frontWall.position.x = 5;
+frontWall.position.z = -5;
 scene.add(frontWall);
 
 // Four sections surround a 75 cm square opening centered at y=2.5, z=0.
@@ -286,8 +287,8 @@ const sourceExteriorFrame = new THREE.Mesh(
     wallMaterial,
 );
 sourceExteriorFrame.name = "source-exterior-frame";
-sourceExteriorFrame.position.x = 0.001;
-sourceExteriorFrame.rotation.y = Math.PI / 2;
+sourceExteriorFrame.position.z = -0.001;
+sourceExteriorFrame.rotation.y = Math.PI;
 sourceExteriorFrame.castShadow = true;
 sourceExteriorFrame.receiveShadow = true;
 frontWall.add(sourceExteriorFrame);
@@ -301,12 +302,12 @@ const sourceAntenna = new THREE.Mesh(
     }),
 );
 sourceAntenna.name = "source-antenna";
-sourceAntenna.position.set(5, 2.5, 0);
+sourceAntenna.position.set(0, 2.5, -5);
 sourceAntenna.castShadow = true;
 scene.add(sourceAntenna);
 
 const floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(10, 5),
+    new THREE.PlaneGeometry(5, 10),
     new THREE.MeshStandardMaterial({
         color: 0x353b42,
         roughness: 1,
@@ -322,7 +323,7 @@ floor.receiveShadow = true;
 scene.add(floor);
 
 const roof = new THREE.Mesh(
-    new THREE.PlaneGeometry(10, 5),
+    new THREE.PlaneGeometry(5, 10),
     wallMaterial,
 );
 roof.name = "chamber-roof";
@@ -333,7 +334,7 @@ roof.receiveShadow = true;
 scene.add(roof);
 
 const fixedTable = new THREE.Mesh(
-    new THREE.BoxGeometry(1.5, 0.5, 0.75),
+    new THREE.BoxGeometry(0.75, 0.5, 1.5),
     new THREE.MeshStandardMaterial({
         color: 0x777d84,
         metalness: 0.15,
@@ -341,7 +342,7 @@ const fixedTable = new THREE.Mesh(
     }),
 );
 fixedTable.name = "fixed-turntable-table";
-fixedTable.position.set(-3.9, 0.25, 0);
+fixedTable.position.set(0, 0.25, 3.9);
 fixedTable.castShadow = true;
 fixedTable.receiveShadow = true;
 scene.add(fixedTable);
@@ -360,11 +361,11 @@ const liftMaterial = new THREE.MeshStandardMaterial({
 
 function makeLiftPlate(name, y) {
     const plate = new THREE.Mesh(
-        new THREE.BoxGeometry(1.5, 0.1, 0.75),
+        new THREE.BoxGeometry(0.75, 0.1, 1.5),
         liftMaterial,
     );
     plate.name = name;
-    plate.position.set(-3.9, y, 0);
+    plate.position.set(0, y, 3.9);
     plate.castShadow = true;
     plate.receiveShadow = true;
 
@@ -405,7 +406,8 @@ const turntableHousing = new THREE.Mesh(
     }),
 );
 turntableHousing.name = "right-turntable-housing";
-turntableHousing.position.set(-3.75, 0.7, 0.325);
+turntableHousing.position.set(0.325, 0.7, 3.75);
+turntableHousing.rotation.y = Math.PI / 2;
 turntableHousing.castShadow = true;
 turntableHousing.receiveShadow = true;
 heightAssembly.add(turntableHousing);
@@ -418,7 +420,7 @@ turntableHousing.add(turntableHousingEdges);
 
 const leftTurntableHousing = turntableHousing.clone(true);
 leftTurntableHousing.name = "left-turntable-housing";
-leftTurntableHousing.position.z = -0.375;
+leftTurntableHousing.position.x = -0.375;
 heightAssembly.add(leftTurntableHousing);
 
 const scissorForks = new THREE.Group();
@@ -428,17 +430,17 @@ scene.add(scissorForks);
 const forkMaterial = liftMaterial;
 
 const forkPairs = [];
-for (const sideZ of [-0.3, 0.3]) {
+for (const sideX of [-0.3, 0.3]) {
     const risingForward = new THREE.Mesh(
-        new THREE.BoxGeometry(1, 0.05, 0.05),
+        new THREE.BoxGeometry(0.05, 0.05, 1),
         forkMaterial,
     );
     const risingBackward = new THREE.Mesh(
-        new THREE.BoxGeometry(1, 0.05, 0.05),
+        new THREE.BoxGeometry(0.05, 0.05, 1),
         forkMaterial,
     );
-    risingForward.position.z = sideZ - 0.015;
-    risingBackward.position.z = sideZ + 0.015;
+    risingForward.position.x = sideX - 0.015;
+    risingBackward.position.x = sideX + 0.015;
     risingForward.castShadow = true;
     risingBackward.castShadow = true;
     scissorForks.add(risingForward, risingBackward);
@@ -455,21 +457,21 @@ function updateScissorForks(height) {
     const angle = Math.atan2(height, horizontalSpan);
 
     for (const { risingForward, risingBackward } of forkPairs) {
-        risingForward.position.x = -3.9;
+        risingForward.position.z = 3.9;
         risingForward.position.y = 0.6 + height / 2;
-        risingForward.scale.x = actualForkLength;
-        risingForward.rotation.z = angle;
+        risingForward.scale.z = actualForkLength;
+        risingForward.rotation.x = angle;
 
-        risingBackward.position.x = -3.9;
+        risingBackward.position.z = 3.9;
         risingBackward.position.y = 0.6 + height / 2;
-        risingBackward.scale.x = actualForkLength;
-        risingBackward.rotation.z = -angle;
+        risingBackward.scale.z = actualForkLength;
+        risingBackward.rotation.x = -angle;
     }
 }
 
 const turntable = new THREE.Group();
 turntable.name = "turntable";
-turntable.position.set(-3, 1.225, 0);
+turntable.position.set(0, 1.225, 3);
 heightAssembly.add(turntable);
 
 const tiltAssembly = new THREE.Group();
@@ -521,8 +523,8 @@ const tiltDisk = new THREE.Mesh(
     tiltMaterial,
 );
 tiltDisk.name = "tilt-disk";
-tiltDisk.rotation.x = Math.PI / 2;
-tiltDisk.position.set(0, 0, -0.3);
+tiltDisk.rotation.set(Math.PI / 2, Math.PI / 2, 0, "YXZ");
+tiltDisk.position.set(-0.3, 0, 0);
 tiltDisk.castShadow = true;
 tiltDisk.receiveShadow = true;
 tiltAssembly.add(tiltDisk);
@@ -534,7 +536,7 @@ const tiltDiskEdges = new THREE.LineSegments(
 tiltDisk.add(tiltDiskEdges);
 
 const tiltHousing = new THREE.Mesh(
-    new THREE.BoxGeometry(0.4, 0.2, 0.6),
+    new THREE.BoxGeometry(0.6, 0.2, 0.4),
     tiltMaterial,
 );
 tiltHousing.name = "tilt-housing";
@@ -554,8 +556,8 @@ const tiltShaft = new THREE.Mesh(
     tiltMaterial,
 );
 tiltShaft.name = "tilt-shaft";
-tiltShaft.rotation.x = Math.PI / 2;
-tiltShaft.position.set(tiltDisk.position.x, tiltDisk.position.y, 0);
+tiltShaft.rotation.z = -Math.PI / 2;
+tiltShaft.position.set(0, tiltDisk.position.y, tiltDisk.position.z);
 tiltShaft.castShadow = true;
 tiltAssembly.add(tiltShaft);
 
@@ -584,12 +586,12 @@ function addAutMountPart(geometry, x, y, z) {
 }
 
 // Two-centimeter top and bottom plates preserve the original 20 cm height.
-addAutMountPart(new THREE.BoxGeometry(0.3, 0.02, 0.6), 0, -0.09, 0);
-addAutMountPart(new THREE.BoxGeometry(0.3, 0.02, 0.6), 0, 0.09, 0);
+addAutMountPart(new THREE.BoxGeometry(0.6, 0.02, 0.3), 0, -0.09, 0);
+addAutMountPart(new THREE.BoxGeometry(0.6, 0.02, 0.3), 0, 0.09, 0);
 
 // Two-centimeter square posts fill the 16 cm gap between the plates.
-for (const x of [-0.14, 0.14]) {
-    for (const z of [-0.29, 0.29]) {
+for (const x of [-0.29, 0.29]) {
+    for (const z of [-0.14, 0.14]) {
         addAutMountPart(new THREE.BoxGeometry(0.02, 0.16, 0.02), x, 0, z);
     }
 }
@@ -624,30 +626,30 @@ function addAutSection(geometry, x, y, z, parent = antennaUnderTest) {
 const autStem = addAutSection(new THREE.BoxGeometry(1, 1, 1), 0, 0.1, 0);
 autStem.scale.set(0.025, 0.2, 0.025);
 
-// A 20 cm arm extending forward (+X) from the top of the stem.
-const autArm = addAutSection(new THREE.BoxGeometry(1, 1, 1), 0.1, 0.175, 0);
-autArm.scale.set(0.2, 0.025, 0.025);
+// A 20 cm arm extending forward (-Z) from the top of the stem.
+const autArm = addAutSection(new THREE.BoxGeometry(1, 1, 1), 0, 0.175, -0.1);
+autArm.scale.set(0.025, 0.025, 0.2);
 
 // Only the antenna plate rotates. Its pivot is the forward end of the fixed arm.
 const autAntennaPivot = new THREE.Group();
 autAntennaPivot.name = "aut-antenna-pivot";
-autAntennaPivot.position.set(0.2, 0.175, 0);
+autAntennaPivot.position.set(0, 0.175, -0.2);
 antennaUnderTest.add(autAntennaPivot);
 
 // A 10 cm square, 2 cm thick patch antenna.
 const autAntenna = addAutSection(
     new THREE.BoxGeometry(1, 1, 1),
-    0.01,
     0,
     0,
+    -0.01,
     autAntennaPivot,
 );
-autAntenna.scale.set(0.02, 0.1, 0.1);
+autAntenna.scale.set(0.1, 0.1, 0.02);
 
-const autBoresightOrigin = new THREE.Vector3(0.02, 0, 0);
+const autBoresightOrigin = new THREE.Vector3(0, 0, -0.02);
 
 const autBoresight = new THREE.ArrowHelper(
-    new THREE.Vector3(1, 0, 0),
+    new THREE.Vector3(0, 0, -1),
     autBoresightOrigin,
     2.5,
     0xe0b323,
@@ -666,34 +668,35 @@ function updateAutMounting(height, depth, horizontalPosition, pitch, roll, yaw) 
     const tubeThickness = 0.025;
     const antennaThickness = 0.02;
 
-    antennaUnderTest.position.z = horizontalPosition;
+    antennaUnderTest.position.x = horizontalPosition;
 
     autStem.scale.set(tubeThickness, height, tubeThickness);
     autStem.position.set(0, height / 2, 0);
 
-    autArm.scale.set(depth, tubeThickness, tubeThickness);
-    autArm.position.set(depth / 2, height - tubeThickness / 2, 0);
+    autArm.scale.set(tubeThickness, tubeThickness, depth);
+    autArm.position.set(0, height - tubeThickness / 2, -depth / 2);
 
-    autAntennaPivot.position.set(depth, height - tubeThickness / 2, 0);
-    autAntenna.scale.set(antennaThickness, 0.1, 0.1);
-    autAntenna.position.set(antennaThickness / 2, 0, 0);
+    autAntennaPivot.position.set(0, height - tubeThickness / 2, -depth);
+    autAntenna.scale.set(0.1, 0.1, antennaThickness);
+    autAntenna.position.set(0, 0, -antennaThickness / 2);
 
-    autBoresightOrigin.set(antennaThickness, 0, 0);
+    autBoresightOrigin.set(0, 0, -antennaThickness);
     autBoresight.position.copy(autBoresightOrigin);
     autCoordinateFrame.position.copy(autBoresightOrigin);
 
-    // +X is forward, +Y is up, and +Z is right. Rotate only the patch
+    // +X is right, +Y is up, and +Z is backward, so forward is -Z.
+    // Rotate only the patch
     // antenna about its connection to the fixed periscope arm.
     autAntennaPivot.rotation.set(
-        THREE.MathUtils.degToRad(roll),
-        -THREE.MathUtils.degToRad(yaw),
         THREE.MathUtils.degToRad(pitch),
-        "YZX",
+        -THREE.MathUtils.degToRad(yaw),
+        -THREE.MathUtils.degToRad(roll),
+        "YXZ",
     );
 }
 
 const tiltAssemblyBoresight = new THREE.ArrowHelper(
-    new THREE.Vector3(1, 0, 0),
+    new THREE.Vector3(0, 0, -1),
     new THREE.Vector3(0, 0, 0),
     1.25,
     0xd46a1f,
@@ -704,7 +707,7 @@ tiltAssemblyBoresight.name = "tilt-assembly-boresight";
 tiltAssembly.add(tiltAssemblyBoresight);
 
 const panAssemblyBoresight = new THREE.ArrowHelper(
-    new THREE.Vector3(1, 0, 0),
+    new THREE.Vector3(0, 0, -1),
     new THREE.Vector3(0, 0, 0),
     1.25,
     0x6f42c1,
@@ -715,7 +718,7 @@ panAssemblyBoresight.name = "pan-assembly-boresight";
 panAssembly.add(panAssemblyBoresight);
 
 const autToSourceVector = new THREE.ArrowHelper(
-    new THREE.Vector3(1, 0, 0),
+    new THREE.Vector3(0, 0, -1),
     new THREE.Vector3(0, 0, 0),
     1,
     0x4cff70,
@@ -849,7 +852,7 @@ function updateSourceCoordinateReadout() {
 
     const { x, y, z } = sourceInAutCoordinates;
     const range = sourceInAutCoordinates.length();
-    const azimuth = THREE.MathUtils.radToDeg(Math.atan2(z, x));
+    const azimuth = THREE.MathUtils.radToDeg(Math.atan2(x, -z));
     const elevation = THREE.MathUtils.radToDeg(
         Math.atan2(y, Math.hypot(x, z)),
     );
@@ -910,7 +913,7 @@ function clearBoresightTrail() {
 function sampleBoresightTrailPoint(radius) {
     autAntennaPivot.updateWorldMatrix(true, false);
     const point = autAntennaPivot.localToWorld(
-        autBoresightOrigin.clone().add(new THREE.Vector3(radius, 0, 0)),
+        autBoresightOrigin.clone().add(new THREE.Vector3(0, 0, -radius)),
     );
 
     if (trailPointCount > 0) {
@@ -972,9 +975,9 @@ function makeAxisLabel(text, color, position) {
     axes.add(label);
 }
 
-makeAxisLabel("X / FORWARD", "#ff5555", new THREE.Vector3(1.75, 0, 0));
+makeAxisLabel("X / RIGHT", "#ff5555", new THREE.Vector3(1.75, 0, 0));
 makeAxisLabel("Y / UP", "#55dd77", new THREE.Vector3(0, 1.75, 0));
-makeAxisLabel("Z / RIGHT", "#5599ff", new THREE.Vector3(0, 0, 1.75));
+makeAxisLabel("Z / BACKWARD", "#5599ff", new THREE.Vector3(0, 0, 1.75));
 
 const panInput = document.getElementById("pan");
 const tiltInput = document.getElementById("tilt");
@@ -1051,7 +1054,7 @@ function updateTurntablePose() {
     const autYaw = THREE.MathUtils.clamp(numericInputValue(autYawInput), -180, 180);
 
     panAssembly.rotation.y = -THREE.MathUtils.degToRad(pan);
-    tiltAssembly.rotation.z = THREE.MathUtils.degToRad(tilt);
+    tiltAssembly.rotation.x = THREE.MathUtils.degToRad(tilt);
     heightAssembly.position.y = height;
     updateAutMounting(
         autHeight,
