@@ -16,7 +16,7 @@ const controls = new OrbitControls(camera, canvas);
 controls.target.set(-3, 1.325, 0);
 controls.enableDamping = true;
 controls.autoRotate = false;
-controls.autoRotateSpeed = 0.5;
+controls.autoRotateSpeed = 5;
 
 scene.add(new THREE.HemisphereLight(0xffffff, 0x303840, 2.4));
 
@@ -39,7 +39,7 @@ const wallMaterial = new THREE.MeshStandardMaterial({
     color: 0xaaaaaa,
     roughness: 0.85,
     transparent: true,
-    opacity: 0.3,
+    opacity: 0.05,
     depthWrite: false,
 });
 
@@ -582,8 +582,12 @@ const parameterAnimations = [
         slider: panSlider,
         speed: document.getElementById("pan-animation-speed"),
         speedOutput: document.getElementById("pan-animation-speed-output"),
-        minimum: -180,
-        maximum: 180,
+        minimumInput: document.getElementById("pan-animation-min"),
+        maximumInput: document.getElementById("pan-animation-max"),
+        hardMinimum: -180,
+        hardMaximum: 180,
+        speedUnit: "deg/s",
+        speedPrecision: 0,
         direction: 1,
     },
     {
@@ -591,8 +595,12 @@ const parameterAnimations = [
         slider: tiltSlider,
         speed: document.getElementById("tilt-animation-speed"),
         speedOutput: document.getElementById("tilt-animation-speed-output"),
-        minimum: -90,
-        maximum: 45,
+        minimumInput: document.getElementById("tilt-animation-min"),
+        maximumInput: document.getElementById("tilt-animation-max"),
+        hardMinimum: -90,
+        hardMaximum: 45,
+        speedUnit: "deg/s",
+        speedPrecision: 1,
         direction: 1,
     },
     {
@@ -600,8 +608,12 @@ const parameterAnimations = [
         slider: heightSlider,
         speed: document.getElementById("height-animation-speed"),
         speedOutput: document.getElementById("height-animation-speed-output"),
-        minimum: 0,
-        maximum: 1,
+        minimumInput: document.getElementById("height-animation-min"),
+        maximumInput: document.getElementById("height-animation-max"),
+        hardMinimum: 0,
+        hardMaximum: 1,
+        speedUnit: "m/s",
+        speedPrecision: 2,
         direction: 1,
     },
 ];
@@ -609,7 +621,9 @@ const parameterAnimations = [
 for (const animation of parameterAnimations) {
     animation.speed.addEventListener("input", () => {
         const speed = Number.parseFloat(animation.speed.value);
-        animation.speedOutput.value = `${speed.toFixed(1)}x`;
+        animation.speedOutput.value = (
+            `${speed.toFixed(animation.speedPrecision)} ${animation.speedUnit}`
+        );
         animation.speedOutput.textContent = animation.speedOutput.value;
     });
 }
@@ -642,30 +656,159 @@ trailEnabledInput.addEventListener("change", () => {
 
 trailClearButton.addEventListener("click", clearBoresightTrail);
 
+function animationBounds(animation) {
+    const minimum = THREE.MathUtils.clamp(
+        numericInputValue(animation.minimumInput),
+        animation.hardMinimum,
+        animation.hardMaximum,
+    );
+    const maximum = THREE.MathUtils.clamp(
+        numericInputValue(animation.maximumInput),
+        animation.hardMinimum,
+        animation.hardMaximum,
+    );
+    return maximum > minimum ? { minimum, maximum } : null;
+}
+
+function setAnimatedValue(animation, value) {
+    const precision = animation.hardMaximum <= 1 ? 3 : 2;
+    animation.input.value = value.toFixed(precision);
+    animation.slider.value = String(value);
+}
+
+function advanceBouncingAnimation(animation, deltaSeconds) {
+    const speed = Number.parseFloat(animation.speed.value);
+    const bounds = animationBounds(animation);
+    if (speed <= 0 || !bounds) return false;
+
+    const current = THREE.MathUtils.clamp(
+        numericInputValue(animation.input),
+        bounds.minimum,
+        bounds.maximum,
+    );
+    let value = current + animation.direction * speed * deltaSeconds;
+    if (value >= bounds.maximum) {
+        value = bounds.maximum;
+        animation.direction = -1;
+    } else if (value <= bounds.minimum) {
+        value = bounds.minimum;
+        animation.direction = 1;
+    }
+    setAnimatedValue(animation, value);
+    return true;
+}
+
+let serpentinePhase = "pan";
+let serpentineTiltTarget = null;
+let serpentineTiltDirection = 1;
+
+function nextSerpentineTiltTarget(current, minimum, maximum) {
+    const step = Math.max(
+        0.1,
+        Math.abs(numericInputValue(document.getElementById("tilt-animation-step"))),
+    );
+    let candidate = current + serpentineTiltDirection * step;
+
+    if (candidate > maximum) {
+        if (current < maximum - 1e-9) return maximum;
+        serpentineTiltDirection = -1;
+        return current;
+    } else if (candidate < minimum) {
+        if (current > minimum + 1e-9) return minimum;
+        serpentineTiltDirection = 1;
+        return current;
+    }
+    return THREE.MathUtils.clamp(candidate, minimum, maximum);
+}
+
+function updateSerpentinePanTilt(deltaSeconds) {
+    const [panAnimation, tiltAnimation] = parameterAnimations;
+    const panBounds = animationBounds(panAnimation);
+    const tiltBounds = animationBounds(tiltAnimation);
+    if (!panBounds || !tiltBounds) return false;
+
+    if (serpentinePhase === "tilt") {
+        const tiltSpeed = Number.parseFloat(tiltAnimation.speed.value);
+        const current = THREE.MathUtils.clamp(
+            numericInputValue(tiltAnimation.input),
+            tiltBounds.minimum,
+            tiltBounds.maximum,
+        );
+        const target = THREE.MathUtils.clamp(
+            serpentineTiltTarget,
+            tiltBounds.minimum,
+            tiltBounds.maximum,
+        );
+        const remaining = target - current;
+        const movement = tiltSpeed * deltaSeconds;
+        if (Math.abs(remaining) <= movement) {
+            setAnimatedValue(tiltAnimation, target);
+            serpentinePhase = "pan";
+            serpentineTiltTarget = null;
+        } else {
+            setAnimatedValue(
+                tiltAnimation,
+                current + Math.sign(remaining) * movement,
+            );
+        }
+        return true;
+    }
+
+    const panSpeed = Number.parseFloat(panAnimation.speed.value);
+    const current = THREE.MathUtils.clamp(
+        numericInputValue(panAnimation.input),
+        panBounds.minimum,
+        panBounds.maximum,
+    );
+    let value = current + panAnimation.direction * panSpeed * deltaSeconds;
+    let reachedEnd = false;
+    if (value >= panBounds.maximum) {
+        value = panBounds.maximum;
+        panAnimation.direction = -1;
+        reachedEnd = true;
+    } else if (value <= panBounds.minimum) {
+        value = panBounds.minimum;
+        panAnimation.direction = 1;
+        reachedEnd = true;
+    }
+    setAnimatedValue(panAnimation, value);
+
+    if (reachedEnd) {
+        const currentTilt = THREE.MathUtils.clamp(
+            numericInputValue(tiltAnimation.input),
+            tiltBounds.minimum,
+            tiltBounds.maximum,
+        );
+        serpentineTiltTarget = nextSerpentineTiltTarget(
+            currentTilt,
+            tiltBounds.minimum,
+            tiltBounds.maximum,
+        );
+        if (Math.abs(serpentineTiltTarget - currentTilt) > 1e-9) {
+            serpentinePhase = "tilt";
+        }
+    }
+    return true;
+}
+
 function updateParameterAnimations(deltaSeconds) {
     if (!motionAnimationActive) return;
 
-    let changed = false;
-    for (const animation of parameterAnimations) {
-        const span = animation.maximum - animation.minimum;
-        const speed = Number.parseFloat(animation.speed.value);
-        if (speed === 0) continue;
-        let value = numericInputValue(animation.input)
-            + animation.direction * span * speed * deltaSeconds / 10;
+    const [panAnimation, tiltAnimation, heightAnimation] = parameterAnimations;
+    const panSpeed = Number.parseFloat(panAnimation.speed.value);
+    const tiltSpeed = Number.parseFloat(tiltAnimation.speed.value);
 
-        if (value >= animation.maximum) {
-            value = animation.maximum - (value - animation.maximum);
-            animation.direction = -1;
-        } else if (value <= animation.minimum) {
-            value = animation.minimum + (animation.minimum - value);
-            animation.direction = 1;
-        }
-
-        const precision = animation.maximum <= 1 ? 3 : 2;
-        animation.input.value = value.toFixed(precision);
-        animation.slider.value = String(value);
-        changed = true;
+    let changed;
+    if (panSpeed > 0 && tiltSpeed > 0) {
+        changed = updateSerpentinePanTilt(deltaSeconds);
+    } else {
+        serpentinePhase = "pan";
+        serpentineTiltTarget = null;
+        const panChanged = advanceBouncingAnimation(panAnimation, deltaSeconds);
+        const tiltChanged = advanceBouncingAnimation(tiltAnimation, deltaSeconds);
+        changed = panChanged || tiltChanged;
     }
+    changed = advanceBouncingAnimation(heightAnimation, deltaSeconds) || changed;
     if (changed) updateTurntablePose();
 }
 

@@ -61,6 +61,15 @@
                 margin-bottom: 0.25rem;
             }
 
+            .animation-bounds {
+                display: grid;
+                grid-template-columns: 7rem 6rem 2.5rem 6rem 2.5rem;
+                align-items: center;
+                gap: 0.5rem;
+                margin-top: -0.35rem;
+                margin-bottom: 0.25rem;
+            }
+
             .controls input {
                 width: 100%;
                 box-sizing: border-box;
@@ -110,8 +119,15 @@
             <div class="animation-controls">
                 <span>Pan speed</span>
                 <span></span>
-                <output id="pan-animation-speed-output">1.0x</output>
-                <input id="pan-animation-speed" type="range" value="1" min="0" max="5" step="0.1">
+                <output id="pan-animation-speed-output">60 deg/s</output>
+                <input id="pan-animation-speed" type="range" value="60" min="0" max="180" step="1">
+            </div>
+            <div class="animation-bounds">
+                <span>Pan limits</span>
+                <input id="pan-animation-min" type="number" value="-60" min="-180" max="180" step="1">
+                <span>to</span>
+                <input id="pan-animation-max" type="number" value="60" min="-180" max="180" step="1">
+                <span>deg</span>
             </div>
             <label>
                 <span>Tilt</span>
@@ -122,20 +138,39 @@
             <div class="animation-controls">
                 <span>Tilt speed</span>
                 <span></span>
-                <output id="tilt-animation-speed-output">1.0x</output>
-                <input id="tilt-animation-speed" type="range" value="1" min="0" max="5" step="0.1">
+                <output id="tilt-animation-speed-output">60.0 deg/s</output>
+                <input id="tilt-animation-speed" type="range" value="60" min="0" max="180" step="0.5">
+            </div>
+            <div class="animation-bounds">
+                <span>Tilt limits</span>
+                <input id="tilt-animation-min" type="number" value="-30" min="-90" max="45" step="1">
+                <span>to</span>
+                <input id="tilt-animation-max" type="number" value="20" min="-90" max="45" step="1">
+                <span>deg</span>
+            </div>
+            <div class="animation-bounds">
+                <span>Tilt step</span>
+                <input id="tilt-animation-step" type="number" value="10" min="0.1" max="135" step="0.5">
+                <span>deg</span>
             </div>
             <label>
                 <span>Height</span>
-                <input id="height" type="number" value="0" min="0" max="1" step="0.01">
+                <input id="height" type="number" value="0.2" min="0" max="1" step="0.01">
                 <span>m</span>
-                <input id="height-slider" type="range" value="0" min="0" max="1" step="0.01">
+                <input id="height-slider" type="range" value="0.2" min="0" max="1" step="0.01">
             </label>
             <div class="animation-controls">
                 <span>Lift speed</span>
                 <span></span>
-                <output id="height-animation-speed-output">1.0x</output>
-                <input id="height-animation-speed" type="range" value="1" min="0" max="5" step="0.1">
+                <output id="height-animation-speed-output">0.00 m/s</output>
+                <input id="height-animation-speed" type="range" value="0" min="0" max="1" step="0.01">
+            </div>
+            <div class="animation-bounds">
+                <span>Lift limits</span>
+                <input id="height-animation-min" type="number" value="0" min="0" max="1" step="0.01">
+                <span>to</span>
+                <input id="height-animation-max" type="number" value="1" min="0" max="1" step="0.01">
+                <span>m</span>
             </div>
             <div class="animation-controls">
                 <span>Motion</span>
@@ -151,25 +186,25 @@
             </label>
             <label>
                 <span>Sample interval</span>
-                <output id="trail-sample-interval-output">200 ms</output>
+                <output id="trail-sample-interval-output">100 ms</output>
                 <span></span>
-                <input id="trail-sample-interval" type="range" value="200" min="20" max="2000" step="20">
+                <input id="trail-sample-interval" type="range" value="100" min="20" max="2000" step="20">
             </label>
             <div class="trail-actions">
-                <label><input id="trail-enabled" type="checkbox"> Track boresight</label>
+                <label><input id="trail-enabled" type="checkbox" checked> Track boresight</label>
                 <button id="trail-clear" type="button">Clear</button>
             </div>
             <label>
                 <span>Walls</span>
-                <output id="wall-opacity-output">30%</output>
+                <output id="wall-opacity-output">5%</output>
                 <span></span>
-                <input id="wall-opacity" type="range" value="0.3" min="0" max="1" step="0.01">
+                <input id="wall-opacity" type="range" value="0.05" min="0" max="1" step="0.01">
             </label>
             <label>
                 <span>Rotation</span>
                 <button id="rotation-toggle" type="button">Start</button>
-                <output id="rotation-speed-output">0.5x</output>
-                <input id="rotation-speed" type="range" value="0.5" min="0.1" max="5" step="0.1">
+                <output id="rotation-speed-output">5.0x</output>
+                <input id="rotation-speed" type="range" value="5" min="0.1" max="5" step="0.1">
             </label>
         </div>
         <canvas id="chamber-canvas"></canvas>
