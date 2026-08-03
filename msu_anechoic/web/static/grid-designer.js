@@ -339,6 +339,41 @@ function removeSimpleGrid(button) {
     notifyGridFormChanged();
 }
 
+async function fetchPathCsv(button) {
+    const gridForm = document.getElementById("grid-form");
+    const optimizationForm = document.getElementById("path-optimization-form");
+    const query = new URLSearchParams(new FormData(gridForm));
+    if (optimizationForm) {
+        new FormData(optimizationForm).forEach((value, name) => query.append(name, value));
+    }
+    query.set("optimization_path", button.dataset.optimizationPath);
+    const response = await fetch(`/grid-designer/optimization/csv?${query}`);
+    if (!response.ok) throw new Error(await response.text());
+    return {
+        text: await response.text(),
+        filename: response.headers.get("X-CSV-Filename") || "optimized-path.csv",
+    };
+}
+
+async function saveCsv(text, filename) {
+    if (window.showSaveFilePicker) {
+        const handle = await window.showSaveFilePicker({
+            suggestedName: filename,
+            types: [{ description: "CSV file", accept: { "text/csv": [".csv"] } }],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(text);
+        await writable.close();
+        return;
+    }
+    const url = URL.createObjectURL(new Blob([text], { type: "text/csv" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+}
+
 function setMenuOpen(isOpen) {
     const toggle = document.getElementById("menu-toggle");
     const menu = document.getElementById("application-menu");
@@ -563,6 +598,28 @@ document.addEventListener("change", (event) => {
 });
 
 document.addEventListener("click", (event) => {
+    const csvButton = event.target.closest("[data-path-csv-action]");
+    if (csvButton) {
+        const originalLabel = csvButton.textContent;
+        csvButton.disabled = true;
+        fetchPathCsv(csvButton)
+            .then(async ({ text, filename }) => {
+                if (csvButton.dataset.pathCsvAction === "copy") {
+                    await navigator.clipboard.writeText(text);
+                    csvButton.textContent = "Copied";
+                } else {
+                    await saveCsv(text, filename);
+                }
+            })
+            .catch((error) => window.alert(`Could not export CSV: ${error.message}`))
+            .finally(() => {
+                window.setTimeout(() => {
+                    csvButton.textContent = originalLabel;
+                    csvButton.disabled = false;
+                }, 1000);
+            });
+        return;
+    }
     if (event.target.closest("[data-use-grid-for-experiment]")) {
         const form = document.getElementById("grid-form");
         if (!form || !form.reportValidity()) return;

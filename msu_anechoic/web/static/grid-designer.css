@@ -548,8 +548,15 @@ h2 {
 
 .optimization-history-table th:last-child,
 .optimization-history-table td:last-child {
-    width: 72px;
+    width: 220px;
     padding-right: 0;
+}
+
+.optimization-path-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    white-space: nowrap;
 }
 
 .optimization-history-table thead th {

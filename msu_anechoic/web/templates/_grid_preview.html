@@ -123,7 +123,7 @@
                                 <th scope="col">Estimated travel time</th>
                                 <th scope="col">Calculation time</th>
                                 <th scope="col">Vertical multiplier</th>
-                                <th scope="col"><span class="visually-hidden">Action</span></th>
+                                <th scope="col"><span class="visually-hidden">Actions</span></th>
                             </tr>
                         </thead>
                         <tbody>
@@ -141,20 +141,34 @@
                                     </td>
                                     <td>{{ path.vertical_movement_multiplier }}×</td>
                                     <td>
-                                        <button
-                                            type="button"
-                                            class="text-button"
-                                            hx-get="/grid-designer/optimization/load"
-                                            hx-include="#grid-form, #path-optimization-form"
-                                            hx-vals='{"optimization_path": {{ path.index }}}'
-                                            hx-target="#grid-preview"
-                                            hx-swap="outerHTML"
-                                            hx-indicator="#optimization-indicator"
-                                            hx-disabled-elt="this"
-                                            {% if path.is_active or not optimization_session_id %}disabled{% endif %}
-                                        >
-                                            {% if path.is_active %}Loaded{% else %}Load{% endif %}
-                                        </button>
+                                        <div class="optimization-path-actions">
+                                            <button
+                                                type="button"
+                                                class="text-button"
+                                                hx-get="/grid-designer/optimization/load"
+                                                hx-include="#grid-form, #path-optimization-form"
+                                                hx-vals='{"optimization_path": {{ path.index }}}'
+                                                hx-target="#grid-preview"
+                                                hx-swap="outerHTML"
+                                                hx-indicator="#optimization-indicator"
+                                                hx-disabled-elt="this"
+                                                {% if path.is_active or not optimization_session_id %}disabled{% endif %}
+                                            >
+                                                {% if path.is_active %}Loaded{% else %}Load{% endif %}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                class="text-button"
+                                                data-path-csv-action="save"
+                                                data-optimization-path="{{ path.index }}"
+                                            >Save CSV</button>
+                                            <button
+                                                type="button"
+                                                class="text-button"
+                                                data-path-csv-action="copy"
+                                                data-optimization-path="{{ path.index }}"
+                                            >Copy CSV</button>
+                                        </div>
                                     </td>
                                 </tr>
                             {% endfor %}

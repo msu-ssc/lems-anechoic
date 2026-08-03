@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import csv
 import hashlib
+import io
 import json
 import math
 import random
@@ -2637,6 +2639,61 @@ def load_optimized_grid_path(request: Request) -> HTMLResponse:
         request=request,
         name="_grid_preview.html",
         context=context,
+    )
+
+
+def _optimization_path_csv(grid: DesignedGrid, order: tuple[int, ...]) -> str:
+    output = io.StringIO(newline="")
+    writer = csv.writer(output, dialect="unix")
+    writer.writerow(
+        ("point_index", "grid_name", "azimuth", "elevation", "pan", "tilt")
+    )
+    for point_index, source_index in enumerate(order):
+        point = grid.points[source_index]
+        writer.writerow(
+            (
+                point_index,
+                ";".join(point.grid_names),
+                point.azimuth,
+                point.elevation,
+                point.pan,
+                point.tilt,
+            )
+        )
+    return output.getvalue()
+
+
+@app.get("/grid-designer/optimization/csv")
+def optimization_path_csv(request: Request) -> Response:
+    try:
+        grid, _, _, _ = _requested_grid(request, include_info_rows=False)
+        path_index = int(request.query_params.get("optimization_path", "0"))
+        session_id = request.query_params.get("optimization_session_id", "")
+        session = _get_optimization_session(session_id, grid)
+        if session is None:
+            if session_id or path_index != 0:
+                raise GridValidationError(
+                    "This optimization history has expired or no longer matches the grid."
+                )
+            path_name = "Original path"
+            order = tuple(range(len(grid.points)))
+        else:
+            if path_index < 0:
+                raise IndexError
+            path = session.paths[path_index]
+            path_name = path.name
+            order = path.order
+    except (GridValidationError, ValueError, IndexError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc) or "Select a valid optimized path.") from exc
+
+    filename = f"{re.sub(r'[^a-z0-9]+', '-', path_name.lower()).strip('-')}.csv"
+    return Response(
+        _optimization_path_csv(grid, order),
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "X-CSV-Filename": filename,
+        },
     )
 
 

@@ -68,6 +68,7 @@ class GridPoint:
     elevation: float
     pan: float
     tilt: float
+    grid_names: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -91,7 +92,7 @@ class DesignedGrid:
         return max(counts.values())
 
 
-@dataclass(frozen=True)
+@dataclass
 class _CandidatePoint:
     point: GridPoint
     logical_vertical: float
@@ -395,7 +396,7 @@ def _remove_duplicate_candidates(
         normalized_x = (x + 180.0) % 360.0
         x_bin = math.floor(normalized_x / DUPLICATE_TOLERANCE) % horizontal_bin_count
         y_bin = math.floor(y / DUPLICATE_TOLERANCE)
-        duplicate = False
+        duplicate: _CandidatePoint | None = None
         for x_offset in (-1, 0, 1):
             neighbor_x = (x_bin + x_offset) % horizontal_bin_count
             for y_offset in (-1, 0, 1):
@@ -405,13 +406,21 @@ def _remove_duplicate_candidates(
                         existing.point,
                         input_system,
                     ):
-                        duplicate = True
+                        duplicate = existing
                         break
                 if duplicate:
                     break
             if duplicate:
                 break
         if duplicate:
+            duplicate.point = replace(
+                duplicate.point,
+                grid_names=tuple(
+                    dict.fromkeys(
+                        (*duplicate.point.grid_names, *candidate.point.grid_names)
+                    )
+                ),
+            )
             continue
 
         unique.append(candidate)
@@ -600,6 +609,7 @@ def design_combined_grid(
                             elevation=elevation,
                             pan=pan,
                             tilt=tilt,
+                            grid_names=(grid.name,),
                         ),
                         logical_vertical=logical_vertical,
                     )
