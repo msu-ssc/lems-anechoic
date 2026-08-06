@@ -155,6 +155,29 @@
                 cursor: pointer;
             }
 
+            .follow-controls {
+                display: grid;
+                grid-template-columns: 7rem 6rem minmax(12rem, 1fr);
+                align-items: center;
+                gap: 0.5rem;
+            }
+
+            .follow-status {
+                overflow: hidden;
+                color: #cbd3dc;
+                font-size: 0.875rem;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+
+            .follow-status[data-state="error"] {
+                color: #ff9c9c;
+            }
+
+            .follow-status[data-state="active"] {
+                color: #8ee59f;
+            }
+
             .trail-actions {
                 display: flex;
                 align-items: center;
@@ -188,6 +211,12 @@
             <canvas id="source-angle-plot" class="source-angle-plot" width="360" height="220" aria-label="Source azimuth and elevation in the AUT coordinate frame"></canvas>
         </aside>
         <div id="settings-panel" class="controls">
+            <div class="follow-controls">
+                <span>Position CSV</span>
+                <button id="follow-toggle" type="button" aria-pressed="false">Follow</button>
+                <output id="follow-status" class="follow-status" aria-live="polite">Not following</output>
+                <input id="follow-file-input" type="file" accept=".csv,text/csv" hidden>
+            </div>
             <label>
                 <span>Pan</span>
                 <input id="pan" type="number" value="0" min="-180" max="180" step="1">

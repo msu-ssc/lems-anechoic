@@ -1019,6 +1019,9 @@ const floodLightIntensitySlider = document.getElementById("flood-light-intensity
 const floodLightIntensityOutput = document.getElementById("flood-light-intensity-output");
 const settingsToggle = document.getElementById("settings-toggle");
 const settingsPanel = document.getElementById("settings-panel");
+const followToggle = document.getElementById("follow-toggle");
+const followStatus = document.getElementById("follow-status");
+const followFileInput = document.getElementById("follow-file-input");
 const sourceAutXOutput = document.getElementById("source-aut-x");
 const sourceAutYOutput = document.getElementById("source-aut-y");
 const sourceAutZOutput = document.getElementById("source-aut-z");
@@ -1037,6 +1040,206 @@ function numericInputValue(input) {
     const value = Number.parseFloat(input.value);
     return Number.isFinite(value) ? value : 0;
 }
+
+const FOLLOW_POLL_INTERVAL_MILLISECONDS = 500;
+let followedFileSource = null;
+let followPollTimeout = null;
+let followReadInProgress = false;
+let followedFileContents = null;
+let followSessionId = 0;
+
+function parseCsvRows(text) {
+    const rows = [];
+    let row = [];
+    let field = "";
+    let quoted = false;
+
+    for (let index = 0; index < text.length; index += 1) {
+        const character = text[index];
+        if (quoted) {
+            if (character === '"' && text[index + 1] === '"') {
+                field += '"';
+                index += 1;
+            } else if (character === '"') {
+                quoted = false;
+            } else {
+                field += character;
+            }
+        } else if (character === '"' && field.length === 0) {
+            quoted = true;
+        } else if (character === ",") {
+            row.push(field);
+            field = "";
+        } else if (character === "\n" || character === "\r") {
+            if (character === "\r" && text[index + 1] === "\n") index += 1;
+            row.push(field);
+            rows.push(row);
+            row = [];
+            field = "";
+        } else {
+            field += character;
+        }
+    }
+
+    if (quoted) throw new Error("The CSV ends inside a quoted field.");
+    if (field.length > 0 || row.length > 0) {
+        row.push(field);
+        rows.push(row);
+    }
+    return rows.filter((values) => values.some((value) => value.trim() !== ""));
+}
+
+function parseLastPosition(text) {
+    const rows = parseCsvRows(text);
+    if (rows.length < 2) throw new Error("The CSV does not contain any position rows.");
+
+    const headers = rows[0].map((header, index) => (
+        (index === 0 ? header.replace(/^\uFEFF/, "") : header).trim().toLowerCase()
+    ));
+    const panIndex = headers.indexOf("pan");
+    const tiltIndex = headers.indexOf("tilt");
+    if (panIndex < 0 || tiltIndex < 0) {
+        throw new Error('The CSV must have columns named "pan" and "tilt".');
+    }
+
+    const lastRow = rows[rows.length - 1];
+    const panText = lastRow[panIndex]?.trim() ?? "";
+    const tiltText = lastRow[tiltIndex]?.trim() ?? "";
+    const pan = panText === "" ? Number.NaN : Number(panText);
+    const tilt = tiltText === "" ? Number.NaN : Number(tiltText);
+    if (!Number.isFinite(pan) || !Number.isFinite(tilt)) {
+        throw new Error("The last CSV row does not have numeric pan and tilt values.");
+    }
+    return { pan, tilt };
+}
+
+function setFollowStatus(message, state = "idle") {
+    followStatus.textContent = message;
+    followStatus.title = message;
+    followStatus.dataset.state = state;
+}
+
+function setPanTiltInputs(pan, tilt) {
+    const clampedPan = THREE.MathUtils.clamp(pan, -180, 180);
+    const clampedTilt = THREE.MathUtils.clamp(tilt, -90, 45);
+    panInput.value = String(clampedPan);
+    panSlider.value = String(clampedPan);
+    tiltInput.value = String(clampedTilt);
+    tiltSlider.value = String(clampedTilt);
+    updateTurntablePose();
+}
+
+function stopFollowing(message = "Not following") {
+    followSessionId += 1;
+    followedFileSource = null;
+    followedFileContents = null;
+    followReadInProgress = false;
+    window.clearTimeout(followPollTimeout);
+    followPollTimeout = null;
+    followToggle.textContent = "Follow";
+    followToggle.setAttribute("aria-pressed", "false");
+    panInput.disabled = false;
+    panSlider.disabled = false;
+    tiltInput.disabled = false;
+    tiltSlider.disabled = false;
+    motionAnimationToggle.disabled = false;
+    setFollowStatus(message);
+}
+
+async function readFollowedFile() {
+    if (!followedFileSource || followReadInProgress) return;
+    const sessionId = followSessionId;
+    const fileSource = followedFileSource;
+    followReadInProgress = true;
+    try {
+        const file = await fileSource.getFile();
+        const contents = await file.text();
+        if (contents !== followedFileContents) {
+            const { pan, tilt } = parseLastPosition(contents);
+            if (sessionId !== followSessionId) return;
+            setPanTiltInputs(pan, tilt);
+            followedFileContents = contents;
+            const monitoringNote = fileSource.canMonitor === false
+                ? " (snapshot; live monitoring is unavailable in this browser)"
+                : "";
+            setFollowStatus(
+                `${file.name}: pan ${pan.toFixed(2)}°, tilt ${tilt.toFixed(2)}°${monitoringNote}`,
+                fileSource.canMonitor === false ? "error" : "active",
+            );
+        }
+    } catch (error) {
+        if (sessionId === followSessionId) {
+            setFollowStatus(error instanceof Error ? error.message : String(error), "error");
+        }
+    } finally {
+        if (sessionId !== followSessionId) return;
+        followReadInProgress = false;
+        if (fileSource.canMonitor !== false) {
+            followPollTimeout = window.setTimeout(
+                readFollowedFile,
+                FOLLOW_POLL_INTERVAL_MILLISECONDS,
+            );
+        }
+    }
+}
+
+function startFollowing(fileSource) {
+    followSessionId += 1;
+    followedFileSource = fileSource;
+    followedFileContents = null;
+    motionAnimationActive = false;
+    motionAnimationToggle.textContent = "Start";
+    motionAnimationToggle.disabled = true;
+    panInput.disabled = true;
+    panSlider.disabled = true;
+    tiltInput.disabled = true;
+    tiltSlider.disabled = true;
+    followToggle.textContent = "Stop";
+    followToggle.setAttribute("aria-pressed", "true");
+    setFollowStatus("Reading CSV…", "active");
+    readFollowedFile();
+}
+
+function chooseFileWithInput() {
+    followFileInput.value = "";
+    followFileInput.click();
+}
+
+followFileInput.addEventListener("change", () => {
+    const file = followFileInput.files?.[0];
+    if (!file) return;
+    startFollowing({
+        getFile: async () => file,
+        canMonitor: false,
+    });
+});
+
+followToggle.addEventListener("click", async () => {
+    if (followedFileSource) {
+        stopFollowing();
+        return;
+    }
+
+    if (!("showOpenFilePicker" in window)) {
+        chooseFileWithInput();
+        return;
+    }
+
+    try {
+        const [fileHandle] = await window.showOpenFilePicker({
+            multiple: false,
+            types: [{
+                description: "CSV position data",
+                accept: { "text/csv": [".csv"] },
+            }],
+        });
+        startFollowing(fileHandle);
+    } catch (error) {
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+            setFollowStatus(error instanceof Error ? error.message : String(error), "error");
+        }
+    }
+});
 
 function updateTurntablePose() {
     const pan = THREE.MathUtils.clamp(numericInputValue(panInput), -180, 180);

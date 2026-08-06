@@ -11,6 +11,7 @@ from msu_anechoic.web.app import abort_turntable
 from msu_anechoic.web.app import app
 from msu_anechoic.web.app import move_turntable
 from msu_anechoic.web.app import set_turntable_position
+from msu_anechoic.web.app import three_dimensional_experiment
 from msu_anechoic.web.app import turntable_control
 from msu_anechoic.web.app import turntable_status
 from msu_anechoic.web.turntable import TurntableWebService
@@ -160,6 +161,17 @@ def test_turntable_page_contains_status_history_and_controls():
     assert '<a class="breadcrumb-home" href="/">MSU Anechoic Chamber</a>' in body
     assert 'aria-current="page">Turntable</span>' in body
     assert any(getattr(route, "path", None) == "/turntable" for route in app.routes)
+
+
+def test_three_dimensional_page_contains_csv_follow_controls():
+    response = three_dimensional_experiment(page_request("/3d"))
+    body = response.body.decode()
+
+    assert response.status_code == 200
+    assert 'id="follow-toggle"' in body
+    assert 'id="follow-status"' in body
+    assert 'id="follow-file-input"' in body
+    assert 'accept=".csv,text/csv"' in body
 
 
 def test_status_returns_paired_filtered_history_and_move_targets(fake_turntable):
