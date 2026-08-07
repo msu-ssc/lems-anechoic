@@ -25,7 +25,11 @@ const HOUSING_BASE_DEPTH_METERS = 19 * METERS_PER_INCH;
 const HOUSING_BACK_HEIGHT_METERS = 4 * METERS_PER_INCH;
 const HOUSING_SHAFT_HEIGHT_METERS = 22.5 * METERS_PER_INCH;
 const HOUSING_SHAFT_FRONT_OVERHANG_METERS = 1 * METERS_PER_INCH;
-const HOUSING_HUB_DIAMETER_METERS = 4 * METERS_PER_INCH;
+const HOUSING_CROWN_DIAMETER_METERS = 4 * METERS_PER_INCH;
+const TURN_SHAFT_DIAMETER_METERS = 2 * METERS_PER_INCH;
+const TILT_DISK_THICKNESS_METERS = 1 * METERS_PER_INCH;
+const TILT_DISK_HOUSING_CLEARANCE_METERS = 0.01;
+const TURN_SHAFT_END_EXTENSION_METERS = 0.01;
 
 const canvas = document.getElementById("chamber-canvas");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -435,7 +439,7 @@ const housingHubCenter = new THREE.Vector2(
     HOUSING_BASE_DEPTH_METERS + HOUSING_SHAFT_FRONT_OVERHANG_METERS,
     HOUSING_SHAFT_HEIGHT_METERS,
 );
-const housingHubRadius = HOUSING_HUB_DIAMETER_METERS / 2;
+const housingHubRadius = HOUSING_CROWN_DIAMETER_METERS / 2;
 const housingFrontTangent = tangentPointOnCircle(
     housingFrontBase,
     housingHubCenter,
@@ -627,11 +631,17 @@ const tiltMaterial = new THREE.MeshStandardMaterial({
     roughness: 0.55,
 });
 
+const leftHousingOuterFaceX = -HOUSING_OVERALL_WIDTH_METERS / 2;
+const tiltDiskInnerFaceX = (
+    leftHousingOuterFaceX - TILT_DISK_HOUSING_CLEARANCE_METERS
+);
+const tiltDiskOuterFaceX = tiltDiskInnerFaceX - TILT_DISK_THICKNESS_METERS;
+
 const tiltDisk = new THREE.Mesh(
     new THREE.CylinderGeometry(
         TILT_DISK_DIAMETER_METERS / 2,
         TILT_DISK_DIAMETER_METERS / 2,
-        0.05,
+        TILT_DISK_THICKNESS_METERS,
         64,
         1,
         false,
@@ -642,7 +652,7 @@ const tiltDisk = new THREE.Mesh(
 );
 tiltDisk.name = "tilt-disk";
 tiltDisk.rotation.set(Math.PI / 2, Math.PI / 2, 0, "YXZ");
-tiltDisk.position.set(-0.3, 0, 0);
+tiltDisk.position.set((tiltDiskInnerFaceX + tiltDiskOuterFaceX) / 2, 0, 0);
 tiltDisk.castShadow = true;
 tiltDisk.receiveShadow = true;
 tiltAssembly.add(tiltDisk);
@@ -669,18 +679,27 @@ const tiltHousingEdges = new THREE.LineSegments(
 );
 tiltHousing.add(tiltHousingEdges);
 
+const turnShaftRightEndX = (
+    HOUSING_OVERALL_WIDTH_METERS / 2 + TURN_SHAFT_END_EXTENSION_METERS
+);
+const turnShaftLeftEndX = tiltDiskOuterFaceX - TURN_SHAFT_END_EXTENSION_METERS;
+
 const tiltShaft = new THREE.Mesh(
     new THREE.CylinderGeometry(
-        HOUSING_HUB_DIAMETER_METERS / 2,
-        HOUSING_HUB_DIAMETER_METERS / 2,
-        HOUSING_OVERALL_WIDTH_METERS,
+        TURN_SHAFT_DIAMETER_METERS / 2,
+        TURN_SHAFT_DIAMETER_METERS / 2,
+        turnShaftRightEndX - turnShaftLeftEndX,
         32,
     ),
     tiltMaterial,
 );
 tiltShaft.name = "tilt-shaft";
 tiltShaft.rotation.z = -Math.PI / 2;
-tiltShaft.position.set(0, tiltDisk.position.y, tiltDisk.position.z);
+tiltShaft.position.set(
+    (turnShaftRightEndX + turnShaftLeftEndX) / 2,
+    tiltDisk.position.y,
+    tiltDisk.position.z,
+);
 tiltShaft.castShadow = true;
 tiltAssembly.add(tiltShaft);
 
