@@ -18,6 +18,14 @@ const AUT_MOUNT_DEPTH_METERS = 16 * METERS_PER_INCH;
 const AUT_MOUNT_WIDTH_METERS = 24 * METERS_PER_INCH;
 const AUT_MOUNT_BACK_OFFSET_METERS = 1 * METERS_PER_INCH;
 const AUT_MOUNT_CLEARANCE_METERS = 2 * METERS_PER_INCH;
+const HOUSING_OVERALL_WIDTH_METERS = 27 * METERS_PER_INCH;
+const HOUSING_UPRIGHT_WIDTH_METERS = 3 * METERS_PER_INCH;
+const HOUSING_CONNECTOR_HEIGHT_METERS = 5 * METERS_PER_INCH;
+const HOUSING_BASE_DEPTH_METERS = 19 * METERS_PER_INCH;
+const HOUSING_BACK_HEIGHT_METERS = 4 * METERS_PER_INCH;
+const HOUSING_SHAFT_HEIGHT_METERS = 22.5 * METERS_PER_INCH;
+const HOUSING_SHAFT_FRONT_OVERHANG_METERS = 1 * METERS_PER_INCH;
+const HOUSING_HUB_DIAMETER_METERS = 4 * METERS_PER_INCH;
 
 const canvas = document.getElementById("chamber-canvas");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -404,16 +412,67 @@ scene.add(heightAssembly);
 const liftTop = makeLiftPlate("scissor-lift-top", 0.65);
 heightAssembly.add(liftTop);
 
+function tangentPointOnCircle(point, center, radius, side) {
+    const offset = point.clone().sub(center);
+    const distanceSquared = offset.lengthSq();
+    const radialScale = radius ** 2 / distanceSquared;
+    const perpendicularScale = (
+        radius * Math.sqrt(distanceSquared - radius ** 2) / distanceSquared
+    );
+    return new THREE.Vector2(
+        center.x
+            + radialScale * offset.x
+            + side * perpendicularScale * -offset.y,
+        center.y
+            + radialScale * offset.y
+            + side * perpendicularScale * offset.x,
+    );
+}
+
+const housingRearTop = new THREE.Vector2(0, HOUSING_BACK_HEIGHT_METERS);
+const housingFrontBase = new THREE.Vector2(HOUSING_BASE_DEPTH_METERS, 0);
+const housingHubCenter = new THREE.Vector2(
+    HOUSING_BASE_DEPTH_METERS + HOUSING_SHAFT_FRONT_OVERHANG_METERS,
+    HOUSING_SHAFT_HEIGHT_METERS,
+);
+const housingHubRadius = HOUSING_HUB_DIAMETER_METERS / 2;
+const housingFrontTangent = tangentPointOnCircle(
+    housingFrontBase,
+    housingHubCenter,
+    housingHubRadius,
+    1,
+);
+const housingRearTangent = tangentPointOnCircle(
+    housingRearTop,
+    housingHubCenter,
+    housingHubRadius,
+    -1,
+);
+
 const housingShape = new THREE.Shape();
 housingShape.moveTo(0, 0);
-housingShape.lineTo(0.6, 0);
-housingShape.lineTo(0.8, 0.55);
-housingShape.lineTo(0.7, 0.55);
+housingShape.lineTo(housingFrontBase.x, housingFrontBase.y);
+housingShape.lineTo(housingFrontTangent.x, housingFrontTangent.y);
+housingShape.absarc(
+    housingHubCenter.x,
+    housingHubCenter.y,
+    housingHubRadius,
+    Math.atan2(
+        housingFrontTangent.y - housingHubCenter.y,
+        housingFrontTangent.x - housingHubCenter.x,
+    ),
+    Math.atan2(
+        housingRearTangent.y - housingHubCenter.y,
+        housingRearTangent.x - housingHubCenter.x,
+    ),
+    false,
+);
+housingShape.lineTo(housingRearTop.x, housingRearTop.y);
 housingShape.closePath();
 
 const turntableHousing = new THREE.Mesh(
     new THREE.ExtrudeGeometry(housingShape, {
-        depth: 0.05,
+        depth: HOUSING_UPRIGHT_WIDTH_METERS,
         bevelEnabled: false,
     }),
     new THREE.MeshStandardMaterial({
@@ -423,7 +482,11 @@ const turntableHousing = new THREE.Mesh(
     }),
 );
 turntableHousing.name = "right-turntable-housing";
-turntableHousing.position.set(0.325, 0.7, 3.75);
+turntableHousing.position.set(
+    HOUSING_OVERALL_WIDTH_METERS / 2 - HOUSING_UPRIGHT_WIDTH_METERS,
+    TILT_AXIS_ZERO_LIFT_HEIGHT_METERS - HOUSING_SHAFT_HEIGHT_METERS,
+    3 + HOUSING_BASE_DEPTH_METERS + HOUSING_SHAFT_FRONT_OVERHANG_METERS,
+);
 turntableHousing.rotation.y = Math.PI / 2;
 turntableHousing.castShadow = true;
 turntableHousing.receiveShadow = true;
@@ -437,8 +500,36 @@ turntableHousing.add(turntableHousingEdges);
 
 const leftTurntableHousing = turntableHousing.clone(true);
 leftTurntableHousing.name = "left-turntable-housing";
-leftTurntableHousing.position.x = -0.375;
+leftTurntableHousing.position.x = -HOUSING_OVERALL_WIDTH_METERS / 2;
 heightAssembly.add(leftTurntableHousing);
+
+const housingConnector = new THREE.Mesh(
+    new THREE.BoxGeometry(
+        HOUSING_OVERALL_WIDTH_METERS,
+        HOUSING_CONNECTOR_HEIGHT_METERS,
+        HOUSING_BASE_DEPTH_METERS,
+    ),
+    turntableHousing.material,
+);
+housingConnector.name = "turntable-housing-connector";
+housingConnector.position.set(
+    0,
+    TILT_AXIS_ZERO_LIFT_HEIGHT_METERS
+        - HOUSING_SHAFT_HEIGHT_METERS
+        + HOUSING_CONNECTOR_HEIGHT_METERS / 2,
+    3
+        + HOUSING_SHAFT_FRONT_OVERHANG_METERS
+        + HOUSING_BASE_DEPTH_METERS / 2,
+);
+housingConnector.castShadow = true;
+housingConnector.receiveShadow = true;
+heightAssembly.add(housingConnector);
+
+const housingConnectorEdges = new THREE.LineSegments(
+    new THREE.EdgesGeometry(housingConnector.geometry),
+    new THREE.LineBasicMaterial({ color: 0x171b20 }),
+);
+housingConnector.add(housingConnectorEdges);
 
 const scissorForks = new THREE.Group();
 scissorForks.name = "scissor-forks";
@@ -579,7 +670,12 @@ const tiltHousingEdges = new THREE.LineSegments(
 tiltHousing.add(tiltHousingEdges);
 
 const tiltShaft = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.025, 0.025, 0.8, 32),
+    new THREE.CylinderGeometry(
+        HOUSING_HUB_DIAMETER_METERS / 2,
+        HOUSING_HUB_DIAMETER_METERS / 2,
+        HOUSING_OVERALL_WIDTH_METERS,
+        32,
+    ),
     tiltMaterial,
 );
 tiltShaft.name = "tilt-shaft";
