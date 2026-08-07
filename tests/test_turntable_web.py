@@ -6,7 +6,9 @@ from fastapi import Request
 
 from msu_anechoic import turntable2
 from msu_anechoic.web.app import WEB_ROOT
+from msu_anechoic.web.app import _decode_zmq_position_message
 from msu_anechoic.web.app import _TurntablePositionCommand
+from msu_anechoic.web.app import _validate_zmq_position_endpoint
 from msu_anechoic.web.app import abort_turntable
 from msu_anechoic.web.app import app
 from msu_anechoic.web.app import move_turntable
@@ -163,15 +165,55 @@ def test_turntable_page_contains_status_history_and_controls():
     assert any(getattr(route, "path", None) == "/turntable" for route in app.routes)
 
 
-def test_three_dimensional_page_contains_csv_follow_controls():
+def test_three_dimensional_page_contains_zmq_follow_controls():
     response = three_dimensional_experiment(page_request("/3d"))
     body = response.body.decode()
 
     assert response.status_code == 200
     assert 'id="follow-toggle"' in body
     assert 'id="follow-status"' in body
-    assert 'id="follow-file-input"' in body
-    assert 'accept=".csv,text/csv"' in body
+    assert 'id="follow-endpoint"' in body
+    assert 'value="tcp://127.0.0.1:8005"' in body
+    assert 'data-position-stream-url="http://test/3d/position-stream"' in body
+    assert 'id="follow-file-input"' not in body
+    assert any(getattr(route, "path", None) == "/3d/position-stream" for route in app.routes)
+
+
+def test_zmq_position_message_matches_turntable_publisher_contract():
+    message = (
+        b'{"timestamp":"2027-01-01T00:00:00.000000+00:00",'
+        b'"state":"moving","pan":123.456,"tilt":-87.654}'
+    )
+
+    assert _decode_zmq_position_message(message) == {
+        "timestamp": "2027-01-01T00:00:00.000000+00:00",
+        "state": "moving",
+        "pan": 123.456,
+        "tilt": -87.654,
+    }
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        b"not-json",
+        b"[]",
+        b'{"timestamp":"now","state":"moving","pan":null,"tilt":1}',
+        b'{"timestamp":"now","state":"moving","pan":1,"tilt":"2"}',
+    ],
+)
+def test_zmq_position_message_rejects_malformed_payloads(message):
+    with pytest.raises(ValueError):
+        _decode_zmq_position_message(message)
+
+
+def test_zmq_position_endpoint_accepts_tcp_and_rejects_other_transports():
+    assert _validate_zmq_position_endpoint("tcp://127.0.0.1:8005") == "tcp://127.0.0.1:8005"
+    assert _validate_zmq_position_endpoint("tcp://turntable.local:9000") == "tcp://turntable.local:9000"
+
+    for endpoint in ["udp://127.0.0.1:8005", "tcp://127.0.0.1", "tcp://127.0.0.1:99999"]:
+        with pytest.raises(ValueError):
+            _validate_zmq_position_endpoint(endpoint)
 
 
 def test_three_dimensional_page_contains_camera_editor():

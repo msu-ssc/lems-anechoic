@@ -200,6 +200,10 @@
                 gap: 0.5rem;
             }
 
+            .follow-endpoint {
+                grid-column: 2 / -1;
+            }
+
             .follow-status {
                 overflow: hidden;
                 color: #cbd3dc;
@@ -335,12 +339,13 @@
             </div>
             <canvas id="source-angle-plot" class="source-angle-plot" width="360" height="220" aria-label="Source azimuth and elevation in the AUT coordinate frame"></canvas>
         </aside>
-        <div id="settings-panel" class="controls">
+        <div id="settings-panel" class="controls" data-position-stream-url="{{ url_for('three_dimensional_position_stream') }}">
             <div class="follow-controls">
-                <span>Position CSV</span>
+                <span>Position ZMQ</span>
                 <button id="follow-toggle" type="button" aria-pressed="false">Follow</button>
                 <output id="follow-status" class="follow-status" aria-live="polite">Not following</output>
-                <input id="follow-file-input" type="file" accept=".csv,text/csv" hidden>
+                <span>Endpoint</span>
+                <input id="follow-endpoint" class="follow-endpoint" type="text" value="tcp://127.0.0.1:8005" spellcheck="false" aria-label="ZMQ position endpoint">
             </div>
             <label>
                 <span>Pan</span>

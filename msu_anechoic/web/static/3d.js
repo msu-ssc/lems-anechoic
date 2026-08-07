@@ -1048,7 +1048,7 @@ const cameraFormInputs = {
 };
 const followToggle = document.getElementById("follow-toggle");
 const followStatus = document.getElementById("follow-status");
-const followFileInput = document.getElementById("follow-file-input");
+const followEndpointInput = document.getElementById("follow-endpoint");
 const sourceAutXOutput = document.getElementById("source-aut-x");
 const sourceAutYOutput = document.getElementById("source-aut-y");
 const sourceAutZOutput = document.getElementById("source-aut-z");
@@ -1393,78 +1393,6 @@ refreshCameraSelect(activeCameraName);
 refreshSceneViewSelect();
 updateActiveCamera();
 
-const FOLLOW_POLL_INTERVAL_MILLISECONDS = 500;
-let followedFileSource = null;
-let followPollTimeout = null;
-let followReadInProgress = false;
-let followedFileContents = null;
-let followSessionId = 0;
-
-function parseCsvRows(text) {
-    const rows = [];
-    let row = [];
-    let field = "";
-    let quoted = false;
-
-    for (let index = 0; index < text.length; index += 1) {
-        const character = text[index];
-        if (quoted) {
-            if (character === '"' && text[index + 1] === '"') {
-                field += '"';
-                index += 1;
-            } else if (character === '"') {
-                quoted = false;
-            } else {
-                field += character;
-            }
-        } else if (character === '"' && field.length === 0) {
-            quoted = true;
-        } else if (character === ",") {
-            row.push(field);
-            field = "";
-        } else if (character === "\n" || character === "\r") {
-            if (character === "\r" && text[index + 1] === "\n") index += 1;
-            row.push(field);
-            rows.push(row);
-            row = [];
-            field = "";
-        } else {
-            field += character;
-        }
-    }
-
-    if (quoted) throw new Error("The CSV ends inside a quoted field.");
-    if (field.length > 0 || row.length > 0) {
-        row.push(field);
-        rows.push(row);
-    }
-    return rows.filter((values) => values.some((value) => value.trim() !== ""));
-}
-
-function parseLastPosition(text) {
-    const rows = parseCsvRows(text);
-    if (rows.length < 2) throw new Error("The CSV does not contain any position rows.");
-
-    const headers = rows[0].map((header, index) => (
-        (index === 0 ? header.replace(/^\uFEFF/, "") : header).trim().toLowerCase()
-    ));
-    const panIndex = headers.indexOf("pan");
-    const tiltIndex = headers.indexOf("tilt");
-    if (panIndex < 0 || tiltIndex < 0) {
-        throw new Error('The CSV must have columns named "pan" and "tilt".');
-    }
-
-    const lastRow = rows[rows.length - 1];
-    const panText = lastRow[panIndex]?.trim() ?? "";
-    const tiltText = lastRow[tiltIndex]?.trim() ?? "";
-    const pan = panText === "" ? Number.NaN : Number(panText);
-    const tilt = tiltText === "" ? Number.NaN : Number(tiltText);
-    if (!Number.isFinite(pan) || !Number.isFinite(tilt)) {
-        throw new Error("The last CSV row does not have numeric pan and tilt values.");
-    }
-    return { pan, tilt };
-}
-
 function setFollowStatus(message, state = "idle") {
     followStatus.textContent = message;
     followStatus.title = message;
@@ -1481,15 +1409,14 @@ function setPanTiltInputs(pan, tilt) {
     updateTurntablePose();
 }
 
+let positionEventSource = null;
+
 function stopFollowing(message = "Not following") {
-    followSessionId += 1;
-    followedFileSource = null;
-    followedFileContents = null;
-    followReadInProgress = false;
-    window.clearTimeout(followPollTimeout);
-    followPollTimeout = null;
+    positionEventSource?.close();
+    positionEventSource = null;
     followToggle.textContent = "Follow";
     followToggle.setAttribute("aria-pressed", "false");
+    followEndpointInput.disabled = false;
     panInput.disabled = false;
     panSlider.disabled = false;
     tiltInput.disabled = false;
@@ -1498,42 +1425,34 @@ function stopFollowing(message = "Not following") {
     setFollowStatus(message);
 }
 
-async function readFollowedFile() {
-    if (!followedFileSource || followReadInProgress) return;
-    const sessionId = followSessionId;
-    const fileSource = followedFileSource;
-    followReadInProgress = true;
+function startFollowing() {
+    const endpoint = followEndpointInput.value.trim();
+    let parsedEndpoint;
     try {
-        const file = await fileSource.getFile();
-        const contents = await file.text();
-        if (contents !== followedFileContents) {
-            const { pan, tilt } = parseLastPosition(contents);
-            if (sessionId !== followSessionId) return;
-            setPanTiltInputs(pan, tilt);
-            followedFileContents = contents;
-            setFollowStatus(
-                `${file.name}: pan ${pan.toFixed(2)}°, tilt ${tilt.toFixed(2)}°`,
-                "active",
-            );
-        }
-    } catch (error) {
-        if (sessionId === followSessionId) {
-            setFollowStatus(error instanceof Error ? error.message : String(error), "error");
-        }
-    } finally {
-        if (sessionId !== followSessionId) return;
-        followReadInProgress = false;
-        followPollTimeout = window.setTimeout(
-            readFollowedFile,
-            FOLLOW_POLL_INTERVAL_MILLISECONDS,
-        );
+        parsedEndpoint = new URL(endpoint);
+    } catch {
+        parsedEndpoint = null;
     }
-}
+    if (
+        !parsedEndpoint
+        || parsedEndpoint.protocol !== "tcp:"
+        || !parsedEndpoint.hostname
+        || !parsedEndpoint.port
+        || parsedEndpoint.username
+        || parsedEndpoint.password
+        || parsedEndpoint.pathname
+        || parsedEndpoint.search
+        || parsedEndpoint.hash
+    ) {
+        setFollowStatus("Use an endpoint such as tcp://127.0.0.1:8005.", "error");
+        followEndpointInput.focus();
+        return;
+    }
 
-function startFollowing(fileSource) {
-    followSessionId += 1;
-    followedFileSource = fileSource;
-    followedFileContents = null;
+    const streamUrl = new URL(settingsPanel.dataset.positionStreamUrl, window.location.href);
+    streamUrl.searchParams.set("endpoint", endpoint);
+    const eventSource = new EventSource(streamUrl);
+    positionEventSource = eventSource;
     motionAnimationActive = false;
     motionAnimationToggle.textContent = "Start";
     motionAnimationToggle.disabled = true;
@@ -1541,50 +1460,46 @@ function startFollowing(fileSource) {
     panSlider.disabled = true;
     tiltInput.disabled = true;
     tiltSlider.disabled = true;
+    followEndpointInput.disabled = true;
     followToggle.textContent = "Stop";
     followToggle.setAttribute("aria-pressed", "true");
-    setFollowStatus("Reading CSV…", "active");
-    readFollowedFile();
-}
+    setFollowStatus(`Connecting to ${endpoint}…`, "active");
 
-function chooseFileWithInput() {
-    followFileInput.value = "";
-    followFileInput.click();
-}
-
-followFileInput.addEventListener("change", () => {
-    const file = followFileInput.files?.[0];
-    if (!file) return;
-    startFollowing({
-        getFile: async () => file,
+    eventSource.addEventListener("status", (event) => {
+        if (positionEventSource !== eventSource) return;
+        const status = JSON.parse(event.data);
+        setFollowStatus(status.message, "active");
     });
-});
 
-followToggle.addEventListener("click", async () => {
-    if (followedFileSource) {
+    eventSource.addEventListener("position-error", (event) => {
+        if (positionEventSource !== eventSource) return;
+        const error = JSON.parse(event.data);
+        setFollowStatus(error.message, "error");
+    });
+
+    eventSource.addEventListener("message", (event) => {
+        if (positionEventSource !== eventSource) return;
+        const position = JSON.parse(event.data);
+        if (!Number.isFinite(position.pan) || !Number.isFinite(position.tilt)) return;
+        setPanTiltInputs(position.pan, position.tilt);
+        setFollowStatus(
+            `${position.state}: pan ${position.pan.toFixed(2)}°, tilt ${position.tilt.toFixed(2)}°`,
+            "active",
+        );
+    });
+
+    eventSource.addEventListener("error", () => {
+        if (positionEventSource !== eventSource) return;
+        setFollowStatus(`Connection lost; reconnecting to ${endpoint}…`, "error");
+    });
+}
+
+followToggle.addEventListener("click", () => {
+    if (positionEventSource) {
         stopFollowing();
         return;
     }
-
-    if (!("showOpenFilePicker" in window)) {
-        chooseFileWithInput();
-        return;
-    }
-
-    try {
-        const [fileHandle] = await window.showOpenFilePicker({
-            multiple: false,
-            types: [{
-                description: "CSV position data",
-                accept: { "text/csv": [".csv"] },
-            }],
-        });
-        startFollowing(fileHandle);
-    } catch (error) {
-        if (!(error instanceof DOMException && error.name === "AbortError")) {
-            setFollowStatus(error instanceof Error ? error.message : String(error), "error");
-        }
-    }
+    startFollowing();
 });
 
 function updateTurntablePose() {

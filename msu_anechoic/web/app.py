@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import math
@@ -16,13 +17,17 @@ from dataclasses import replace
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 
 import numpy as np
+import zmq
+import zmq.asyncio
 from fastapi import FastAPI
 from fastapi import HTTPException
 from fastapi import Request
 from fastapi.responses import HTMLResponse
 from fastapi.responses import Response
+from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from plotly.offline import get_plotlyjs
@@ -91,6 +96,7 @@ MAX_VERTICAL_MOVEMENT_MULTIPLIER = 100.0
 MAX_OPTIMIZATION_SESSIONS = 32
 MAX_OPTIMIZATION_HISTORY = 50
 OPTIMIZATION_NEIGHBOR_COUNT = 48
+DEFAULT_3D_POSITION_ENDPOINT = "tcp://127.0.0.1:8005"
 PAN_TRAVEL_TIME_SCALE = 0.3940
 TILT_TRAVEL_TIME_SCALE = 0.9038
 
@@ -2220,6 +2226,111 @@ def three_dimensional_experiment(request: Request) -> HTMLResponse:
         request=request,
         name="3d.html",
         context={},
+    )
+
+
+def _validate_zmq_position_endpoint(endpoint: str) -> str:
+    """Validate a TCP ZMQ endpoint supplied by the local web UI."""
+    if len(endpoint) > 255:
+        raise ValueError("The ZMQ endpoint is too long.")
+    try:
+        parsed = urlsplit(endpoint)
+        port = parsed.port
+    except ValueError as error:
+        raise ValueError("The ZMQ endpoint must contain a valid TCP port.") from error
+    if (
+        parsed.scheme != "tcp"
+        or not parsed.hostname
+        or port is None
+        or not 1 <= port <= 65535
+        or parsed.path
+        or parsed.query
+        or parsed.fragment
+        or parsed.username
+        or parsed.password
+    ):
+        raise ValueError("Use a ZMQ TCP endpoint such as tcp://127.0.0.1:8005.")
+    return endpoint
+
+
+def _decode_zmq_position_message(message: bytes) -> dict[str, str | float]:
+    """Decode and validate the position payload described by turntable issue 45."""
+    try:
+        payload = json.loads(message)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError("Received a position message that is not valid UTF-8 JSON.") from error
+    if not isinstance(payload, dict):
+        raise ValueError("The position message must be a JSON object.")
+
+    timestamp = payload.get("timestamp")
+    state = payload.get("state")
+    pan = payload.get("pan")
+    tilt = payload.get("tilt")
+    if not isinstance(timestamp, str) or not timestamp:
+        raise ValueError('The position message needs a non-empty "timestamp" string.')
+    if not isinstance(state, str) or not state:
+        raise ValueError('The position message needs a non-empty "state" string.')
+    if isinstance(pan, bool) or not isinstance(pan, (int, float)) or not math.isfinite(pan):
+        raise ValueError('The position message needs a finite numeric "pan" value.')
+    if isinstance(tilt, bool) or not isinstance(tilt, (int, float)) or not math.isfinite(tilt):
+        raise ValueError('The position message needs a finite numeric "tilt" value.')
+    return {
+        "timestamp": timestamp,
+        "state": state,
+        "pan": float(pan),
+        "tilt": float(tilt),
+    }
+
+
+async def _zmq_position_events(endpoint: str):
+    context = zmq.asyncio.Context.instance()
+    socket = context.socket(zmq.SUB)
+    socket.setsockopt(zmq.LINGER, 0)
+    socket.setsockopt(zmq.SUBSCRIBE, b"")
+    try:
+        socket.connect(endpoint)
+    except zmq.ZMQError as error:
+        socket.close()
+        yield f"event: position-error\ndata: {json.dumps({'message': f'Could not connect to {endpoint}: {error}'})}\n\n"
+        return
+    yield f"event: status\ndata: {json.dumps({'message': f'Connected to {endpoint}; waiting for positions'})}\n\n"
+
+    last_heartbeat = time.monotonic()
+    try:
+        while True:
+            try:
+                message = await asyncio.wait_for(socket.recv(), timeout=1.0)
+            except asyncio.TimeoutError:
+                if time.monotonic() - last_heartbeat >= 10:
+                    yield ": keep-alive\n\n"
+                    last_heartbeat = time.monotonic()
+                continue
+
+            try:
+                position = _decode_zmq_position_message(message)
+            except ValueError as error:
+                yield f"event: position-error\ndata: {json.dumps({'message': str(error)})}\n\n"
+                continue
+            yield f"data: {json.dumps(position, separators=(',', ':'))}\n\n"
+    finally:
+        socket.close()
+
+
+@app.get("/3d/position-stream", response_class=StreamingResponse)
+async def three_dimensional_position_stream(
+    endpoint: str = DEFAULT_3D_POSITION_ENDPOINT,
+) -> StreamingResponse:
+    try:
+        endpoint = _validate_zmq_position_endpoint(endpoint)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return StreamingResponse(
+        _zmq_position_events(endpoint),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 
