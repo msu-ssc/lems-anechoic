@@ -70,6 +70,29 @@
                 right: 7rem;
             }
 
+            .view-switcher {
+                position: fixed;
+                z-index: 2;
+                top: 1rem;
+                left: 50%;
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+                padding: 0.35rem 0.55rem;
+                color: white;
+                background: rgb(15 18 22 / 85%);
+                border: 1px solid #68717c;
+                border-radius: 0.4rem;
+                font: 14px sans-serif;
+                transform: translateX(-50%);
+            }
+
+            .view-switcher select {
+                min-width: 10rem;
+                padding: 0.25rem 0.4rem;
+                font: inherit;
+            }
+
             .coordinate-panel {
                 position: fixed;
                 z-index: 1;
@@ -281,7 +304,13 @@
             }
         </style>
     </head>
-    <body data-camera-name="{{ camera_name or '' }}">
+    <body>
+        <div class="view-switcher">
+            <label for="scene-view-select">View</label>
+            <select id="scene-view-select">
+                <option value="">Overview</option>
+            </select>
+        </div>
         <button id="cameras-toggle" class="panel-toggle cameras-toggle" type="button" aria-controls="cameras-panel" aria-expanded="false">Cameras</button>
         <button id="settings-toggle" class="panel-toggle settings-toggle" type="button" aria-controls="settings-panel" aria-expanded="true">Settings</button>
         <aside class="coordinate-panel" aria-label="Source position in AUT coordinates">
@@ -484,7 +513,7 @@
             <div class="camera-actions">
                 <button id="camera-save" type="button">Save</button>
                 <button id="camera-delete" type="button">Delete</button>
-                <button id="camera-view" type="button">Open view</button>
+                <button id="camera-view" type="button">Use view</button>
             </div>
             <output id="camera-status" class="camera-status" aria-live="polite"></output>
         </section>

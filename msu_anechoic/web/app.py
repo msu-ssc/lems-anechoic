@@ -2219,16 +2219,7 @@ def three_dimensional_experiment(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(
         request=request,
         name="3d.html",
-        context={"camera_name": None},
-    )
-
-
-@app.get("/3d/camera/{camera_name}", response_class=HTMLResponse)
-def three_dimensional_camera(request: Request, camera_name: str) -> HTMLResponse:
-    return templates.TemplateResponse(
-        request=request,
-        name="3d.html",
-        context={"camera_name": camera_name},
+        context={},
     )
 
 

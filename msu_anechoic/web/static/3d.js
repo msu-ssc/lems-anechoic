@@ -1031,6 +1031,7 @@ const cameraViewButton = document.getElementById("camera-view");
 const cameraStatus = document.getElementById("camera-status");
 const cameraViewIndicator = document.getElementById("camera-view-indicator");
 const cameraViewIndicatorName = document.getElementById("camera-view-indicator-name");
+const sceneViewSelect = document.getElementById("scene-view-select");
 const cameraFormInputs = {
     name: document.getElementById("camera-name"),
     x: document.getElementById("camera-x"),
@@ -1082,9 +1083,7 @@ const cameraVisualizationGroup = new THREE.Group();
 cameraVisualizationGroup.name = "configured-camera-helpers";
 scene.add(cameraVisualizationGroup);
 
-const cameraPathMatch = window.location.pathname.match(/^(.*\/3d)(?:\/camera\/.*)?$/);
-const threeDimensionalBasePath = cameraPathMatch?.[1] ?? "/3d";
-let activeCameraName = document.body.dataset.cameraName || null;
+let activeCameraName = null;
 let cameraDefinitions = [];
 let selectedCameraOriginalName = null;
 
@@ -1166,25 +1165,34 @@ function definitionForName(name) {
 }
 
 function updateActiveCamera() {
-    const definition = activeCameraName ? definitionForName(activeCameraName) : null;
+    let definition = activeCameraName ? definitionForName(activeCameraName) : null;
+    let missingCameraName = null;
+    if (activeCameraName && !definition) {
+        missingCameraName = activeCameraName;
+        activeCameraName = null;
+        definition = null;
+    }
     controls.enabled = !definition;
     cameraVisualizationGroup.visible = !definition;
     cameraViewIndicator.hidden = !definition;
     cameraViewIndicatorName.textContent = definition?.name ?? "";
-    if (!activeCameraName) return;
-
-    if (definition) {
-        controls.autoRotate = false;
-        applyCameraDefinition(definition, namedViewCamera);
-        setCameraStatus(`Viewing ${definition.name}`, "success");
-    } else {
-        setPanelVisibility(camerasPanel, camerasToggle, true);
-        setPanelVisibility(settingsPanel, settingsToggle, false);
-        setCameraStatus(
-            `Camera “${activeCameraName}” is not saved in this browser. Create it or choose another camera.`,
-            "error",
-        );
+    sceneViewSelect.value = definition?.name ?? "";
+    if (!definition) {
+        if (missingCameraName) {
+            setCameraStatus(`Camera “${missingCameraName}” is no longer available.`, "error");
+        } else setCameraStatus("Viewing overview.", "success");
+        return;
     }
+
+    controls.autoRotate = false;
+    rotationToggle.textContent = "Start";
+    applyCameraDefinition(definition, namedViewCamera);
+    setCameraStatus(`Viewing ${definition.name}`, "success");
+}
+
+function selectSceneView(cameraName) {
+    activeCameraName = definitionForName(cameraName)?.name ?? null;
+    updateActiveCamera();
 }
 
 function formatCameraNumber(value, precision = 3) {
@@ -1238,6 +1246,21 @@ function refreshCameraSelect(nameToSelect = null) {
     populateCameraForm(selection);
 }
 
+function refreshSceneViewSelect() {
+    sceneViewSelect.replaceChildren();
+    const overviewOption = document.createElement("option");
+    overviewOption.value = "";
+    overviewOption.textContent = "Overview";
+    sceneViewSelect.append(overviewOption);
+    for (const definition of cameraDefinitions) {
+        const option = document.createElement("option");
+        option.value = definition.name;
+        option.textContent = definition.name;
+        sceneViewSelect.append(option);
+    }
+    sceneViewSelect.value = definitionForName(activeCameraName)?.name ?? "";
+}
+
 function cameraDefinitionFromForm({ reportValidity = true } = {}) {
     for (const input of Object.values(cameraFormInputs)) {
         input.setCustomValidity("");
@@ -1261,10 +1284,6 @@ function cameraDefinitionFromForm({ reportValidity = true } = {}) {
     return validCameraDefinition(definition) ? definition : null;
 }
 
-function openCameraView(name) {
-    window.location.assign(`${threeDimensionalBasePath}/camera/${encodeURIComponent(name)}`);
-}
-
 cameraSelect.addEventListener("change", () => {
     populateCameraForm(definitionForName(cameraSelect.value));
     setCameraStatus("");
@@ -1284,6 +1303,7 @@ cameraSaveButton.addEventListener("click", () => {
         return;
     }
     const originalName = selectedCameraOriginalName;
+    const wasActive = activeCameraName === originalName;
     const duplicate = cameraDefinitions.some((cameraDefinition) => (
         cameraDefinition.name === definition.name
         && cameraDefinition.name !== originalName
@@ -1303,32 +1323,36 @@ cameraSaveButton.addEventListener("click", () => {
     cameraDefinitions.sort((left, right) => left.name.localeCompare(right.name));
     if (!persistCameraDefinitions()) return;
     rebuildCameraHelpers();
+    if (wasActive) activeCameraName = definition.name;
     refreshCameraSelect(definition.name);
+    refreshSceneViewSelect();
     setCameraStatus(`Saved ${definition.name}.`, "success");
-
-    if (activeCameraName === originalName || activeCameraName === definition.name) {
-        if (activeCameraName !== definition.name) {
-            openCameraView(definition.name);
-        } else {
-            updateActiveCamera();
-        }
-    }
+    if (wasActive) updateActiveCamera();
 });
 
 cameraDeleteButton.addEventListener("click", () => {
     if (!selectedCameraOriginalName) return;
     if (!window.confirm(`Delete camera “${selectedCameraOriginalName}”?`)) return;
     const deletedName = selectedCameraOriginalName;
+    if (activeCameraName === deletedName) activeCameraName = null;
     cameraDefinitions = cameraDefinitions.filter((definition) => definition.name !== deletedName);
     if (!persistCameraDefinitions()) return;
     rebuildCameraHelpers();
     refreshCameraSelect();
+    refreshSceneViewSelect();
+    updateActiveCamera();
     setCameraStatus(`Deleted ${deletedName}.`, "success");
-    if (activeCameraName === deletedName) window.location.assign(threeDimensionalBasePath);
 });
 
 cameraViewButton.addEventListener("click", () => {
-    if (selectedCameraOriginalName) openCameraView(selectedCameraOriginalName);
+    if (selectedCameraOriginalName) {
+        selectSceneView(selectedCameraOriginalName);
+        setPanelVisibility(camerasPanel, camerasToggle, false);
+    }
+});
+
+sceneViewSelect.addEventListener("change", () => {
+    selectSceneView(sceneViewSelect.value);
 });
 
 window.addEventListener("storage", (event) => {
@@ -1336,12 +1360,14 @@ window.addEventListener("storage", (event) => {
     loadCameraDefinitions();
     rebuildCameraHelpers();
     refreshCameraSelect(selectedCameraOriginalName);
+    refreshSceneViewSelect();
     updateActiveCamera();
 });
 
 loadCameraDefinitions();
 rebuildCameraHelpers();
 refreshCameraSelect(activeCameraName);
+refreshSceneViewSelect();
 updateActiveCamera();
 
 const FOLLOW_POLL_INTERVAL_MILLISECONDS = 500;
