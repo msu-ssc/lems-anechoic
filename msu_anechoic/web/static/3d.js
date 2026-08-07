@@ -4,6 +4,21 @@ import { RectAreaLightUniformsLib } from "three/addons/lights/RectAreaLightUnifo
 
 RectAreaLightUniformsLib.init();
 
+const METERS_PER_INCH = 0.0254;
+const PAN_DISK_DIAMETER_METERS = 28 * METERS_PER_INCH;
+const PAN_DISK_THICKNESS_METERS = 1 * METERS_PER_INCH;
+const PAN_DISK_TOP_ZERO_LIFT_HEIGHT_METERS = 57 * METERS_PER_INCH;
+const PAN_DISK_TOP_ABOVE_TILT_AXIS_METERS = 3.75 * METERS_PER_INCH;
+const TILT_AXIS_ZERO_LIFT_HEIGHT_METERS = (
+    PAN_DISK_TOP_ZERO_LIFT_HEIGHT_METERS - PAN_DISK_TOP_ABOVE_TILT_AXIS_METERS
+);
+const TILT_DISK_DIAMETER_METERS = 36 * METERS_PER_INCH;
+const AUT_MOUNT_HEIGHT_METERS = 7.5 * METERS_PER_INCH;
+const AUT_MOUNT_DEPTH_METERS = 16 * METERS_PER_INCH;
+const AUT_MOUNT_WIDTH_METERS = 24 * METERS_PER_INCH;
+const AUT_MOUNT_BACK_OFFSET_METERS = 1 * METERS_PER_INCH;
+const AUT_MOUNT_CLEARANCE_METERS = 2 * METERS_PER_INCH;
+
 const canvas = document.getElementById("chamber-canvas");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -473,21 +488,31 @@ function updateScissorForks(height) {
 
 const turntable = new THREE.Group();
 turntable.name = "turntable";
-turntable.position.set(0, 1.225, 3);
+turntable.position.set(
+    0,
+    TILT_AXIS_ZERO_LIFT_HEIGHT_METERS,
+    3,
+);
 heightAssembly.add(turntable);
 
 const tiltAssembly = new THREE.Group();
 tiltAssembly.name = "tilt-assembly";
-tiltAssembly.position.y = 0.025;
 turntable.add(tiltAssembly);
 
 const panAssembly = new THREE.Group();
 panAssembly.name = "pan-assembly";
-panAssembly.position.y = 0.075;
+panAssembly.position.y = (
+    PAN_DISK_TOP_ABOVE_TILT_AXIS_METERS - PAN_DISK_THICKNESS_METERS / 2
+);
 tiltAssembly.add(panAssembly);
 
 const turningSurface = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.4, 0.4, 0.05, 64),
+    new THREE.CylinderGeometry(
+        PAN_DISK_DIAMETER_METERS / 2,
+        PAN_DISK_DIAMETER_METERS / 2,
+        PAN_DISK_THICKNESS_METERS,
+        64,
+    ),
     new THREE.MeshStandardMaterial({
         color: 0x6f42c1,
         metalness: 0.35,
@@ -513,8 +538,8 @@ const tiltMaterial = new THREE.MeshStandardMaterial({
 
 const tiltDisk = new THREE.Mesh(
     new THREE.CylinderGeometry(
-        0.4,
-        0.4,
+        TILT_DISK_DIAMETER_METERS / 2,
+        TILT_DISK_DIAMETER_METERS / 2,
         0.05,
         64,
         1,
@@ -565,7 +590,13 @@ tiltAssembly.add(tiltShaft);
 
 const autMount = new THREE.Group();
 autMount.name = "aut-mount";
-autMount.position.y = 0.125;
+autMount.position.set(
+    0,
+    PAN_DISK_THICKNESS_METERS / 2
+        + AUT_MOUNT_CLEARANCE_METERS
+        + AUT_MOUNT_HEIGHT_METERS / 2,
+    AUT_MOUNT_BACK_OFFSET_METERS,
+);
 panAssembly.add(autMount);
 
 const autMountMaterial = new THREE.MeshStandardMaterial({
@@ -587,20 +618,60 @@ function addAutMountPart(geometry, x, y, z) {
     part.add(edges);
 }
 
-// Two-centimeter top and bottom plates preserve the original 20 cm height.
-addAutMountPart(new THREE.BoxGeometry(0.6, 0.02, 0.3), 0, -0.09, 0);
-addAutMountPart(new THREE.BoxGeometry(0.6, 0.02, 0.3), 0, 0.09, 0);
+const autMountMemberThickness = 0.02;
+const autMountPlateY = (AUT_MOUNT_HEIGHT_METERS - autMountMemberThickness) / 2;
+const autMountPostHeight = AUT_MOUNT_HEIGHT_METERS - 2 * autMountMemberThickness;
+addAutMountPart(
+    new THREE.BoxGeometry(
+        AUT_MOUNT_WIDTH_METERS,
+        autMountMemberThickness,
+        AUT_MOUNT_DEPTH_METERS,
+    ),
+    0,
+    -autMountPlateY,
+    0,
+);
+addAutMountPart(
+    new THREE.BoxGeometry(
+        AUT_MOUNT_WIDTH_METERS,
+        autMountMemberThickness,
+        AUT_MOUNT_DEPTH_METERS,
+    ),
+    0,
+    autMountPlateY,
+    0,
+);
 
-// Two-centimeter square posts fill the 16 cm gap between the plates.
-for (const x of [-0.29, 0.29]) {
-    for (const z of [-0.14, 0.14]) {
-        addAutMountPart(new THREE.BoxGeometry(0.02, 0.16, 0.02), x, 0, z);
+for (const x of [
+    -(AUT_MOUNT_WIDTH_METERS - autMountMemberThickness) / 2,
+    (AUT_MOUNT_WIDTH_METERS - autMountMemberThickness) / 2,
+]) {
+    for (const z of [
+        -(AUT_MOUNT_DEPTH_METERS - autMountMemberThickness) / 2,
+        (AUT_MOUNT_DEPTH_METERS - autMountMemberThickness) / 2,
+    ]) {
+        addAutMountPart(
+            new THREE.BoxGeometry(
+                autMountMemberThickness,
+                autMountPostHeight,
+                autMountMemberThickness,
+            ),
+            x,
+            0,
+            z,
+        );
     }
 }
 
 const antennaUnderTest = new THREE.Group();
 antennaUnderTest.name = "antenna-under-test";
-antennaUnderTest.position.y = 0.225;
+antennaUnderTest.position.set(
+    0,
+    PAN_DISK_THICKNESS_METERS / 2
+        + AUT_MOUNT_CLEARANCE_METERS
+        + AUT_MOUNT_HEIGHT_METERS,
+    AUT_MOUNT_BACK_OFFSET_METERS,
+);
 panAssembly.add(antennaUnderTest);
 
 const autMaterial = new THREE.MeshStandardMaterial({
