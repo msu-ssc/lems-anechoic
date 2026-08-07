@@ -1159,12 +1159,9 @@ async function readFollowedFile() {
             if (sessionId !== followSessionId) return;
             setPanTiltInputs(pan, tilt);
             followedFileContents = contents;
-            const monitoringNote = fileSource.canMonitor === false
-                ? " (snapshot; live monitoring is unavailable in this browser)"
-                : "";
             setFollowStatus(
-                `${file.name}: pan ${pan.toFixed(2)}°, tilt ${tilt.toFixed(2)}°${monitoringNote}`,
-                fileSource.canMonitor === false ? "error" : "active",
+                `${file.name}: pan ${pan.toFixed(2)}°, tilt ${tilt.toFixed(2)}°`,
+                "active",
             );
         }
     } catch (error) {
@@ -1174,12 +1171,10 @@ async function readFollowedFile() {
     } finally {
         if (sessionId !== followSessionId) return;
         followReadInProgress = false;
-        if (fileSource.canMonitor !== false) {
-            followPollTimeout = window.setTimeout(
-                readFollowedFile,
-                FOLLOW_POLL_INTERVAL_MILLISECONDS,
-            );
-        }
+        followPollTimeout = window.setTimeout(
+            readFollowedFile,
+            FOLLOW_POLL_INTERVAL_MILLISECONDS,
+        );
     }
 }
 
@@ -1210,7 +1205,6 @@ followFileInput.addEventListener("change", () => {
     if (!file) return;
     startFollowing({
         getFile: async () => file,
-        canMonitor: false,
     });
 });
 
