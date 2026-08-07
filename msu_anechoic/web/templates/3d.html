@@ -49,11 +49,10 @@
                 display: none;
             }
 
-            .settings-toggle {
+            .panel-toggle {
                 position: fixed;
                 z-index: 2;
                 top: 1rem;
-                right: 1rem;
                 padding: 0.4rem 0.65rem;
                 color: white;
                 background: rgb(15 18 22 / 85%);
@@ -61,6 +60,14 @@
                 border-radius: 0.4rem;
                 font: 14px sans-serif;
                 cursor: pointer;
+            }
+
+            .settings-toggle {
+                right: 1rem;
+            }
+
+            .cameras-toggle {
+                right: 7rem;
             }
 
             .coordinate-panel {
@@ -193,10 +200,90 @@
             .controls .trail-actions input {
                 width: auto;
             }
+
+            .camera-panel {
+                width: min(32rem, calc(100vw - 4rem));
+            }
+
+            .camera-panel h2 {
+                margin: 0;
+                color: #e0b323;
+                font-size: 1.1rem;
+            }
+
+            .camera-list,
+            .camera-actions {
+                display: flex;
+                gap: 0.5rem;
+            }
+
+            .camera-list select {
+                min-width: 0;
+                flex: 1;
+                padding: 0.35rem 0.45rem;
+                font: inherit;
+            }
+
+            .camera-panel label {
+                grid-template-columns: 7rem minmax(8rem, 1fr) 2.5rem;
+            }
+
+            .camera-help,
+            .camera-status {
+                margin: 0;
+                color: #cbd3dc;
+                font-size: 0.85rem;
+                line-height: 1.35;
+            }
+
+            .camera-status[data-state="error"] {
+                color: #ff9c9c;
+            }
+
+            .camera-status[data-state="success"] {
+                color: #8ee59f;
+            }
+
+            .camera-view-indicator {
+                position: fixed;
+                z-index: 1;
+                bottom: 1rem;
+                left: 50%;
+                display: flex;
+                align-items: center;
+                gap: 0.55rem;
+                padding: 0.4rem 0.7rem;
+                color: white;
+                background: rgb(15 18 22 / 78%);
+                border: 1px solid #68717c;
+                border-radius: 0.4rem;
+                font: 13px sans-serif;
+                pointer-events: none;
+                transform: translateX(-50%);
+            }
+
+            .camera-view-indicator[hidden] {
+                display: none;
+            }
+
+            .camera-view-indicator::before {
+                width: 0.55rem;
+                height: 0.55rem;
+                background: #e0b323;
+                border-radius: 50%;
+                box-shadow: 0 0 0.45rem #e0b323;
+                content: "";
+            }
+
+            .camera-view-indicator strong {
+                color: #e0b323;
+                font-weight: 600;
+            }
         </style>
     </head>
-    <body>
-        <button id="settings-toggle" class="settings-toggle" type="button" aria-controls="settings-panel" aria-expanded="true">Settings</button>
+    <body data-camera-name="{{ camera_name or '' }}">
+        <button id="cameras-toggle" class="panel-toggle cameras-toggle" type="button" aria-controls="cameras-panel" aria-expanded="false">Cameras</button>
+        <button id="settings-toggle" class="panel-toggle settings-toggle" type="button" aria-controls="settings-panel" aria-expanded="true">Settings</button>
         <aside class="coordinate-panel" aria-label="Source position in AUT coordinates">
             <h2>Source in AUT frame</h2>
             <div class="coordinate-values">
@@ -373,6 +460,37 @@
                 <output id="rotation-speed-output">5.0x</output>
                 <input id="rotation-speed" type="range" value="5" min="0.1" max="5" step="0.1">
             </label>
+        </div>
+        <section id="cameras-panel" class="controls camera-panel" aria-label="Camera settings" hidden>
+            <h2>Cameras</h2>
+            <div class="camera-list">
+                <select id="camera-select" aria-label="Saved cameras"></select>
+                <button id="camera-new" type="button">New</button>
+            </div>
+            <label>
+                <span>Name</span>
+                <input id="camera-name" type="text" required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" placeholder="left-wall">
+                <span></span>
+            </label>
+            <label><span>X</span><input id="camera-x" type="number" step="0.01" required><span>m</span></label>
+            <label><span>Y</span><input id="camera-y" type="number" step="0.01" required><span>m</span></label>
+            <label><span>Z</span><input id="camera-z" type="number" step="0.01" required><span>m</span></label>
+            <label><span>Yaw</span><input id="camera-yaw" type="number" min="-180" max="180" step="0.1" required><span>deg</span></label>
+            <label><span>Pitch</span><input id="camera-pitch" type="number" min="-90" max="90" step="0.1" required><span>deg</span></label>
+            <label><span>Roll</span><input id="camera-roll" type="number" min="-180" max="180" step="0.1" required><span>deg</span></label>
+            <label><span>Vertical FOV</span><input id="camera-fov" type="number" min="1" max="179" step="0.1" required><span>deg</span></label>
+            <label><span>Aspect ratio</span><input id="camera-aspect" type="number" min="0.1" max="10" step="0.001" required><span>W/H</span></label>
+            <p class="camera-help">Coordinates use the chamber axes. Zero rotation looks forward (−Z); positive yaw turns left and positive pitch looks up.</p>
+            <div class="camera-actions">
+                <button id="camera-save" type="button">Save</button>
+                <button id="camera-delete" type="button">Delete</button>
+                <button id="camera-view" type="button">Open view</button>
+            </div>
+            <output id="camera-status" class="camera-status" aria-live="polite"></output>
+        </section>
+        <div id="camera-view-indicator" class="camera-view-indicator" role="status" hidden>
+            <span>Camera view</span>
+            <strong id="camera-view-indicator-name"></strong>
         </div>
         <canvas id="chamber-canvas"></canvas>
         <script type="module" src="{{ url_for('static', path='3d.js') }}"></script>

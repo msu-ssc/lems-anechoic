@@ -16,6 +16,8 @@ scene.background = new THREE.Color(0x000000);
 const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
 camera.position.set(13, 5.5, -7);
 
+const namedViewCamera = new THREE.PerspectiveCamera(45, 1, 0.01, 100);
+
 const controls = new OrbitControls(camera, canvas);
 controls.target.set(0, 1.325, 3);
 controls.enableDamping = true;
@@ -1019,6 +1021,27 @@ const floodLightIntensitySlider = document.getElementById("flood-light-intensity
 const floodLightIntensityOutput = document.getElementById("flood-light-intensity-output");
 const settingsToggle = document.getElementById("settings-toggle");
 const settingsPanel = document.getElementById("settings-panel");
+const camerasToggle = document.getElementById("cameras-toggle");
+const camerasPanel = document.getElementById("cameras-panel");
+const cameraSelect = document.getElementById("camera-select");
+const cameraNewButton = document.getElementById("camera-new");
+const cameraSaveButton = document.getElementById("camera-save");
+const cameraDeleteButton = document.getElementById("camera-delete");
+const cameraViewButton = document.getElementById("camera-view");
+const cameraStatus = document.getElementById("camera-status");
+const cameraViewIndicator = document.getElementById("camera-view-indicator");
+const cameraViewIndicatorName = document.getElementById("camera-view-indicator-name");
+const cameraFormInputs = {
+    name: document.getElementById("camera-name"),
+    x: document.getElementById("camera-x"),
+    y: document.getElementById("camera-y"),
+    z: document.getElementById("camera-z"),
+    yaw: document.getElementById("camera-yaw"),
+    pitch: document.getElementById("camera-pitch"),
+    roll: document.getElementById("camera-roll"),
+    fov: document.getElementById("camera-fov"),
+    aspect: document.getElementById("camera-aspect"),
+};
 const followToggle = document.getElementById("follow-toggle");
 const followStatus = document.getElementById("follow-status");
 const followFileInput = document.getElementById("follow-file-input");
@@ -1031,15 +1054,295 @@ const sourceAutRangeOutput = document.getElementById("source-aut-range");
 const sourceAnglePlotCanvas = document.getElementById("source-angle-plot");
 const sourceAnglePlotContext = sourceAnglePlotCanvas.getContext("2d");
 
+function setPanelVisibility(panel, toggle, visible) {
+    panel.hidden = !visible;
+    toggle.setAttribute("aria-expanded", String(visible));
+}
+
 settingsToggle.addEventListener("click", () => {
-    settingsPanel.hidden = !settingsPanel.hidden;
-    settingsToggle.setAttribute("aria-expanded", String(!settingsPanel.hidden));
+    const show = settingsPanel.hidden;
+    setPanelVisibility(settingsPanel, settingsToggle, show);
+    if (show) setPanelVisibility(camerasPanel, camerasToggle, false);
+});
+
+camerasToggle.addEventListener("click", () => {
+    const show = camerasPanel.hidden;
+    setPanelVisibility(camerasPanel, camerasToggle, show);
+    if (show) setPanelVisibility(settingsPanel, settingsToggle, false);
 });
 
 function numericInputValue(input) {
     const value = Number.parseFloat(input.value);
     return Number.isFinite(value) ? value : 0;
 }
+
+const CAMERA_STORAGE_KEY = "msu-anechoic.3d-cameras.v1";
+const CAMERA_NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const cameraVisualizationGroup = new THREE.Group();
+cameraVisualizationGroup.name = "configured-camera-helpers";
+scene.add(cameraVisualizationGroup);
+
+const cameraPathMatch = window.location.pathname.match(/^(.*\/3d)(?:\/camera\/.*)?$/);
+const threeDimensionalBasePath = cameraPathMatch?.[1] ?? "/3d";
+let activeCameraName = document.body.dataset.cameraName || null;
+let cameraDefinitions = [];
+let selectedCameraOriginalName = null;
+
+function validCameraDefinition(value) {
+    return value
+        && CAMERA_NAME_PATTERN.test(value.name)
+        && [value.x, value.y, value.z, value.yaw, value.pitch, value.roll, value.fov, value.aspect]
+            .every(Number.isFinite)
+        && value.pitch >= -90
+        && value.pitch <= 90
+        && value.yaw >= -180
+        && value.yaw <= 180
+        && value.roll >= -180
+        && value.roll <= 180
+        && value.fov >= 1
+        && value.fov <= 179
+        && value.aspect >= 0.1
+        && value.aspect <= 10;
+}
+
+function loadCameraDefinitions() {
+    try {
+        const stored = JSON.parse(window.localStorage.getItem(CAMERA_STORAGE_KEY) ?? "[]");
+        cameraDefinitions = Array.isArray(stored) ? stored.filter(validCameraDefinition) : [];
+    } catch {
+        cameraDefinitions = [];
+    }
+}
+
+function persistCameraDefinitions() {
+    try {
+        window.localStorage.setItem(CAMERA_STORAGE_KEY, JSON.stringify(cameraDefinitions));
+        return true;
+    } catch (error) {
+        setCameraStatus(`Could not save cameras: ${error.message}`, "error");
+        return false;
+    }
+}
+
+function setCameraStatus(message, state = "idle") {
+    cameraStatus.textContent = message;
+    cameraStatus.dataset.state = state;
+}
+
+function applyCameraDefinition(definition, targetCamera) {
+    targetCamera.position.set(definition.x, definition.y, definition.z);
+    targetCamera.rotation.set(
+        THREE.MathUtils.degToRad(definition.pitch),
+        THREE.MathUtils.degToRad(definition.yaw),
+        THREE.MathUtils.degToRad(definition.roll),
+        "YXZ",
+    );
+    targetCamera.fov = definition.fov;
+    targetCamera.aspect = definition.aspect;
+    targetCamera.near = 0.01;
+    targetCamera.far = 100;
+    targetCamera.updateProjectionMatrix();
+    targetCamera.updateMatrixWorld(true);
+}
+
+function rebuildCameraHelpers() {
+    for (const child of cameraVisualizationGroup.children) {
+        if (typeof child.dispose === "function") child.dispose();
+    }
+    cameraVisualizationGroup.clear();
+    for (const definition of cameraDefinitions) {
+        const configuredCamera = new THREE.PerspectiveCamera();
+        configuredCamera.name = `configured-camera-${definition.name}`;
+        applyCameraDefinition(definition, configuredCamera);
+        const helper = new THREE.CameraHelper(configuredCamera);
+        helper.name = `configured-camera-helper-${definition.name}`;
+        helper.userData.cameraName = definition.name;
+        cameraVisualizationGroup.add(configuredCamera, helper);
+    }
+}
+
+function definitionForName(name) {
+    return cameraDefinitions.find((definition) => definition.name === name) ?? null;
+}
+
+function updateActiveCamera() {
+    const definition = activeCameraName ? definitionForName(activeCameraName) : null;
+    controls.enabled = !definition;
+    cameraVisualizationGroup.visible = !definition;
+    cameraViewIndicator.hidden = !definition;
+    cameraViewIndicatorName.textContent = definition?.name ?? "";
+    if (!activeCameraName) return;
+
+    if (definition) {
+        controls.autoRotate = false;
+        applyCameraDefinition(definition, namedViewCamera);
+        setCameraStatus(`Viewing ${definition.name}`, "success");
+    } else {
+        setPanelVisibility(camerasPanel, camerasToggle, true);
+        setPanelVisibility(settingsPanel, settingsToggle, false);
+        setCameraStatus(
+            `Camera “${activeCameraName}” is not saved in this browser. Create it or choose another camera.`,
+            "error",
+        );
+    }
+}
+
+function formatCameraNumber(value, precision = 3) {
+    return Number(value).toFixed(precision).replace(/\.?0+$/, "");
+}
+
+function populateCameraForm(definition) {
+    selectedCameraOriginalName = definition?.name ?? null;
+    const values = definition ?? {
+        name: "",
+        x: 0,
+        y: 2.5,
+        z: 0,
+        yaw: 0,
+        pitch: 0,
+        roll: 0,
+        fov: 45,
+        aspect: 16 / 9,
+    };
+    cameraFormInputs.name.value = values.name;
+    for (const key of ["x", "y", "z", "yaw", "pitch", "roll", "fov", "aspect"]) {
+        cameraFormInputs[key].value = formatCameraNumber(values[key]);
+    }
+    cameraDeleteButton.disabled = !definition;
+    cameraViewButton.disabled = !definition;
+}
+
+function refreshCameraSelect(nameToSelect = null) {
+    cameraSelect.replaceChildren();
+    if (cameraDefinitions.length === 0) {
+        const option = document.createElement("option");
+        option.value = "";
+        option.textContent = "No saved cameras";
+        cameraSelect.append(option);
+        cameraSelect.disabled = true;
+        populateCameraForm(null);
+        return;
+    }
+
+    cameraSelect.disabled = false;
+    for (const definition of cameraDefinitions) {
+        const option = document.createElement("option");
+        option.value = definition.name;
+        option.textContent = definition.name;
+        cameraSelect.append(option);
+    }
+    const selection = definitionForName(nameToSelect)
+        ?? definitionForName(activeCameraName)
+        ?? cameraDefinitions[0];
+    cameraSelect.value = selection.name;
+    populateCameraForm(selection);
+}
+
+function cameraDefinitionFromForm({ reportValidity = true } = {}) {
+    for (const input of Object.values(cameraFormInputs)) {
+        input.setCustomValidity("");
+        if (!input.checkValidity()) {
+            if (reportValidity) input.reportValidity();
+            return null;
+        }
+    }
+
+    const definition = {
+        name: cameraFormInputs.name.value.trim(),
+        x: Number(cameraFormInputs.x.value),
+        y: Number(cameraFormInputs.y.value),
+        z: Number(cameraFormInputs.z.value),
+        yaw: Number(cameraFormInputs.yaw.value),
+        pitch: Number(cameraFormInputs.pitch.value),
+        roll: Number(cameraFormInputs.roll.value),
+        fov: Number(cameraFormInputs.fov.value),
+        aspect: Number(cameraFormInputs.aspect.value),
+    };
+    return validCameraDefinition(definition) ? definition : null;
+}
+
+function openCameraView(name) {
+    window.location.assign(`${threeDimensionalBasePath}/camera/${encodeURIComponent(name)}`);
+}
+
+cameraSelect.addEventListener("change", () => {
+    populateCameraForm(definitionForName(cameraSelect.value));
+    setCameraStatus("");
+});
+
+cameraNewButton.addEventListener("click", () => {
+    populateCameraForm(null);
+    cameraSelect.selectedIndex = -1;
+    cameraFormInputs.name.focus();
+    setCameraStatus("Enter a URL-safe name and camera calibration, then save.");
+});
+
+cameraSaveButton.addEventListener("click", () => {
+    const definition = cameraDefinitionFromForm();
+    if (!definition) {
+        setCameraStatus("Complete every field with a valid value.", "error");
+        return;
+    }
+    const originalName = selectedCameraOriginalName;
+    const duplicate = cameraDefinitions.some((cameraDefinition) => (
+        cameraDefinition.name === definition.name
+        && cameraDefinition.name !== originalName
+    ));
+    if (duplicate) {
+        cameraFormInputs.name.setCustomValidity("A camera with this name already exists.");
+        cameraFormInputs.name.reportValidity();
+        setCameraStatus(`Camera “${definition.name}” already exists.`, "error");
+        return;
+    }
+
+    const originalIndex = cameraDefinitions.findIndex(
+        (cameraDefinition) => cameraDefinition.name === originalName,
+    );
+    if (originalIndex >= 0) cameraDefinitions[originalIndex] = definition;
+    else cameraDefinitions.push(definition);
+    cameraDefinitions.sort((left, right) => left.name.localeCompare(right.name));
+    if (!persistCameraDefinitions()) return;
+    rebuildCameraHelpers();
+    refreshCameraSelect(definition.name);
+    setCameraStatus(`Saved ${definition.name}.`, "success");
+
+    if (activeCameraName === originalName || activeCameraName === definition.name) {
+        if (activeCameraName !== definition.name) {
+            openCameraView(definition.name);
+        } else {
+            updateActiveCamera();
+        }
+    }
+});
+
+cameraDeleteButton.addEventListener("click", () => {
+    if (!selectedCameraOriginalName) return;
+    if (!window.confirm(`Delete camera “${selectedCameraOriginalName}”?`)) return;
+    const deletedName = selectedCameraOriginalName;
+    cameraDefinitions = cameraDefinitions.filter((definition) => definition.name !== deletedName);
+    if (!persistCameraDefinitions()) return;
+    rebuildCameraHelpers();
+    refreshCameraSelect();
+    setCameraStatus(`Deleted ${deletedName}.`, "success");
+    if (activeCameraName === deletedName) window.location.assign(threeDimensionalBasePath);
+});
+
+cameraViewButton.addEventListener("click", () => {
+    if (selectedCameraOriginalName) openCameraView(selectedCameraOriginalName);
+});
+
+window.addEventListener("storage", (event) => {
+    if (event.key !== CAMERA_STORAGE_KEY) return;
+    loadCameraDefinitions();
+    rebuildCameraHelpers();
+    refreshCameraSelect(selectedCameraOriginalName);
+    updateActiveCamera();
+});
+
+loadCameraDefinitions();
+rebuildCameraHelpers();
+refreshCameraSelect(activeCameraName);
+updateActiveCamera();
 
 const FOLLOW_POLL_INTERVAL_MILLISECONDS = 500;
 let followedFileSource = null;
@@ -1595,17 +1898,47 @@ function resize() {
     renderer.setSize(width, height, false);
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
+    return { width, height };
+}
+
+function renderScene(width, height) {
+    const activeDefinition = activeCameraName ? definitionForName(activeCameraName) : null;
+    renderer.setScissorTest(false);
+    renderer.setViewport(0, 0, width, height);
+    renderer.setClearColor(0x000000, 1);
+    renderer.clear();
+
+    if (!activeDefinition) {
+        renderer.render(scene, camera);
+        return;
+    }
+
+    const availableAspect = width / height;
+    let viewportWidth = width;
+    let viewportHeight = height;
+    if (availableAspect > activeDefinition.aspect) {
+        viewportWidth = height * activeDefinition.aspect;
+    } else {
+        viewportHeight = width / activeDefinition.aspect;
+    }
+    const viewportX = (width - viewportWidth) / 2;
+    const viewportY = (height - viewportHeight) / 2;
+    renderer.setViewport(viewportX, viewportY, viewportWidth, viewportHeight);
+    renderer.setScissor(viewportX, viewportY, viewportWidth, viewportHeight);
+    renderer.setScissorTest(true);
+    renderer.render(scene, namedViewCamera);
+    renderer.setScissorTest(false);
 }
 
 const clock = new THREE.Clock();
 
 function render() {
     const deltaSeconds = clock.getDelta();
-    resize();
+    const { width, height } = resize();
     updateParameterAnimations(deltaSeconds);
     updateBoresightTrail(deltaSeconds);
     controls.update(deltaSeconds);
-    renderer.render(scene, camera);
+    renderScene(width, height);
     requestAnimationFrame(render);
 }
 
