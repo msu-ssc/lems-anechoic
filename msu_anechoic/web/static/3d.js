@@ -1008,6 +1008,7 @@ const motionAnimationToggle = document.getElementById("motion-animation-toggle")
 const screenRadiusSlider = document.getElementById("screen-radius");
 const screenRadiusOutput = document.getElementById("screen-radius-output");
 const trailEnabledInput = document.getElementById("trail-enabled");
+const annotationsEnabledInput = document.getElementById("annotations-enabled");
 const trailClearButton = document.getElementById("trail-clear");
 const trailSampleIntervalSlider = document.getElementById("trail-sample-interval");
 const trailSampleIntervalOutput = document.getElementById("trail-sample-interval-output");
@@ -1021,6 +1022,8 @@ const floodLightIntensitySlider = document.getElementById("flood-light-intensity
 const floodLightIntensityOutput = document.getElementById("flood-light-intensity-output");
 const settingsToggle = document.getElementById("settings-toggle");
 const settingsPanel = document.getElementById("settings-panel");
+const autToggle = document.getElementById("aut-toggle");
+const autPanel = document.getElementById("aut-panel");
 const camerasToggle = document.getElementById("cameras-toggle");
 const camerasPanel = document.getElementById("cameras-panel");
 const cameraSelect = document.getElementById("camera-select");
@@ -1072,9 +1075,29 @@ camerasToggle.addEventListener("click", () => {
     if (show) setPanelVisibility(settingsPanel, settingsToggle, false);
 });
 
+autToggle.addEventListener("click", () => {
+    setPanelVisibility(autPanel, autToggle, autPanel.hidden);
+});
+
 function numericInputValue(input) {
     const value = Number.parseFloat(input.value);
     return Number.isFinite(value) ? value : 0;
+}
+
+const annotationObjects = [
+    grid,
+    axes,
+    autBoresight,
+    tiltAssemblyBoresight,
+    panAssemblyBoresight,
+    autToSourceVector,
+    trailLine,
+];
+
+function updateAnnotationVisibility() {
+    const visible = annotationsEnabledInput.checked;
+    for (const annotation of annotationObjects) annotation.visible = visible;
+    cameraVisualizationGroup.visible = visible && activeCameraName === null;
 }
 
 const CAMERA_STORAGE_KEY = "msu-anechoic.3d-cameras.v1";
@@ -1173,7 +1196,7 @@ function updateActiveCamera() {
         definition = null;
     }
     controls.enabled = !definition;
-    cameraVisualizationGroup.visible = !definition;
+    cameraVisualizationGroup.visible = annotationsEnabledInput.checked && !definition;
     cameraViewIndicator.hidden = !definition;
     cameraViewIndicatorName.textContent = definition?.name ?? "";
     sceneViewSelect.value = definition?.name ?? "";
@@ -1693,6 +1716,8 @@ trailEnabledInput.addEventListener("change", () => {
     }
 });
 
+annotationsEnabledInput.addEventListener("change", updateAnnotationVisibility);
+
 trailClearButton.addEventListener("click", () => {
     clearBoresightTrail();
     clearSourceAngleTrail();
@@ -1917,6 +1942,7 @@ rotationSpeedSlider.addEventListener("input", () => {
     rotationSpeedOutput.textContent = rotationSpeedOutput.value;
 });
 updateTurntablePose();
+updateAnnotationVisibility();
 
 function resize() {
     const width = canvas.clientWidth;

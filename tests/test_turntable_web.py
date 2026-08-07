@@ -186,6 +186,10 @@ def test_three_dimensional_page_contains_camera_editor():
     assert 'id="camera-aspect"' in body
     assert 'id="camera-view-indicator"' in body
     assert 'id="scene-view-select"' in body
+    assert 'id="aut-toggle"' in body
+    assert 'aria-controls="aut-panel"' in body
+    assert 'id="aut-panel"' in body
+    assert 'id="annotations-enabled" type="checkbox" checked' in body
     assert not any(getattr(route, "path", None) == "/3d/camera/{camera_name}" for route in app.routes)
 
 

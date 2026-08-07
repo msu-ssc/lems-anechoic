@@ -70,6 +70,10 @@
                 right: 7rem;
             }
 
+            .aut-toggle {
+                right: 13.2rem;
+            }
+
             .view-switcher {
                 position: fixed;
                 z-index: 2;
@@ -105,6 +109,10 @@
                 border: 1px solid #68717c;
                 border-radius: 0.5rem;
                 font: 15px sans-serif;
+            }
+
+            .coordinate-panel[hidden] {
+                display: none;
             }
 
             .coordinate-panel h2 {
@@ -311,9 +319,10 @@
                 <option value="">Overview</option>
             </select>
         </div>
+        <button id="aut-toggle" class="panel-toggle aut-toggle" type="button" aria-controls="aut-panel" aria-expanded="true">AUT</button>
         <button id="cameras-toggle" class="panel-toggle cameras-toggle" type="button" aria-controls="cameras-panel" aria-expanded="false">Cameras</button>
         <button id="settings-toggle" class="panel-toggle settings-toggle" type="button" aria-controls="settings-panel" aria-expanded="true">Settings</button>
-        <aside class="coordinate-panel" aria-label="Source position in AUT coordinates">
+        <aside id="aut-panel" class="coordinate-panel" aria-label="Source position in AUT coordinates">
             <h2>Source in AUT frame</h2>
             <div class="coordinate-values">
                 <span>X (right)</span><output id="source-aut-x">0.000 m</output>
@@ -452,6 +461,9 @@
             <div class="trail-actions">
                 <label><input id="trail-enabled" type="checkbox" checked> Track AUT boresight</label>
                 <button id="trail-clear" type="button">Clear</button>
+            </div>
+            <div class="trail-actions">
+                <label><input id="annotations-enabled" type="checkbox" checked> Annotations</label>
             </div>
             <label>
                 <span>Back lights</span>
